@@ -1,0 +1,30 @@
+#!/bin/bash
+# BestBox Environment Activation Script
+# Source this file to activate Python virtual environment with ROCm settings
+
+# Activate virtual environment
+source ~/BestBox/venv/bin/activate
+
+# ROCm environment variables
+export ROCM_PATH=/opt/rocm-7.2.0
+export ROCM_HOME=/opt/rocm-7.2.0
+export PATH=$ROCM_PATH/bin:$PATH
+export LD_LIBRARY_PATH=$ROCM_PATH/lib:$LD_LIBRARY_PATH
+
+# HIP configuration
+export HIP_PATH=$ROCM_PATH/hip
+export HIP_PLATFORM=amd
+
+# GPU architecture mapping (gfx1151 → gfx1100 family)
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
+export PYTORCH_ROCM_ARCH=gfx1100
+
+# Optional: Enable ROCm debugging
+# export AMD_LOG_LEVEL=3
+# export HIP_VISIBLE_DEVICES=0
+
+echo "✅ BestBox environment activated"
+echo "   Python: $(python --version)"
+echo "   PyTorch: $(python -c 'import torch; print(torch.__version__)')"
+echo "   GPU: $(python -c 'import torch; print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"Not available\")')"
+echo "   GPU Memory: $(python -c 'import torch; print(f\"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB\" if torch.cuda.is_available() else \"N/A\")')"

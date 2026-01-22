@@ -15,7 +15,7 @@
 | **Hardware** | ✅ Ready | AMD Ryzen AI Max+ 395, 128GB RAM, 2TB NVMe |
 | **GPU** | ✅ Operational | AMD Radeon 8060S (gfx1151), 98GB memory |
 | **ROCm** | ✅ Verified | Version 7.2.0 installed and tested |
-| **Python Env** | ⏳ Pending | Target: Python 3.12+ with PyTorch ROCm |
+| **Python Env** | ✅ Complete | Python 3.12.3, PyTorch 2.10.0+rocm7.1, GPU OK |
 | **AI Stack** | ⏳ Pending | vLLM + TEI deployment planned |
 | **Applications** | ⏳ Pending | 4 demo scenarios in development |
 
