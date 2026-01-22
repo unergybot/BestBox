@@ -97,7 +97,7 @@ Decision: _______________
 | ☐ Ubuntu 24.04 LTS appropriate | | |
 | ☐ ROCm version compatibility matrix reviewed | | |
 | ☐ Docker deployment suitable | | |
-| ☐ Python 3.11 + uv chosen | | |
+| ☐ Python 3.12+ + uv chosen | | |
 | ☐ Version pinning strategy defined | | |
 
 ### 3.3 Services

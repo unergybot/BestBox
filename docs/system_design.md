@@ -1,15 +1,26 @@
 # BestBox: Enterprise Agentic Applications Demonstration Kit
 ## System Design & Implementation Plan
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** January 22, 2026  
-**Status:** Draft for Review
+**Status:** Draft for Review  
+**ROCm Status:** ✅ Verified Operational (7.2.0)
+
+---
+
+## Document Index
+
+- **System Design**: This document
+- **[ROCm Deployment Guide](rocm_deployment_guide.md)**: Complete ROCm 7.2.0 installation and verification
+- **[Review Checklist](review_checklist.md)**: Stakeholder review items
 
 ---
 
 ## Executive Summary
 
 BestBox is an enterprise-grade agentic applications demonstration kit designed to showcase how AI agents can transform traditional ERP/CRM/OA workflows. Built on AMD Ryzen AI Max +395 hardware with 128GB RAM and 2TB NVMe, the system demonstrates production-ready agentic architecture patterns using LangGraph, CopilotKit, and locally-deployed LLMs with ROCm support.
+
+**Hardware Status:** ROCm 7.2.0 successfully installed and verified on AMD Radeon 8060S (gfx1151) with 98GB GPU-accessible memory. See [ROCm Deployment Guide](rocm_deployment_guide.md) for complete installation documentation.
 
 ### Key Differentiators
 - **100% Local Deployment**: All models and data stay on-premise
@@ -579,9 +590,9 @@ Agent Flow:
 | Layer | Technology | Version |
 |-------|------------|---------|
 | OS | Ubuntu 24.04 LTS | Kernel 6.8+ |
-| GPU Runtime | ROCm | 6.2+ |
+| GPU Runtime | ROCm | 7.2.0 (production) |
 | Container | Docker + Docker Compose | 24.x |
-| Python | Python 3.11 | With uv package manager |
+| Python | Python 3.12+ | With uv package manager |
 | LLM Serving | vLLM | 0.6+ (ROCm fork) |
 | Embeddings | Text Embeddings Inference | 1.8+ |
 | Agent Framework | LangGraph | 0.2+ |
