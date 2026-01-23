@@ -289,6 +289,16 @@ Remaining capacity: ~50GB for additional models or larger batches.
 
 ## Getting Help
 
+### RAG Pipeline
+
+```bash
+# One-time: Seed knowledge base with demo documents
+python scripts/seed_knowledge_base.py
+
+# Start reranker service (in separate terminal)
+./scripts/start-reranker.sh
+```
+
 ### Common Commands
 
 ```bash

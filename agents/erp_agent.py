@@ -9,6 +9,7 @@ from tools.erp_tools import (
     get_procurement_summary,
     get_top_vendors
 )
+from tools.rag_tools import search_knowledge_base
 
 ERP_TOOLS = [
     get_purchase_orders,
@@ -16,7 +17,8 @@ ERP_TOOLS = [
     get_financial_summary,
     get_vendor_price_trends,
     get_procurement_summary,
-    get_top_vendors
+    get_top_vendors,
+    search_knowledge_base
 ]
 
 
@@ -32,11 +34,16 @@ Available tools:
 - get_inventory_levels: For warehouse stock levels and low stock alerts
 - get_financial_summary: For P&L, revenue, expenses, and margin data
 - get_vendor_price_trends: For analyzing price changes with specific vendors
+- search_knowledge_base: For procedures, policies, or technical information (use domain="erp")
 
 When asked about vendors, suppliers, or spending:
 1. ALWAYS call get_top_vendors or get_procurement_summary first
 2. Present the ACTUAL data returned from the tool
 3. Never say "I don't have access" - you DO have access via these tools
+
+You have access to a knowledge base via search_knowledge_base(query, domain).
+Use it when you need specific procedures, policies, or technical information
+beyond your training data. For ERP queries, use domain="erp" to filter results.
 """
 
 def erp_agent_node(state: AgentState):

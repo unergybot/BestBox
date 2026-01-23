@@ -37,6 +37,7 @@ cd frontend/copilot-demo && npm run lint # Frontend linting
 ```bash
 curl http://localhost:8080/health       # LLM server
 curl http://localhost:8081/health       # Embeddings
+curl http://localhost:8082/health       # Reranker
 curl http://localhost:8000/health       # Agent API
 ```
 
@@ -48,6 +49,24 @@ User Query → Router Agent → {ERP, CRM, IT Ops, OA, Fallback} Agent → Tool 
 ```
 
 The router (`agents/router.py`) classifies intent and routes to domain-specific agents. Each agent has access to domain tools defined in `tools/`.
+
+## RAG Pipeline
+
+The system includes a RAG pipeline for knowledge base search:
+
+- Documents in `data/demo_docs/{erp,crm,itops,oa}/`
+- Qdrant vector store (port 6333)
+- Reranker service (port 8082)
+- Agents can use `search_knowledge_base(query, domain, top_k)` tool
+
+### Seeding Knowledge Base
+```bash
+python scripts/seed_knowledge_base.py
+```
+
+### Adding Documents
+1. Add document to appropriate domain folder in `data/demo_docs/`
+2. Run seeding script to index new documents
 
 ### Key Directories
 - `agents/` - LangGraph agent implementations and state management
@@ -61,6 +80,7 @@ The router (`agents/router.py`) classifies intent and routes to domain-specific 
 |---------|------|
 | LLM (llama-server) | 8080 |
 | Embeddings (BGE-M3) | 8081 |
+| Reranker (BGE-reranker-v2-m3) | 8082 |
 | Agent API | 8000 |
 | Frontend | 3000 |
 | Qdrant | 6333/6334 |
