@@ -15,7 +15,6 @@
     "@langchain/openai": "^1.2.3",
     "langchain": "^1.2.11",
     "next": "16.1.4",
-    "openai": "^4.104.0",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },

@@ -12,7 +12,7 @@ def get_llm(temperature: float = 0.7):
     """
     return ChatOpenAI(
         base_url=LLM_BASE_URL,
-        api_key="not-needed",
+        api_key="sk-no-key-required",  # Local server doesn't need real API key
         model="qwen2.5-14b",
         temperature=temperature,
         streaming=True
@@ -29,7 +29,7 @@ class LocalBGEEmbeddings(OpenAIEmbeddings):
     def __init__(self, base_url: str = "http://127.0.0.1:8081"):
         super().__init__(
             base_url=base_url,
-            api_key="not-needed",
+            api_key=None,
             model="bge-m3"
         )
         # Note: Our simple FastAPI in main.py exposes /embed, not /v1/embeddings.

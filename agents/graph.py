@@ -6,7 +6,7 @@ from agents.erp_agent import erp_agent_node, ERP_TOOLS
 from agents.crm_agent import crm_agent_node, CRM_TOOLS
 from agents.it_ops_agent import it_ops_agent_node, IT_OPS_TOOLS
 from agents.oa_agent import oa_agent_node, OA_TOOLS
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
 
 # Combine all tools for the tool node
 ALL_TOOLS = ERP_TOOLS + CRM_TOOLS + IT_OPS_TOOLS + OA_TOOLS
@@ -24,8 +24,8 @@ def should_continue(state: AgentState):
     Check if the last message has tool calls.
     If so, route to 'tools'. Otherwise END.
     """
-    last_message = state["messages"][-1]
-    if last_message.tool_calls:
+    last_message: BaseMessage = state["messages"][-1]
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "tools"
     return END
 

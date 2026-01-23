@@ -355,3 +355,13 @@ For questions or issues, refer to the documentation or contact the BestBox devel
 
 **Last Updated:** January 22, 2026  
 **Project Status:** Phase 1 - Infrastructure Setup (ROCm Verified ✅)
+
+### Docker mirror
+  "registry-mirrors": [
+        "http://hub-mirror.c.163.com",
+        "https://dockerproxy.net",
+        "https://registry.docker-cn.com",
+        "http://hub-mirror.c.163.com",
+        "https://docker.mirrors.ustc.edu.cn"
+    ]
+    

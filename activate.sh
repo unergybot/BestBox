@@ -26,5 +26,22 @@ export PYTORCH_ROCM_ARCH=gfx1100
 echo "✅ BestBox environment activated"
 echo "   Python: $(python --version)"
 echo "   PyTorch: $(python -c 'import torch; print(torch.__version__)')"
-echo "   GPU: $(python -c 'import torch; print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"Not available\")')"
-echo "   GPU Memory: $(python -c 'import torch; print(f\"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB\" if torch.cuda.is_available() else \"N/A\")')"
+
+# GPU info (robust: avoid shell escaping issues)
+python - <<'PY'
+import torch
+
+available = torch.cuda.is_available()
+print(f"   Torch CUDA available: {available}")
+if available:
+	try:
+		print(f"   GPU: {torch.cuda.get_device_name(0)}")
+	except Exception:
+		print("   GPU: <unknown>")
+
+	try:
+		mem_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+		print(f"   GPU Memory: {mem_gb:.1f} GB")
+	except Exception:
+		print("   GPU Memory: <unknown>")
+PY
