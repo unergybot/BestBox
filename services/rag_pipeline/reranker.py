@@ -6,6 +6,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from sentence_transformers import CrossEncoder
 from typing import List
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 import time
 import logging
 import numpy as np
@@ -13,14 +16,40 @@ import numpy as np
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="BestBox Reranker API",
-    description="BGE-reranker-base for RAG precision boosting",
-    version="1.0.0"
-)
+# Model configuration
+MODEL_NAME = "BAAI/bge-reranker-base"
 
 # Global model instance
 model = None
+
+# Thread pool for CPU-bound operations
+executor = ThreadPoolExecutor(max_workers=4)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    global model
+    logger.info(f"Loading {MODEL_NAME} model...")
+    start = time.time()
+    try:
+        model = CrossEncoder(MODEL_NAME)
+        elapsed = time.time() - start
+        logger.info(f"Model loaded in {elapsed:.2f}s")
+    except Exception as e:
+        logger.error(f"Failed to load model: {e}")
+        model = None
+
+    yield
+
+    # Shutdown (cleanup if needed)
+    logger.info("Shutting down reranker service")
+
+app = FastAPI(
+    title="BestBox Reranker API",
+    description="BGE-reranker for RAG pipeline",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
 class RerankRequest(BaseModel):
     query: str
@@ -36,21 +65,12 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     model_name: str
 
-@app.on_event("startup")
-async def load_model():
-    global model
-    logger.info("Loading BGE-reranker-base model...")
-    start = time.time()
-    model = CrossEncoder("BAAI/bge-reranker-base")
-    elapsed = time.time() - start
-    logger.info(f"Model loaded in {elapsed:.2f}s")
-
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     return HealthResponse(
         status="ok" if model is not None else "loading",
         model_loaded=model is not None,
-        model_name="BAAI/bge-reranker-base"
+        model_name=MODEL_NAME
     )
 
 @app.post("/rerank", response_model=RerankResponse)
@@ -69,9 +89,10 @@ async def rerank(request: RerankRequest):
     # Create query-passage pairs
     pairs = [[request.query, passage] for passage in request.passages]
 
-    # Score pairs
+    # Score pairs using executor to avoid blocking event loop
     start = time.time()
-    scores = model.predict(pairs)
+    loop = asyncio.get_event_loop()
+    scores = await loop.run_in_executor(executor, model.predict, pairs)
     elapsed_ms = (time.time() - start) * 1000
 
     # Convert numpy array to list if needed
@@ -91,7 +112,7 @@ async def rerank(request: RerankRequest):
 async def root():
     return {
         "service": "BestBox Reranker API",
-        "model": "BAAI/bge-reranker-base",
+        "model": MODEL_NAME,
         "endpoints": {
             "health": "/health",
             "rerank": "/rerank (POST)"
