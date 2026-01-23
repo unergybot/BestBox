@@ -1,10 +1,10 @@
 {
     "Copilot": {
         "title": "BestBox AI 助手",
-        "initial": "你好！我是您的 BestBox AI 助手。我可以帮您处理：\n\n• ERP 查询（发票、库存、供应商）\n• 系统信息\n• 演示场景\n\n试着问我：'系统状态如何？' 或 '显示未付发票'"
+        "initial": "你好！我是您的 BestBox AI 助手。我可以帮您处理：\n\n• ERP 查询（发票、库存、供应商）\n• 系统信息\n• 场景\n\n试着问我：'系统状态如何？' 或 '显示未付发票'"
     },
     "Home": {
-        "title": "BestBox 企业级智能体演示",
+        "title": "BestBox 企业级智能体",
         "subtitle": "基于本地大模型的 AI 驱动 ERP/CRM/OA 助手",
         "systemStatus": {
             "title": "系统状态",
@@ -14,7 +14,7 @@
             "operational": "运行正常"
         },
         "scenarios": {
-            "title": "演示场景",
+            "title": "场景",
             "erp": {
                 "title": "🏢 ERP 助手",
                 "desc": "发票处理，库存检查，财务报告",

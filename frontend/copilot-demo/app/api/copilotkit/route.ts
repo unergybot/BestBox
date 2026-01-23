@@ -52,12 +52,23 @@ const serviceAdapter = new LangChainAdapter({
       return model.stream([{ role: "user", content: "Hello" } as any]);
     }
 
+    // Helper to ensure chunks have content
+    async function* safeStream(streamPromise: Promise<any>) {
+      const stream = await streamPromise;
+      for await (const chunk of stream) {
+        if (chunk.content === undefined || chunk.content === null) {
+          chunk.content = "";
+        }
+        yield chunk;
+      }
+    }
+
     // If tools are available, bind them to the model
     if (tools && tools.length > 0) {
-      return model.bindTools(tools).stream(validMessages);
+      return safeStream(model.bindTools(tools).stream(validMessages)) as any;
     }
     // Otherwise just stream the messages
-    return model.stream(validMessages);
+    return safeStream(model.stream(validMessages)) as any;
   },
 }) as LangChainAdapter & { provider: string; model: string };
 
@@ -82,7 +93,7 @@ async function callAgentApi(messages: any[]): Promise<string> {
     }
 
     const data = await response.json();
-    return data.choices[0].message.content;
+    return data.choices[0].message.content || "";
   } catch (error) {
     console.error("Failed to call agent API:", error);
     throw error;
@@ -113,7 +124,7 @@ const runtime = new CopilotRuntime({
       parameters: [],
       handler: async () => {
         return {
-          system: "BestBox Enterprise Agentic Demo",
+          system: "BestBox Enterprise Agent",
           framework: "LangGraph (Python)",
           agents: ["Router", "ERP", "CRM", "IT Ops", "OA"],
           status: "connected",

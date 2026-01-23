@@ -128,7 +128,7 @@ async def chat_completion_stream(request: ChatRequest):
                     "index": 0,
                     "delta": {
                         "role": "assistant",
-                        "content": content
+                        "content": content or ""
                     },
                     "finish_reason": None
                 }]
@@ -243,7 +243,7 @@ async def chat_completion(request: ChatRequest):
                     "index": 0,
                     "message": {
                         "role": "assistant",
-                        "content": last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+                        "content": (last_msg.content if hasattr(last_msg, 'content') else str(last_msg)) or ""
                     },
                     "finish_reason": "stop"
                 }

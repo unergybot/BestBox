@@ -1,10 +1,10 @@
 {
     "Copilot": {
         "title": "BestBox AI Assistant",
-        "initial": "Hello! I'm your BestBox AI assistant. I can help you with:\n\n• ERP queries (invoices, inventory, vendors)\n• System information\n• Demo scenarios\n\nTry asking: 'What's the system status?' or 'Show me unpaid invoices'"
+        "initial": "Hello! I'm your BestBox AI assistant. I can help you with:\n\n• ERP queries (invoices, inventory, vendors)\n• System information\n• Scenarios\n\nTry asking: 'What's the system status?' or 'Show me unpaid invoices'"
     },
     "Home": {
-        "title": "BestBox Enterprise Agentic Demo",
+        "title": "BestBox Enterprise Agent",
         "subtitle": "AI-Powered ERP/CRM/OA Assistant with Local LLM",
         "systemStatus": {
             "title": "System Status",
@@ -14,7 +14,7 @@
             "operational": "Operational"
         },
         "scenarios": {
-            "title": "Demo Scenarios",
+            "title": "Scenarios",
             "erp": {
                 "title": "🏢 ERP Copilot",
                 "desc": "Invoice processing, inventory checks, financial reporting",
