@@ -7,18 +7,24 @@ from tools.erp_tools import (
     get_financial_summary,
     get_vendor_price_trends
 )
+from tools.rag_tools import search_knowledge_base
 
 ERP_TOOLS = [
     get_purchase_orders,
     get_inventory_levels,
     get_financial_summary,
-    get_vendor_price_trends
+    get_vendor_price_trends,
+    search_knowledge_base
 ]
 
 ERP_SYSTEM_PROMPT = """You are the ERP Copilot.
 You assist with finance, procurement, inventory, and vendor management.
 You have access to tools to query the ERP system.
 Use them to answer user questions with real data.
+
+You have access to a knowledge base via search_knowledge_base(query, domain).
+Use it when you need specific procedures, policies, or technical information
+beyond your training data. For ERP queries, use domain="erp" to filter results.
 """
 
 def erp_agent_node(state: AgentState):
