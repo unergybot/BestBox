@@ -198,11 +198,16 @@ def parse_message_content(content: Union[str, List[Dict[str, Any]]]) -> str:
         return str(content)
 
 @app.post("/v1/chat/completions")
-async def chat_completion(request: ChatRequest):
+async def chat_completion_endpoint(request: ChatRequest):
     """
     OpenAI-compatible endpoint supporting both standard and CopilotKit formats.
     Handles both 'messages' (OpenAI) and 'input' (CopilotKit) fields.
+    Supports both streaming and non-streaming responses.
     """
+    # If streaming is requested, use the streaming handler
+    if request.stream:
+        return await chat_completion_stream(request)
+    
     # Debug logging
     try:
         logger.info(f"Incoming Request: {request.model_dump_json(exclude={'input'})}")

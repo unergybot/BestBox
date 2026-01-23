@@ -354,3 +354,82 @@ def get_procurement_summary(period: str = "Q4-2025"):
             for vid, info in sorted(vendor_spend.items(), key=lambda x: x[1]["total"], reverse=True)
         ]
     }
+
+
+@tool
+def get_top_vendors(limit: int = 5, period: str = "Q4-2025"):
+    """
+    Get the top vendors ranked by total spend.
+    
+    Use this tool when asked about:
+    - Who are the top vendors?
+    - Which suppliers do we spend the most with?
+    - Main/biggest/largest vendors
+    - Vendor rankings
+    
+    Args:
+        limit: Number of top vendors to return (default: 5)
+        period: Financial period to analyze (e.g., "Q4-2025", "2025")
+    
+    Returns:
+        List of top vendors with spend amounts and rankings
+    """
+    data = get_demo_data()
+    vendors = data.get("vendors", []) if data else []
+    pos = data.get("purchase_orders", []) if data else []
+    
+    # Parse period
+    if period.startswith("Q"):
+        q_num, year = period.split("-")
+        year = int(year)
+        q_num = int(q_num[1])
+        q_start_month = (q_num - 1) * 3 + 1
+        q_end_month = q_num * 3
+        
+        period_pos = [
+            p for p in pos 
+            if p.get("date") and 
+               datetime.strptime(p["date"], "%Y-%m-%d").year == year and
+               q_start_month <= datetime.strptime(p["date"], "%Y-%m-%d").month <= q_end_month
+        ]
+    else:
+        # Use all data for full year
+        period_pos = pos
+    
+    # Group by vendor
+    vendor_spend = {}
+    for po in period_pos:
+        vid = po.get("vendor_id")
+        if vid not in vendor_spend:
+            vendor_info = next((v for v in vendors if v["id"] == vid), {})
+            vendor_spend[vid] = {
+                "total": 0, 
+                "count": 0, 
+                "name": po.get("vendor_name", vid),
+                "category": vendor_info.get("category", "Unknown")
+            }
+        vendor_spend[vid]["total"] += po.get("total", 0)
+        vendor_spend[vid]["count"] += 1
+    
+    # Sort by total spend and take top N
+    sorted_vendors = sorted(vendor_spend.items(), key=lambda x: x[1]["total"], reverse=True)[:limit]
+    total_spend = sum(s["total"] for _, s in sorted_vendors)
+    
+    top_vendors = []
+    for rank, (vid, info) in enumerate(sorted_vendors, 1):
+        top_vendors.append({
+            "rank": rank,
+            "vendor_id": vid,
+            "vendor_name": info["name"],
+            "category": info["category"],
+            "total_spend": round(info["total"], 2),
+            "po_count": info["count"],
+            "share_of_spend": f"{info['total']/total_spend*100:.1f}%" if total_spend > 0 else "0%"
+        })
+    
+    return {
+        "period": period,
+        "top_vendors": top_vendors,
+        "total_analyzed_spend": round(total_spend, 2),
+        "currency": "CNY"
+    }
