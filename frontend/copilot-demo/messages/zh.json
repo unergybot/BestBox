@@ -1,0 +1,68 @@
+{
+    "Copilot": {
+        "title": "BestBox AI 助手",
+        "initial": "你好！我是您的 BestBox AI 助手。我可以帮您处理：\n\n• ERP 查询（发票、库存、供应商）\n• 系统信息\n• 演示场景\n\n试着问我：'系统状态如何？' 或 '显示未付发票'"
+    },
+    "Home": {
+        "title": "BestBox 企业级智能体演示",
+        "subtitle": "基于本地大模型的 AI 驱动 ERP/CRM/OA 助手",
+        "systemStatus": {
+            "title": "系统状态",
+            "model": "模型",
+            "backend": "后端",
+            "status": "状态",
+            "operational": "运行正常"
+        },
+        "scenarios": {
+            "title": "演示场景",
+            "erp": {
+                "title": "🏢 ERP 助手",
+                "desc": "发票处理，库存检查，财务报告",
+                "queries": "ERP 助手示例查询"
+            },
+            "crm": {
+                "title": "📊 CRM 助理",
+                "desc": "潜在客户资格审查，报价生成，商机跟踪",
+                "queries": "CRM 助理示例查询"
+            },
+            "itops": {
+                "title": "🔧 IT 运维代理",
+                "desc": "工单路由，知识库搜索，自动诊断",
+                "queries": "IT 运维代理示例查询"
+            },
+            "oa": {
+                "title": "📝 OA 工作流",
+                "desc": "休假审批，会议安排，文档工作流",
+                "queries": "OA 工作流示例查询"
+            }
+        },
+        "footer": {
+            "poweredBy": "Powered by Qwen2.5-14B-Instruct + llama.cpp + CopilotKit",
+            "specs": "AMD Ryzen AI Max+ 395 • ROCm 7.2.0 • 128GB RAM • Ubuntu 24.04"
+        },
+        "tip": "💡 使用右侧的聊天窗口与 AI 助手互动",
+        "sampleQueries": {
+            "erp": [
+                "显示所有未付发票",
+                "我们目前的库存状况如何？",
+                "我们最大的供应商是谁？",
+                "给我第四季度的财务摘要"
+            ],
+            "crm": [
+                "这周我应该关注哪些潜在客户？",
+                "为 Acme Corp 生成报价",
+                "商机 #245 的状态如何？"
+            ],
+            "itops": [
+                "为什么服务器 prod-db-01 很慢？",
+                "显示活动警报",
+                "在知识库中搜索 VPN 问题"
+            ],
+            "oa": [
+                "起草一份预算申请的批准邮件",
+                "安排下周二的团队会议",
+                "生成休假申请表"
+            ]
+        }
+    }
+}

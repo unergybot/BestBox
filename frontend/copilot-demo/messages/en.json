@@ -1,0 +1,68 @@
+{
+    "Copilot": {
+        "title": "BestBox AI Assistant",
+        "initial": "Hello! I'm your BestBox AI assistant. I can help you with:\n\n• ERP queries (invoices, inventory, vendors)\n• System information\n• Demo scenarios\n\nTry asking: 'What's the system status?' or 'Show me unpaid invoices'"
+    },
+    "Home": {
+        "title": "BestBox Enterprise Agentic Demo",
+        "subtitle": "AI-Powered ERP/CRM/OA Assistant with Local LLM",
+        "systemStatus": {
+            "title": "System Status",
+            "model": "Model",
+            "backend": "Backend",
+            "status": "Status",
+            "operational": "Operational"
+        },
+        "scenarios": {
+            "title": "Demo Scenarios",
+            "erp": {
+                "title": "🏢 ERP Copilot",
+                "desc": "Invoice processing, inventory checks, financial reporting",
+                "queries": "ERP Copilot Sample Queries"
+            },
+            "crm": {
+                "title": "📊 CRM Assistant",
+                "desc": "Lead qualification, quotation generation, opportunity tracking",
+                "queries": "CRM Assistant Sample Queries"
+            },
+            "itops": {
+                "title": "🔧 IT Ops Agent",
+                "desc": "Ticket routing, knowledge base search, automated diagnostics",
+                "queries": "IT Ops Agent Sample Queries"
+            },
+            "oa": {
+                "title": "📝 OA Workflow",
+                "desc": "Leave approvals, meeting scheduling, document workflows",
+                "queries": "OA Workflow Sample Queries"
+            }
+        },
+        "footer": {
+            "poweredBy": "Powered by Qwen2.5-14B-Instruct + llama.cpp + CopilotKit",
+            "specs": "AMD Ryzen AI Max+ 395 • ROCm 7.2.0 • 128GB RAM • Ubuntu 24.04"
+        },
+        "tip": "💡 Use the chat on the right to interact with the AI assistant",
+        "sampleQueries": {
+            "erp": [
+                "Show me all unpaid invoices",
+                "What's our current inventory status?",
+                "Who are our top vendors?",
+                "Give me Q4 financial summary"
+            ],
+            "crm": [
+                "Which leads should I focus on this week?",
+                "Generate a quote for Acme Corp",
+                "What's the status of opportunity #245?"
+            ],
+            "itops": [
+                "Why is server prod-db-01 slow?",
+                "Show me active alerts",
+                "Search knowledge base for VPN issues"
+            ],
+            "oa": [
+                "Draft an approval email for budget request",
+                "Schedule a team meeting next Tuesday",
+                "Generate leave request form"
+            ]
+        }
+    }
+}
