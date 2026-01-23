@@ -5,15 +5,18 @@ from tools.erp_tools import (
     get_purchase_orders,
     get_inventory_levels,
     get_financial_summary,
-    get_vendor_price_trends
+    get_vendor_price_trends,
+    get_procurement_summary
 )
 
 ERP_TOOLS = [
     get_purchase_orders,
     get_inventory_levels,
     get_financial_summary,
-    get_vendor_price_trends
+    get_vendor_price_trends,
+    get_procurement_summary
 ]
+
 
 ERP_SYSTEM_PROMPT = """You are the ERP Copilot.
 You assist with finance, procurement, inventory, and vendor management.

@@ -6,56 +6,43 @@ import {
 import { NextRequest } from "next/server";
 import { ChatOpenAI } from "@langchain/openai";
 
-// Agent API URL - our LangGraph agent system
-const AGENT_API_URL = "http://127.0.0.1:8000/v1/chat/completions";
+// Agent API URL - our LangGraph agent system (PRIMARY endpoint for all queries)
+const AGENT_API_URL = process.env.AGENT_API_URL || "http://127.0.0.1:8000";
+console.log("CopilotKit Agent API URL:", AGENT_API_URL);
 
-// LLM base URL for llama-server
-const LLM_BASE_URL = process.env.OPENAI_BASE_URL || "http://127.0.0.1:8080/v1";
-console.log("CopilotKit LLM baseURL:", LLM_BASE_URL);
-
-// Create LangChain ChatOpenAI model pointing to local llama-server
-// This uses the standard /v1/chat/completions endpoint (not /v1/responses)
+// Create LangChain ChatOpenAI model pointing to our Agent API
+// This routes through our LangGraph system which handles agent routing and tools
 const model = new ChatOpenAI({
-  modelName: "qwen2.5-14b",
+  modelName: "bestbox-agent",
   temperature: 0.7,
   configuration: {
-    baseURL: LLM_BASE_URL,
-    apiKey: process.env.OPENAI_API_KEY || "not-needed",
+    baseURL: `${AGENT_API_URL}/v1`,  // Points to our agent API, not llama-server
+    apiKey: "not-needed",
   },
 });
 
-// Use LangChainAdapter which properly handles local OpenAI-compatible servers
-// It uses LangChain's ChatOpenAI which calls /v1/chat/completions
+// Use LangChainAdapter with our agent API
 const serviceAdapter = new LangChainAdapter({
   chainFn: async ({ messages, tools }) => {
-    // Filter out messages with undefined content and ensure all have proper format
-    const validMessages = messages
-      .map(m => {
-        // If message has undefined/null content, set it to empty string
-        if (m.content === undefined || m.content === null) {
-          return { ...m, content: "" };
-        }
-        return m;
-      })
-      .filter(m => {
-        // After normalizing, skip messages with truly empty content unless they have tool_calls
-        if (typeof m.content === 'string' && m.content.trim() === '') {
-          // Keep the message if it has tool_calls (for tool use messages)
-          return !!(m as any).tool_calls || !!(m as any).tool_call_id;
-        }
-        return true;
-      });
+    // Normalize messages - ensure all have content defined
+    const validMessages = messages.map(m => {
+      // If message has undefined/null content, set it to empty string
+      if (m.content === undefined || m.content === null) {
+        return { ...m, content: "" };
+      }
+      return m;
+    });
 
     // Ensure we have at least one message
     if (validMessages.length === 0) {
-      // Return a simple message if no valid messages
       return model.stream([{ role: "user", content: "Hello" } as any]);
     }
 
-    // Helper to ensure chunks have content
+    // Helper to ensure chunks have content (never undefined)
     async function* safeStream(streamPromise: Promise<any>) {
       const stream = await streamPromise;
       for await (const chunk of stream) {
+        // Ensure content is always defined
         if (chunk.content === undefined || chunk.content === null) {
           chunk.content = "";
         }
@@ -63,27 +50,27 @@ const serviceAdapter = new LangChainAdapter({
       }
     }
 
-    // If tools are available, bind them to the model
-    if (tools && tools.length > 0) {
-      return safeStream(model.bindTools(tools).stream(validMessages)) as any;
-    }
-    // Otherwise just stream the messages
+    // Stream messages through our agent API (which handles tools internally)
+    // We don't bind tools here - our LangGraph agents have their own tools
     return safeStream(model.stream(validMessages)) as any;
   },
 }) as LangChainAdapter & { provider: string; model: string };
 
-// Add provider and model properties required by CopilotKit's BuiltInAgent
-// This prevents the "Unknown provider undefined" error
+// Add provider and model properties required by CopilotKit
 serviceAdapter.provider = "openai";
-serviceAdapter.model = "qwen2.5-14b";
+serviceAdapter.model = "bestbox-agent";
 
+// Direct API call function for explicit agent queries
 async function callAgentApi(messages: any[]): Promise<string> {
   try {
-    const response = await fetch(AGENT_API_URL, {
+    const response = await fetch(`${AGENT_API_URL}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        messages: messages.map((m: any) => ({ role: m.role, content: m.content })),
+        messages: messages.map((m: any) => ({
+          role: m.role,
+          content: m.content || ""  // Ensure content is never undefined
+        })),
       }),
     });
 
@@ -102,22 +89,6 @@ async function callAgentApi(messages: any[]): Promise<string> {
 
 const runtime = new CopilotRuntime({
   actions: [
-    {
-      name: "query_bestbox_agent",
-      description: "Send a query to the BestBox LangGraph agent for ERP, CRM, IT Ops, or OA tasks. Use this for complex business queries that need agent routing.",
-      parameters: [
-        {
-          name: "query",
-          type: "string",
-          description: "The user's query or task for the agent system",
-          required: true,
-        },
-      ],
-      handler: async ({ query }: { query: string }) => {
-        const messages = [{ role: "user", content: query }];
-        return await callAgentApi(messages);
-      },
-    },
     {
       name: "get_system_info",
       description: "Get information about the BestBox system",

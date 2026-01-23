@@ -21,7 +21,9 @@ app = FastAPI(title="BestBox Agent API")
 
 class ChatMessage(BaseModel):
     role: str
-    content: Union[str, List[Dict[str, Any]]]  # Support both string and array format
+    content: Optional[Union[str, List[Dict[str, Any]]]] = None  # Support both string and array format, optional
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    name: Optional[str] = None
 
 class ChatRequest(BaseModel):
     messages: Optional[List[ChatMessage]] = None  # OpenAI format
@@ -79,10 +81,10 @@ async def chat_completion_stream(request: ChatRequest):
                 for item in request.input:
                     if isinstance(item, dict) and "role" in item:
                         content = item.get("content", "")
-                        messages_to_process.append(ChatMessage(
-                            role=item["role"],
-                            content=content
-                        ))
+                        msg = ChatMessage(role=item["role"], content=content)
+                        if "tool_calls" in item:
+                            msg.tool_calls = item["tool_calls"]
+                        messages_to_process.append(msg)
             
             if not messages_to_process:
                 yield f"data: {json.dumps({'error': 'No messages provided'})}\n\n"
@@ -91,12 +93,13 @@ async def chat_completion_stream(request: ChatRequest):
             # Convert to LangChain messages
             lc_messages = []
             for msg in messages_to_process:
-                content_text = parse_message_content(msg.content)
+                content_text = parse_message_content(msg.content) if msg.content is not None else ""
                 
                 if msg.role == "user":
                     lc_messages.append(HumanMessage(content=content_text))
                 elif msg.role == "assistant":
-                    lc_messages.append(AIMessage(content=content_text))
+                    tool_calls = msg.tool_calls or []
+                    lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
                 elif msg.role == "system":
                     lc_messages.append(SystemMessage(content=content_text))
             
@@ -115,6 +118,10 @@ async def chat_completion_stream(request: ChatRequest):
             last_msg = result["messages"][-1]
             content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
             
+            # Ensure content is never undefined - always a string
+            if content is None:
+                content = ""
+            
             # Stream the content as chunks
             chunk_id = f"chatcmpl-{int(time.time())}"
             
@@ -128,7 +135,7 @@ async def chat_completion_stream(request: ChatRequest):
                     "index": 0,
                     "delta": {
                         "role": "assistant",
-                        "content": content or ""
+                        "content": content  # Always a string now
                     },
                     "finish_reason": None
                 }]
@@ -152,10 +159,26 @@ async def chat_completion_stream(request: ChatRequest):
             
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            error_chunk = {"error": str(e)}
+            # Return an error message as content so frontend doesn't crash
+            error_chunk = {
+                "id": f"chatcmpl-{int(time.time())}",
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": request.model or "bestbox-agent",
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "content": f"Error: {str(e)}"
+                    },
+                    "finish_reason": "stop"
+                }]
+            }
             yield f"data: {json.dumps(error_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
+
 
 def parse_message_content(content: Union[str, List[Dict[str, Any]]]) -> str:
     """Parse message content from either string or array format"""
@@ -180,6 +203,12 @@ async def chat_completion(request: ChatRequest):
     OpenAI-compatible endpoint supporting both standard and CopilotKit formats.
     Handles both 'messages' (OpenAI) and 'input' (CopilotKit) fields.
     """
+    # Debug logging
+    try:
+        logger.info(f"Incoming Request: {request.model_dump_json(exclude={'input'})}")
+    except:
+        pass
+
     # Normalize input to messages format
     messages_to_process = []
     
@@ -191,24 +220,29 @@ async def chat_completion(request: ChatRequest):
         for item in request.input:
             if isinstance(item, dict) and "role" in item:
                 content = item.get("content", "")
-                messages_to_process.append(ChatMessage(
-                    role=item["role"],
-                    content=content
-                ))
+                msg = ChatMessage(role=item["role"], content=content)
+                if "tool_calls" in item:
+                    msg.tool_calls = item["tool_calls"]
+                messages_to_process.append(msg)
     else:
         raise HTTPException(status_code=422, detail="Either 'messages' or 'input' field is required")
     
     # Convert to LangChain messages
     lc_messages = []
     for msg in messages_to_process:
-        content_text = parse_message_content(msg.content)
+        content_text = parse_message_content(msg.content) if msg.content is not None else ""
         
         if msg.role == "user":
             lc_messages.append(HumanMessage(content=content_text))
         elif msg.role == "assistant":
-            lc_messages.append(AIMessage(content=content_text))
+            # Handle tool calls in history
+            tool_calls = msg.tool_calls or []
+            lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
         elif msg.role == "system":
             lc_messages.append(SystemMessage(content=content_text))
+        elif msg.role == "tool":
+            # Handle tool outputs if needed, but for now we skip complex reconstruction
+            pass
             
     if not lc_messages:
         raise HTTPException(status_code=422, detail="No valid messages to process")
@@ -231,6 +265,20 @@ async def chat_completion(request: ChatRequest):
         last_msg = result["messages"][-1]
         current_agent = result.get("current_agent", "unknown")
         
+        content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+        tool_calls = last_msg.tool_calls if hasattr(last_msg, 'tool_calls') else None
+        
+        # Build message dict
+        message_dict = {
+            "role": "assistant",
+            "content": content or ""  # Ensure empty string if None, unless tool_calls
+        }
+        
+        if tool_calls:
+            message_dict["tool_calls"] = tool_calls
+            if not content:
+                message_dict["content"] = None
+        
         # Return OpenAI-compatible response format
         import time
         response = {
@@ -241,11 +289,8 @@ async def chat_completion(request: ChatRequest):
             "choices": [
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": (last_msg.content if hasattr(last_msg, 'content') else str(last_msg)) or ""
-                    },
-                    "finish_reason": "stop"
+                    "message": message_dict,
+                    "finish_reason": "tool_calls" if tool_calls else "stop"
                 }
             ],
             "usage": {
@@ -253,14 +298,29 @@ async def chat_completion(request: ChatRequest):
                 "completion_tokens": 0,
                 "total_tokens": 0
             },
-            "agent": current_agent  # Custom field for debugging
+            "agent": current_agent
         }
         
         logger.info(f"Returning response from agent: {current_agent}")
         return response
     except Exception as e:
         logger.error(f"Agent execution failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return a polite error message instead of 500 crashes
+        import time
+        return {
+            "id": f"chatcmpl-{int(time.time())}",
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": request.model or "bestbox-agent", 
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant", 
+                    "content": f"I encountered an error processing your request: {str(e)}",
+                },
+                "finish_reason": "stop"
+            }]
+        }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)

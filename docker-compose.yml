@@ -60,6 +60,54 @@ services:
       timeout: 10s
       retries: 3
 
+  # ==========================================================
+  # ERPNext Services (Manufacturing Demo)
+  # ==========================================================
+
+  # MariaDB for ERPNext (required, ERPNext doesn't support PostgreSQL)
+  mariadb:
+    image: mariadb:10.6
+    container_name: bestbox-mariadb
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: erpnext
+      MYSQL_USER: erpnext
+      MYSQL_PASSWORD: erpnext
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-padmin" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # ERPNext Application (v16 stable)
+  erpnext:
+    image: frappe/erpnext:v16
+    container_name: bestbox-erpnext
+    ports:
+      - "8002:8000"
+    environment:
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - REDIS_CACHE=redis://redis:6379
+      - REDIS_QUEUE=redis://redis:6379
+      - SOCKETIO_PORT=9000
+      - SITE_NAME=bestbox.local
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   qdrant-data:
     name: bestbox-qdrant-data
@@ -67,6 +115,12 @@ volumes:
     name: bestbox-postgres-data
   redis-data:
     name: bestbox-redis-data
+  mariadb-data:
+    name: bestbox-mariadb-data
+  erpnext-sites:
+    name: bestbox-erpnext-sites
+  erpnext-logs:
+    name: bestbox-erpnext-logs
 
 # Note: LLM server (llama-server) runs natively for GPU access
 # Use scripts/start-llm.sh for Vulkan backend

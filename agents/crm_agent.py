@@ -5,10 +5,12 @@ from tools.crm_tools import (
     get_leads,
     predict_churn,
     get_customer_360,
-    generate_quote
+    generate_quote,
+    get_high_churn_customers
 )
 
-CRM_TOOLS = [get_leads, predict_churn, get_customer_360, generate_quote]
+CRM_TOOLS = [get_leads, predict_churn, get_customer_360, generate_quote, get_high_churn_customers]
+
 
 CRM_SYSTEM_PROMPT = """You are the CRM Sales Assistant.
 You assist with leads, opportunities, customer data, and sales churn prediction.

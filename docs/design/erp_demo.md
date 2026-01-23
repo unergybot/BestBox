@@ -71,3 +71,8 @@ Once you've set up the ERPNext repo, the next steps involve integrating your AI 
 * **AI Libraries**: Depending on the AI functionality, integrate libraries like `transformers`, `TensorFlow`, `PyTorch`, or APIs like OpenAI GPT-3/4.
 
 If you need specific guidance on integrating an AI model, I can help you set that up. Would you like help on designing the architecture or how the AI agent could work with ERPNext’s workflow?
+
+---
+Have forked the repo, and git down the develop branch (https://github.com/unergybot/erpnext.git), saved it at local folder /home/unergy/MyCode/erpnext. It seems very big, 1.3G.
+
+After build the docker container, should prepare the demo data. And the demo data should be able to demonstrate the AI agent's capability. 
