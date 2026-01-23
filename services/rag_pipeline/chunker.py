@@ -4,7 +4,7 @@ This module provides functionality to split documents into fixed-size chunks
 with overlap for optimal retrieval in RAG systems.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import tiktoken
 
@@ -43,11 +43,15 @@ class TextChunker:
         # Use cl100k_base encoding (same as GPT-3.5/GPT-4)
         self.encoding = tiktoken.get_encoding("cl100k_base")
 
-    def chunk_text(self, text: str) -> List[Dict[str, Any]]:
+    def chunk_text(
+        self, text: str, section: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """Split text into chunks with overlap.
 
         Args:
             text: Input text to chunk
+            section: Optional section header/title for this text. When provided,
+                all chunks will include this section information in their metadata.
 
         Returns:
             List of chunk dictionaries with structure:
@@ -56,7 +60,8 @@ class TextChunker:
                 "chunk_id": int,       # Sequential chunk ID (0-indexed)
                 "start_char": int,     # Start character position in original text
                 "end_char": int,       # End character position in original text
-                "token_count": int     # Number of tokens in this chunk
+                "token_count": int,    # Number of tokens in this chunk
+                "section": Optional[str]  # Section header if provided
             }
 
         Examples:
@@ -64,6 +69,9 @@ class TextChunker:
             >>> chunks = chunker.chunk_text("Long document text...")
             >>> print(chunks[0]["token_count"])
             512
+            >>> chunks = chunker.chunk_text("Section text...", section="Introduction")
+            >>> print(chunks[0]["section"])
+            'Introduction'
         """
         # Handle empty text
         if not text or not text.strip():
@@ -80,7 +88,8 @@ class TextChunker:
                 "chunk_id": 0,
                 "start_char": 0,
                 "end_char": len(text),
-                "token_count": total_tokens
+                "token_count": total_tokens,
+                "section": section
             }]
 
         chunks = []
@@ -111,7 +120,8 @@ class TextChunker:
                 "chunk_id": chunk_id,
                 "start_char": start_char,
                 "end_char": end_char,
-                "token_count": len(chunk_tokens)
+                "token_count": len(chunk_tokens),
+                "section": section
             })
 
             # Move to next chunk position

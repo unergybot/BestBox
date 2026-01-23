@@ -103,3 +103,39 @@ def test_very_long_text():
     # Verify sequential chunk IDs
     for i, chunk in enumerate(chunks):
         assert chunk["chunk_id"] == i, f"Chunk ID mismatch at position {i}"
+
+
+def test_section_preservation():
+    """Test that section information is preserved in chunk metadata."""
+    # Create sample text with multiple chunks
+    sample_text = " ".join([
+        f"This is sentence number {i} in the Introduction section. "
+        f"It contains some information about testing the chunking functionality. "
+        f"We need to ensure that the chunker properly preserves section metadata. "
+        for i in range(50)
+    ])
+
+    # Test with section provided
+    chunker = TextChunker(chunk_size=512, overlap_percentage=0.2)
+    chunks_with_section = chunker.chunk_text(sample_text, section="Introduction")
+
+    assert len(chunks_with_section) > 0, "Should create at least one chunk"
+
+    # Verify all chunks have the section field
+    for chunk in chunks_with_section:
+        assert "section" in chunk, "Chunk should have 'section' field"
+        assert chunk["section"] == "Introduction", f"Chunk {chunk['chunk_id']} section should be 'Introduction'"
+
+    # Test without section (should still have field but set to None)
+    chunks_without_section = chunker.chunk_text(sample_text)
+
+    for chunk in chunks_without_section:
+        assert "section" in chunk, "Chunk should have 'section' field even when not provided"
+        assert chunk["section"] is None, f"Chunk {chunk['chunk_id']} section should be None"
+
+    # Test with different section names
+    test_sections = ["Abstract", "Methods", "Results", "Conclusion"]
+    for section_name in test_sections:
+        chunks = chunker.chunk_text(sample_text[:500], section=section_name)
+        assert all(chunk["section"] == section_name for chunk in chunks), \
+            f"All chunks should have section '{section_name}'"
