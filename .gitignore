@@ -180,7 +180,8 @@ models/
 *.ipynb
 
 # Data
-data/
+data/*
+!data/demo_docs/
 
 # Logs
 logs/
