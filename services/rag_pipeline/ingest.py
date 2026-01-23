@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from docling.document_converter import DocumentConverter
 
@@ -18,7 +18,7 @@ class DocumentIngester:
 
     def ingest_document(
         self, doc_path: Path, domain: Optional[str] = None
-    ) -> Optional[Dict[str, any]]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Ingest a document and extract text with metadata.
 
