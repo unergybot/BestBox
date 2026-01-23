@@ -95,6 +95,7 @@ class TextChunker:
         chunks = []
         chunk_id = 0
         start_token_idx = 0
+        current_char_pos = 0
 
         # Calculate step size (chunk_size - overlap)
         step_size = self.chunk_size - self.overlap_tokens
@@ -109,10 +110,11 @@ class TextChunker:
             # Decode tokens back to text
             chunk_text = self.encoding.decode(chunk_tokens)
 
-            # Find character positions in original text
-            # We need to decode from start to get accurate character positions
-            start_char = len(self.encoding.decode(tokens[:start_token_idx]))
-            end_char = len(self.encoding.decode(tokens[:end_token_idx]))
+            # Calculate character positions incrementally
+            # For the first chunk, start_char is 0 (already set by current_char_pos)
+            # For subsequent chunks, we need to account for overlap
+            start_char = current_char_pos
+            end_char = current_char_pos + len(chunk_text)
 
             # Create chunk dictionary
             chunks.append({
@@ -123,6 +125,16 @@ class TextChunker:
                 "token_count": len(chunk_tokens),
                 "section": section
             })
+
+            # Update character position for next chunk
+            # Only advance by the non-overlapping portion (step_size tokens)
+            if start_token_idx + step_size < total_tokens:
+                # Decode the step_size tokens to find how many chars to advance
+                step_tokens = tokens[start_token_idx:start_token_idx + step_size]
+                current_char_pos += len(self.encoding.decode(step_tokens))
+            else:
+                # Last chunk, no need to update position
+                current_char_pos = end_char
 
             # Move to next chunk position
             start_token_idx += step_size
