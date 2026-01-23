@@ -6,7 +6,6 @@ from agents.erp_agent import erp_agent_node, ERP_TOOLS
 from agents.crm_agent import crm_agent_node, CRM_TOOLS
 from agents.it_ops_agent import it_ops_agent_node, IT_OPS_TOOLS
 from agents.oa_agent import oa_agent_node, OA_TOOLS
-from tools.rag_tools import search_knowledge_base
 from langchain_core.messages import AIMessage
 
 # Combine all tools for the tool node
