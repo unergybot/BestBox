@@ -3,6 +3,7 @@
 import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
+import { ServiceStatusCard } from "@/components/ServiceStatusCard";
 import "@copilotkit/react-ui/styles.css";
 import { useState } from "react";
 import { useTranslations, useLocale } from "next-intl";
@@ -48,32 +49,8 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* System Info Card */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <h2 className="text-2xl font-semibold mb-4 text-gray-800">
-            {t("systemStatus.title")}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-              <div className="text-sm text-green-600 font-medium">{t("systemStatus.model")}</div>
-              <div className="text-lg font-bold text-gray-900">
-                Qwen2.5-14B-Instruct
-              </div>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-              <div className="text-sm text-blue-600 font-medium">{t("systemStatus.backend")}</div>
-              <div className="text-lg font-bold text-gray-900">
-                llama.cpp (CPU)
-              </div>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-              <div className="text-sm text-purple-600 font-medium">{t("systemStatus.status")}</div>
-              <div className="text-lg font-bold text-green-600">
-                ✓ {t("systemStatus.operational")}
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Service Health Status */}
+        <ServiceStatusCard />
 
         {/* Demo Scenarios */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
