@@ -36,12 +36,12 @@ cd "$PROJECT_ROOT"
 # Default configuration
 export S2S_HOST="${S2S_HOST:-0.0.0.0}"
 export ASR_MODEL="${ASR_MODEL:-Systran/faster-distil-whisper-large-v3}"
-export ASR_DEVICE="${ASR_DEVICE:-cpu}"
+export ASR_DEVICE="cpu"
 export ASR_LANGUAGE="${ASR_LANGUAGE:-zh}"
 export TTS_MODEL="${TTS_MODEL:-piper}"
 export TTS_GPU="${TTS_GPU:-false}"
 export TTS_LANGUAGE="${TTS_LANGUAGE:-zh-cn}"
-export S2S_ENABLE_TTS="${S2S_ENABLE_TTS:-false}"  # Disabled by default to prevent startup hang
+export S2S_ENABLE_TTS="${S2S_ENABLE_TTS:-true}"  # Enabled by default
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do

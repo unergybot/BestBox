@@ -27,7 +27,7 @@ cd "${PROJECT_DIR}/services/embeddings"
 pip install -q fastapi uvicorn sentence-transformers
 
 # Start the service
-nohup uvicorn main:app --host 127.0.0.1 --port 8081 > embeddings.log 2>&1 &
+nohup uvicorn main:app --host 0.0.0.0 --port 8081 > embeddings.log 2>&1 &
 
 echo "⏳ Waiting for model to load (this may take 30-60 seconds)..."
 sleep 10

@@ -42,7 +42,7 @@ export interface UseServiceHealthOptions {
 }
 
 const DEFAULT_POLL_INTERVAL = 10000; // 10 seconds
-const DEFAULT_TIMEOUT = 2000; // 2 seconds
+const DEFAULT_TIMEOUT = 5000; // 5 seconds
 
 // Get base URL for API calls
 const getBaseUrl = () => {
@@ -55,12 +55,13 @@ const getBaseUrl = () => {
 };
 
 // Service endpoint configurations
+// Service endpoint configurations
 const SERVICE_ENDPOINTS = {
-  llm: { port: 8080, path: '/health', name: 'LLM (Qwen2.5-14B)' },
-  embeddings: { port: 8081, path: '/health', name: 'Embeddings (BGE-M3)' },
-  reranker: { port: 8082, path: '/health', name: 'Reranker (BGE-reranker)' },
-  s2s: { port: 8765, path: '/health', name: 'S2S Gateway' },
-  qdrant: { port: 6333, path: '/healthz', name: 'Qdrant Vector Store' },
+  llm: { path: '/api/proxy/llm/health', name: 'LLM (Qwen2.5-14B)' },
+  embeddings: { path: '/api/proxy/embeddings/health', name: 'Embeddings (BGE-M3)' },
+  reranker: { path: '/api/proxy/reranker/health', name: 'Reranker (BGE-reranker)' },
+  s2s: { path: '/api/proxy/s2s/health', name: 'S2S Gateway' },
+  qdrant: { path: '/api/proxy/qdrant/healthz', name: 'Qdrant Vector Store' },
 } as const;
 
 type ServiceKey = keyof typeof SERVICE_ENDPOINTS;
@@ -103,8 +104,8 @@ export function useServiceHealth(options: UseServiceHealthOptions = {}): {
    */
   const checkServiceHealth = async (key: ServiceKey): Promise<ServiceHealth> => {
     const endpoint = SERVICE_ENDPOINTS[key];
-    const baseUrl = getBaseUrl();
-    const url = `${baseUrl}:${endpoint.port}${endpoint.path}`;
+    // Use proxy path relative to current origin
+    const url = endpoint.path;
     const startTime = Date.now();
 
     try {
@@ -114,6 +115,7 @@ export function useServiceHealth(options: UseServiceHealthOptions = {}): {
       const response = await fetch(url, {
         method: 'GET',
         signal: controller.signal,
+        cache: 'no-store',
       });
 
       clearTimeout(timeoutId);
@@ -130,25 +132,26 @@ export function useServiceHealth(options: UseServiceHealthOptions = {}): {
       }
 
       // Parse response to get detailed status
-      let data;
+      const responseText = await response.text();
+      let data: any = {};
+
       try {
-        data = await response.json();
-      } catch {
-        // Qdrant /healthz returns plain text "healthz check passed"
-        if (key === 'qdrant') {
-          const text = await response.text();
-          if (text.includes('healthz check passed')) {
-            return {
-              name: endpoint.name,
-              status: 'healthy',
-              details: `${latency}ms`,
-              latency,
-              timestamp: Date.now(),
-            };
-          }
+        if (responseText) {
+          data = JSON.parse(responseText);
         }
-        // For other services, assume healthy if JSON parsing fails but status is 200
-        data = {};
+      } catch {
+        // Ignore JSON parse errors
+      }
+
+      // Qdrant /healthz returns plain text "healthz check passed"
+      if (key === 'qdrant' && responseText.includes('healthz check passed')) {
+        return {
+          name: endpoint.name,
+          status: 'healthy',
+          details: `${latency}ms`,
+          latency,
+          timestamp: Date.now(),
+        };
       }
 
       // S2S specific: check TTS status

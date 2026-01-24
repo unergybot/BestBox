@@ -384,3 +384,17 @@ For questions or issues, refer to the documentation or contact the BestBox devel
   python scripts/seed_knowledge_base.py  # If not already seeded                
                                                                                 
   The RAG pipeline implementation is complete and merged! 🎉    
+
+### Kill old service processes                                                  
+
+  pkill -9 -f "services.embeddings.main"                                        
+  pkill -9 -f "services.agent_api"                                              
+  pkill -9 -f "reranker.py" 
+
+### Restart all services                                                        
+  cd ~/BestBox                                                                  
+  ./scripts/start-all-services.sh                                               
+                                                                                
+### In another terminal, start frontend                                         
+  cd ~/BestBox/frontend/copilot-demo                                            
+  npm run dev      

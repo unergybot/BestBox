@@ -59,7 +59,7 @@ class S2SConfig:
     
     # ASR config
     asr_model: str = "large-v3"
-    asr_device: str = "cuda"
+    asr_device: str = "cpu"
     asr_language: str = "zh"
     
     # TTS config
@@ -83,7 +83,7 @@ def load_config() -> S2SConfig:
         host=os.environ.get("S2S_HOST", "0.0.0.0"),
         port=int(os.environ.get("S2S_PORT", "8765")),
         asr_model=os.environ.get("ASR_MODEL", "large-v3"),
-        asr_device=os.environ.get("ASR_DEVICE", "cuda"),
+        asr_device="cpu",  # HARDCODED: Enforce CPU to avoid driver mismatch
         asr_language=os.environ.get("ASR_LANGUAGE", "zh"),
         tts_model=os.environ.get("TTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"),
         tts_gpu=os.environ.get("TTS_GPU", "true").lower() == "true",
@@ -113,6 +113,7 @@ class S2SSession:
     
     # Settings
     language: str = "zh"
+    max_history_turns: int = 4  # Keep only last 4 turns to prevent context overflow
     
     def touch(self):
         """Update last activity time."""
@@ -121,12 +122,26 @@ class S2SSession:
     def add_user_message(self, text: str):
         """Add user message to history."""
         self.messages.append({"role": "user", "content": text})
+        self._trim_history()
         self.touch()
     
     def add_assistant_message(self, text: str):
         """Add assistant message to history."""
         self.messages.append({"role": "assistant", "content": text})
+        self._trim_history()
         self.touch()
+    
+    def _trim_history(self):
+        """Trim history to prevent context overflow."""
+        # Keep only the last N turns (2 messages per turn: user + assistant)
+        max_messages = self.max_history_turns * 2
+        if len(self.messages) > max_messages:
+            # Keep the most recent messages
+            self.messages = self.messages[-max_messages:]
+    
+    def clear_history(self):
+        """Clear conversation history."""
+        self.messages.clear()
     
     def get_langchain_messages(self):
         """Convert to LangChain message format."""

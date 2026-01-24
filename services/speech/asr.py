@@ -45,6 +45,7 @@ class StreamingASR:
         self.last_partial_time: float = 0
         self.is_speaking: bool = False
         self.speech_start_time: float = 0
+        self._last_emit: float = 0  # Track last partial emission time
         
         # Statistics
         self.total_audio_ms: float = 0
@@ -67,6 +68,20 @@ class StreamingASR:
             except ImportError:
                 logger.error("faster-whisper not installed. Run: pip install faster-whisper")
                 raise
+            except Exception as e:
+                logger.warning(f"Failed to load model on {self.config.device}: {e}")
+                if self.config.device != "cpu":
+                    logger.info("Falling back to CPU...")
+                    self.config.device = "cpu"
+                    self.config.compute_type = "int8"
+                    self._model = WhisperModel(
+                        self.config.model_size,
+                        device="cpu",
+                        compute_type="int8"
+                    )
+                    logger.info("Model loaded on CPU (fallback)")
+                else:
+                    raise
         return self._model
     
     @property
@@ -89,6 +104,7 @@ class StreamingASR:
         self.last_partial_time = 0
         self.is_speaking = False
         self.speech_start_time = 0
+        self._last_emit = 0  # Reset partial emission timer
         logger.debug("ASR state reset")
     
     def set_language(self, language: str):
@@ -123,16 +139,19 @@ class StreamingASR:
             
             # Emit partial if enough time passed AND we recently heard speech
             now = time.time()
-            if self.is_speaking and (now - self.last_partial_time < 1.0): # 1s silence timeout for partials
-                 if now - getattr(self, '_last_emit', 0) >= self.config.partial_interval:
-                    text = self._transcribe_buffer()
-                    if text.strip():
-                        result = {
-                            "type": "partial",
-                            "text": text,
-                            "duration_ms": int((now - self.speech_start_time) * 1000)
-                        }
-                    self._last_emit = now
+            time_since_last_emit = now - self._last_emit
+            has_recent_speech = self.is_speaking and (now - self.last_partial_time < 1.0)
+            has_enough_audio = len(self.speech_buffer) >= self.config.sample_rate * 0.5  # At least 0.5s of audio
+            
+            if has_recent_speech and has_enough_audio and time_since_last_emit >= self.config.partial_interval:
+                text = self._transcribe_buffer()
+                if text.strip():
+                    result = {
+                        "type": "partial",
+                        "text": text,
+                        "duration_ms": int((now - self.speech_start_time) * 1000)
+                    }
+                self._last_emit = now
                 
         return result
     

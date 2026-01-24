@@ -8,7 +8,7 @@ import { TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 export function VoiceInput(props: InputProps) {
     const [text, setText] = useState('');
     const locale = useLocale();
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
 
     // key is optional but good practice if multiple chat instances exist, 
     // but here we just want the default context.
@@ -67,10 +67,9 @@ export function VoiceInput(props: InputProps) {
 
                 {/* Text Area */}
                 <div className="flex-grow min-h-[44px] flex items-center">
-                    <input
+                    <textarea
                         ref={inputRef}
-                        type="text"
-                        className="w-full bg-transparent border-none focus:ring-0 p-0 text-gray-900 placeholder-gray-400 resize-none max-h-32"
+                        className="w-full bg-transparent border-none focus:ring-0 p-0 text-gray-900 placeholder-gray-400 resize-none h-24"
                         placeholder="Type a message or use voice..."
                         value={text}
                         onChange={(e) => setText(e.target.value)}

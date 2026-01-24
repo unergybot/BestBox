@@ -18,9 +18,10 @@ services:
       - qdrant-data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__ENABLE_CORS=true
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:6333/healthz" ]
+      test: [ "CMD-SHELL", "bash -c '(echo > /dev/tcp/localhost/6333) >/dev/null 2>&1'" ]
       interval: 30s
       timeout: 10s
       retries: 3
