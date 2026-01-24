@@ -87,6 +87,9 @@ export function useAudioCapture({
   // Request permission
   const requestPermission = useCallback(async (): Promise<boolean> => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone access is not available. Please ensure you are using HTTPS or localhost.');
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
@@ -109,6 +112,10 @@ export function useAudioCapture({
       setError(null);
 
       // Get microphone stream
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone access is not available. Please ensure you are using HTTPS or localhost.');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate,

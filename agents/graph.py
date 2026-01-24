@@ -6,16 +6,24 @@ from agents.erp_agent import erp_agent_node, ERP_TOOLS
 from agents.crm_agent import crm_agent_node, CRM_TOOLS
 from agents.it_ops_agent import it_ops_agent_node, IT_OPS_TOOLS
 from agents.oa_agent import oa_agent_node, OA_TOOLS
+from agents.general_agent import general_agent_node, GENERAL_TOOLS
 from langchain_core.messages import AIMessage, BaseMessage
 
 # Combine all tools for the tool node
-ALL_TOOLS = ERP_TOOLS + CRM_TOOLS + IT_OPS_TOOLS + OA_TOOLS
-tools_node = ToolNode(ALL_TOOLS)
+ALL_TOOLS = ERP_TOOLS + CRM_TOOLS + IT_OPS_TOOLS + OA_TOOLS + GENERAL_TOOLS
+# Remove duplicates (search_knowledge_base is in multiple tool lists)
+seen = set()
+UNIQUE_TOOLS = []
+for tool in ALL_TOOLS:
+    if tool.name not in seen:
+        seen.add(tool.name)
+        UNIQUE_TOOLS.append(tool)
+tools_node = ToolNode(UNIQUE_TOOLS)
 
 def fallback_node(state: AgentState):
-    """Fallback node for unclear intents."""
+    """Fallback node for completely out-of-scope requests."""
     return {
-        "messages": [AIMessage(content="I'm not sure which specialist agent to route this to. Could you please clarify if this is related to ERP, CRM, IT Ops, or Office Automation?")],
+        "messages": [AIMessage(content="I'm sorry, I can only help with enterprise-related tasks like ERP, CRM, IT Operations, and Office Automation. Could you please ask about one of these areas?")],
         "current_agent": "fallback"
     }
 
@@ -44,6 +52,7 @@ workflow.add_node("erp_agent", erp_agent_node)
 workflow.add_node("crm_agent", crm_agent_node)
 workflow.add_node("it_ops_agent", it_ops_agent_node)
 workflow.add_node("oa_agent", oa_agent_node)
+workflow.add_node("general_agent", general_agent_node)
 workflow.add_node("fallback", fallback_node)
 workflow.add_node("tools", tools_node)
 
@@ -59,12 +68,13 @@ workflow.add_conditional_edges(
         "crm_agent": "crm_agent",
         "it_ops_agent": "it_ops_agent",
         "oa_agent": "oa_agent",
+        "general_agent": "general_agent",
         "fallback": "fallback"
     }
 )
 
 # Agent -> Tools or END
-agent_names = ["erp_agent", "crm_agent", "it_ops_agent", "oa_agent"]
+agent_names = ["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "general_agent"]
 for agent in agent_names:
     workflow.add_conditional_edges(
         agent,
@@ -83,7 +93,8 @@ workflow.add_conditional_edges(
         "erp_agent": "erp_agent",
         "crm_agent": "crm_agent",
         "it_ops_agent": "it_ops_agent",
-        "oa_agent": "oa_agent"
+        "oa_agent": "oa_agent",
+        "general_agent": "general_agent"
     }
 )
 

@@ -8,7 +8,7 @@ from agents.utils import get_llm
 
 class RouteDecision(BaseModel):
     """Decision on which agent to route the request to."""
-    destination: Literal["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "fallback"] = Field(
+    destination: Literal["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "general_agent", "fallback"] = Field(
         ..., 
         description="The target agent to handle the user request."
     )
@@ -19,18 +19,29 @@ Your job is to analyze the user's request and route it to the most appropriate s
 
 Available Agents:
 1. **erp_agent**: Handles finance, procurement, inventory, invoices, and vendors.
-   - Keywords: price, cost, spend, invoice, inventory, stock, vendor, procurement, P&L.
+   - Keywords: price, cost, spend, invoice, inventory, stock, vendor, procurement, P&L, financial.
    
 2. **crm_agent**: Handles sales, leads, customers, deals, and opportunities.
    - Keywords: lead, churn, customer, sales, quote, deal, opportunity, revenue pipeline.
    
 3. **it_ops_agent**: Handles system status, servers, logs, alerts, and troubleshooting.
-   - Keywords: server, slow, error, crash, log, alert, diagnosis, failure, maintenance.
+   - Keywords: server, slow, error, crash, log, alert, diagnosis, failure, maintenance, IT.
    
 4. **oa_agent**: Handles office automation, documents, emails, and scheduling.
    - Keywords: email, draft, letter, schedule, meeting, calendar, leave request, approval.
 
-If the request is unclear, out of scope, or conversational (e.g., "hi", "help"), route to 'fallback'.
+5. **general_agent**: Handles general questions, cross-domain queries, knowledge base lookups,
+   greetings, help requests, and questions that span multiple domains.
+   - Use when request doesn't clearly fit one domain
+   - Use for general information requests
+   - Use for conversational messages like "hi", "help", "what can you do?"
+   - Use when user asks about company policies or procedures that span domains
+
+IMPORTANT ROUTING RULES:
+- Prefer general_agent for ambiguous requests rather than fallback
+- Only use fallback if the request is truly out of scope (completely unrelated to enterprise tasks)
+- For greetings ("hi", "hello"), route to general_agent (NOT fallback)
+- For help requests ("help", "what can you do?"), route to general_agent
 """
 
 def router_node(state: AgentState):

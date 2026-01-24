@@ -21,7 +21,7 @@ class ASRConfig:
     model_size: str = "Systran/faster-distil-whisper-large-v3"  # Multilingual + Fast
     device: str = "cpu"         # Force CPU to avoid ROCm/CUDA errors
     compute_type: str = "int8"  # Optimized for CPU speed
-    language: str = "zh"
+    language: str = ""          # Empty string = auto-detect, or "zh", "en", etc.
     sample_rate: int = 16000
     frame_ms: int = 20
     vad_aggressiveness: int = 1
@@ -92,8 +92,9 @@ class StreamingASR:
         logger.debug("ASR state reset")
     
     def set_language(self, language: str):
-        self.config.language = language
-        logger.info(f"ASR language set to: {language}")
+        """Set recognition language. Empty string = auto-detect."""
+        self.config.language = language if language and language != "auto" else ""
+        logger.info(f"ASR language set to: {language if language else 'auto-detect'}")
     
     def feed_audio(self, pcm: np.ndarray) -> Optional[Dict[str, Any]]:
         """Feed audio chunk and return partial result."""
@@ -156,9 +157,13 @@ class StreamingASR:
         
         try:
             start_time = time.time()
-            segments, _ = self.model.transcribe(
+            
+            # Use language=None for auto-detection, or specific language if set
+            language = self.config.language if self.config.language else None
+            
+            segments, info = self.model.transcribe(
                 audio,
-                language=self.config.language,
+                language=language,
                 beam_size=1,
                 vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500)
@@ -167,7 +172,8 @@ class StreamingASR:
             text = " ".join([segment.text for segment in segments])
             
             elapsed = time.time() - start_time
-            logger.info(f"Inference: {elapsed:.3f}s (Audio: {len(audio)/16000:.2f}s) -> '{text[:30]}...'")
+            detected_lang = info.language if hasattr(info, 'language') else 'unknown'
+            logger.info(f"Inference: {elapsed:.3f}s (Audio: {len(audio)/16000:.2f}s, Lang: {detected_lang}) -> '{text[:50]}...'")
             return text.strip()
             
         except Exception as e:

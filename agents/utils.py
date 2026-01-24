@@ -2,10 +2,13 @@ from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 import os
 import httpx
+import logging
 
-# Configuration for local services
-LLM_BASE_URL = "http://127.0.0.1:8080/v1"
-EMBEDDINGS_BASE_URL = "http://127.0.0.1:8081/v1" # OpenAI compatible endpoint if supported, otherwise we might need custom class
+logger = logging.getLogger(__name__)
+
+# Configuration for local services - use environment variables with defaults
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
+EMBEDDINGS_BASE_URL = os.environ.get("EMBEDDINGS_BASE_URL", "http://127.0.0.1:8081/v1")
 
 def get_llm(temperature: float = 0.7):
     """
@@ -13,13 +16,18 @@ def get_llm(temperature: float = 0.7):
 
     Note: The startup script unsets proxy environment variables to ensure local
     services can communicate directly without going through proxies.
+    
+    Environment variables:
+    - LLM_BASE_URL: URL of the LLM server (default: http://127.0.0.1:8080/v1)
     """
+    logger.info(f"Creating LLM client with base_url={LLM_BASE_URL}")
     return ChatOpenAI(
         base_url=LLM_BASE_URL,
         api_key="sk-no-key-required",  # Local server doesn't need real API key
-        model="qwen2.5-14b",
+        model=os.environ.get("LLM_MODEL", "qwen2.5-14b"),
         temperature=temperature,
-        streaming=True
+        streaming=True,
+        request_timeout=60,  # 60 second timeout
     )
 
 class LocalBGEEmbeddings(OpenAIEmbeddings):

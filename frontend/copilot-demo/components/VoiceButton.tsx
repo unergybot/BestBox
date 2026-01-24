@@ -7,7 +7,7 @@
  * with real-time visual feedback.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useS2S } from '@/hooks/useS2S';
 
 interface VoiceButtonProps {
@@ -113,6 +113,9 @@ export function VoiceButton({
 }: VoiceButtonProps) {
   const [fullResponse, setFullResponse] = useState('');
 
+  // Track full response with ref for callbacks
+  const responseRef = useRef('');
+
   const {
     isConnected,
     isListening,
@@ -130,22 +133,26 @@ export function VoiceButton({
     serverUrl,
     language,
     onAsrFinal: (text) => {
+      console.log('VoiceButton: onAsrFinal', text);
       onTranscript?.(text);
     },
     onLlmToken: (token) => {
       onToken?.(token);
     },
     onResponseEnd: () => {
-      onResponse?.(fullResponse);
+      const finalResponse = responseRef.current;
+      console.log('VoiceButton: onResponseEnd', finalResponse);
+      onResponse?.(finalResponse);
     },
     onError: (err) => {
       console.error('S2S Error:', err);
     },
   });
 
-  // Track full response
+  // Track full response and sync ref
   useEffect(() => {
     setFullResponse(currentResponse);
+    responseRef.current = currentResponse;
   }, [currentResponse]);
 
   // Handle button click
@@ -200,9 +207,9 @@ export function VoiceButton({
   // Audio level indicator style
   const levelStyle = isListening
     ? {
-        transform: `scale(${1 + audioLevel * 0.5})`,
-        opacity: 0.3 + audioLevel * 0.7,
-      }
+      transform: `scale(${1 + audioLevel * 0.5})`,
+      opacity: 0.3 + audioLevel * 0.7,
+    }
     : {};
 
   return (
@@ -251,8 +258,8 @@ export function VoiceButton({
             isResponding
               ? '点击停止'
               : isListening
-              ? '点击结束录音'
-              : '点击开始说话'
+                ? '点击结束录音'
+                : '点击开始说话'
           }
         >
           <Icon className={`${iconSizeClasses[size]} text-white`} />
@@ -264,16 +271,15 @@ export function VoiceButton({
         {isResponding
           ? '正在回复...'
           : isListening
-          ? '正在听...'
-          : '点击开始说话'}
+            ? '正在听...'
+            : '点击开始说话'}
       </p>
 
       {/* Connection status indicator */}
       <div className="flex items-center gap-2">
         <div
-          className={`w-2 h-2 rounded-full ${
-            isConnected ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
-          }`}
+          className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
         />
         <span className="text-xs text-gray-400">
           {isConnected ? '已连接' : '未连接'}

@@ -373,6 +373,7 @@ async def speech_to_speech(ws: WebSocket):
         - {"type": "audio_end"}
         - {"type": "interrupt"}
         - {"type": "text_input", "text": "..."}  # Text-only mode
+        - {"type": "ping"}  # Keepalive
     
     Server → Client:
     - JSON: Status and text
@@ -381,6 +382,7 @@ async def speech_to_speech(ws: WebSocket):
         - {"type": "llm_token", "token": "..."}
         - {"type": "response_end"}
         - {"type": "error", "message": "..."}
+        - {"type": "pong"}  # Keepalive response
     - Binary: PCM16 audio chunks (24kHz, mono)
     """
     await ws.accept()
@@ -389,9 +391,25 @@ async def speech_to_speech(ws: WebSocket):
     session = session_manager.create_session()
     logger.info(f"WebSocket connected: {session.session_id}")
     
+    # Send session ready message immediately
+    await ws.send_text(json.dumps({
+        "type": "session_ready",
+        "session_id": session.session_id
+    }))
+    
     try:
         while True:
-            message = await ws.receive()
+            # Use receive with timeout for keepalive checking
+            try:
+                message = await asyncio.wait_for(ws.receive(), timeout=60.0)
+            except asyncio.TimeoutError:
+                # Send keepalive ping
+                try:
+                    await ws.send_text(json.dumps({"type": "ping"}))
+                    session.touch()
+                    continue
+                except:
+                    break  # Connection lost
             
             # Binary audio data
             if "bytes" in message:
@@ -466,7 +484,12 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
         final = await asyncio.to_thread(session.asr.finalize)
         text = final["text"].strip()
         
+        # Reset ASR for next recording immediately
+        session.asr.reset()
+        session._packets = 0  # Reset packet counter
+        
         if text:
+            logger.info(f"ASR final: '{text[:50]}...' ({len(text)} chars)")
             await ws.send_text(json.dumps({
                 "type": "asr_final",
                 "text": text
@@ -477,6 +500,7 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
                 run_agent_and_speak(ws, session, text)
             )
         else:
+            logger.info("ASR final: empty transcript")
             await ws.send_text(json.dumps({
                 "type": "asr_final",
                 "text": ""
@@ -500,6 +524,11 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
         await ws.send_text(json.dumps({
             "type": "interrupted"
         }))
+    
+    elif msg_type == "ping":
+        # Keepalive ping from client
+        session.touch()
+        await ws.send_text(json.dumps({"type": "pong"}))
     
     else:
         logger.warning(f"Unknown message type: {msg_type}")
@@ -534,6 +563,8 @@ async def run_agent_and_speak(ws: WebSocket, session: S2SSession, user_text: str
 
 async def _run_langgraph_agent(ws: WebSocket, session: S2SSession, user_text: str, tts_model: Optional[StreamingTTS]):
     """Run LangGraph agent with streaming."""
+    logger.info(f"Starting LangGraph agent for: '{user_text[:50]}...'")
+    
     # Build inputs
     inputs: AgentState = {
         "messages": session.get_langchain_messages(),
@@ -546,31 +577,62 @@ async def _run_langgraph_agent(ws: WebSocket, session: S2SSession, user_text: st
     }
     
     full_response = ""
+    event_count = 0
     
-    # Stream agent response
-    async for event in agent_app.astream_events(inputs, version="v2"):
-        if not session.is_speaking:
-            # Interrupted
-            break
+    try:
+        # Stream agent response
+        async for event in agent_app.astream_events(inputs, version="v2"):
+            event_count += 1
+            if not session.is_speaking:
+                # Interrupted
+                logger.info("Agent interrupted by user")
+                break
+            
+            event_type = event.get("event", "")
+            
+            # Log important events for debugging
+            if event_type in ["on_chain_start", "on_chain_end", "on_tool_start", "on_tool_end"]:
+                logger.debug(f"Agent event: {event_type} - {event.get('name', 'unknown')}")
+            
+            if event_type == "on_chat_model_stream":
+                chunk = event["data"].get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    token = chunk.content
+                    full_response += token
+                    
+                    # Send token to client
+                    await ws.send_text(json.dumps({
+                        "type": "llm_token",
+                        "token": token
+                    }))
+                    
+                    # Check if ready to speak
+                    phrase = session.speech_buffer.add(token)
+                    if phrase and tts_model:
+                        audio = tts_model.synthesize(phrase, language=session.language)
+                        if audio:
+                            await ws.send_bytes(audio)
         
-        if event["event"] == "on_chat_model_stream":
-            chunk = event["data"].get("chunk")
-            if chunk and hasattr(chunk, "content") and chunk.content:
-                token = chunk.content
-                full_response += token
-                
-                # Send token to client
-                await ws.send_text(json.dumps({
-                    "type": "llm_token",
-                    "token": token
-                }))
-                
-                # Check if ready to speak
-                phrase = session.speech_buffer.add(token)
-                if phrase and tts_model:
-                    audio = tts_model.synthesize(phrase, language=session.language)
-                    if audio:
-                        await ws.send_bytes(audio)
+        logger.info(f"Agent completed: {event_count} events, {len(full_response)} chars response")
+        
+        # If no response was generated, send a fallback message
+        if not full_response.strip():
+            logger.warning("Agent produced no response, sending fallback")
+            fallback = "抱歉，我暂时无法回答这个问题。请稍后再试。"
+            await ws.send_text(json.dumps({
+                "type": "llm_token",
+                "token": fallback
+            }))
+            full_response = fallback
+    
+    except Exception as e:
+        logger.error(f"LangGraph agent error: {e}", exc_info=True)
+        error_msg = f"Agent error: {str(e)}"
+        await ws.send_text(json.dumps({
+            "type": "llm_token",
+            "token": error_msg
+        }))
+        full_response = error_msg
     
     # Flush remaining text
     if session.is_speaking:

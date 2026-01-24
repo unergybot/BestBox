@@ -183,8 +183,9 @@ class StreamingTTS:
             return b""
 
     def _synthesize_piper(self, text: str, language: str) -> bytes:
-        """Synthesize using Piper subprocess."""
+        """Synthesize using Piper subprocess with timeout protection."""
         import os
+        import subprocess
         
         start = time.time()
         
@@ -213,7 +214,14 @@ class StreamingTTS:
                 stderr=subprocess.PIPE
             )
             
-            stdout, stderr = process.communicate(input=text.encode("utf-8"))
+            # Add timeout protection (30 seconds max for TTS)
+            try:
+                stdout, stderr = process.communicate(input=text.encode("utf-8"), timeout=30)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()  # Clean up
+                logger.error(f"Piper TTS timeout for text: '{text[:50]}...'")
+                return b""
             
             if process.returncode != 0:
                 logger.error(f"Piper error: {stderr.decode()}")

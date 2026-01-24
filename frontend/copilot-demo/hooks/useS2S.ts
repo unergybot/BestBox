@@ -1,14 +1,18 @@
 /**
  * useS2S - React hook for Speech-to-Speech interaction
  *
- * Manages WebSocket connection to S2S gateway, audio capture,
- * and audio playback for real-time voice interaction.
+ * This hook now uses the S2SClient singleton to ensure the WebSocket connection
+ * persists across component lifecycle events. The VoiceInput component can be
+ * unmounted and remounted by CopilotSidebar without losing the connection.
+ *
+ * Key difference from previous implementation:
+ * - On unmount: Only removes event listeners, does NOT disconnect WebSocket
+ * - Connection is managed by the singleton, which auto-reconnects if needed
  */
 
-import { useCallback, useRef, useState, useEffect } from 'react';
-import { useAudioCapture } from './useAudioCapture';
+import { useCallback, useState, useEffect, useRef } from 'react';
+import { S2SClient, getS2SClient } from '@/lib/S2SClient';
 
-// Message types from server
 export interface S2SMessage {
   type:
     | 'session_ready'
@@ -77,8 +81,7 @@ export interface S2SControls {
   clear: () => void;
 }
 
-// Use environment variable or construct from current hostname
-// This allows the frontend to work both locally and when accessed remotely
+// Get default server URL (same as singleton default)
 const getDefaultServerUrl = () => {
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
@@ -87,10 +90,8 @@ const getDefaultServerUrl = () => {
   return 'ws://localhost:8765/ws/s2s';
 };
 
-const DEFAULT_SERVER_URL = getDefaultServerUrl();
-
 export function useS2S({
-  serverUrl = DEFAULT_SERVER_URL,
+  serverUrl,
   language = 'zh',
   autoConnect = false,
   onAsrPartial,
@@ -102,346 +103,214 @@ export function useS2S({
   onError,
   onConnectionChange,
 }: UseS2SOptions = {}): S2SState & S2SControls {
-  // State
+  // State synced from singleton
   const [isConnected, setIsConnected] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isResponding, setIsResponding] = useState(false);
   const [currentTranscript, setCurrentTranscript] = useState('');
   const [currentResponse, setCurrentResponse] = useState('');
+  const [audioLevel, setAudioLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Refs
-  const wsRef = useRef<WebSocket | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioQueueRef = useRef<ArrayBuffer[]>([]);
-  const isPlayingRef = useRef(false);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Audio capture hook
-  const {
-    isRecording,
-    audioLevel,
-    startRecording,
-    stopRecording,
-    error: audioError,
-  } = useAudioCapture({
-    sampleRate: 16000,
-    onAudioChunk: useCallback((chunk: ArrayBuffer) => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(chunk);
-      }
-    }, []),
-    onError: useCallback((err: Error) => {
-      setError(err.message);
-      onError?.(err.message);
-    }, [onError]),
+  // Keep callbacks in ref to avoid stale closures
+  const callbacksRef = useRef({
+    onAsrPartial,
+    onAsrFinal,
+    onLlmToken,
+    onTtsAudio,
+    onResponseStart,
+    onResponseEnd,
+    onError,
+    onConnectionChange,
   });
 
-  // Initialize audio context for playback
-  const getAudioContext = useCallback(() => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext({ sampleRate: 24000 });
-    }
-    return audioContextRef.current;
-  }, []);
-
-  // Play PCM16 audio
-  const playAudio = useCallback(
-    async (pcmData: ArrayBuffer) => {
-      const ctx = getAudioContext();
-
-      // Ensure context is running (needed for user gesture requirement)
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-
-      // Convert PCM16 to Float32
-      const int16 = new Int16Array(pcmData);
-      const float32 = new Float32Array(int16.length);
-      for (let i = 0; i < int16.length; i++) {
-        float32[i] = int16[i] / 32768;
-      }
-
-      // Create audio buffer
-      const buffer = ctx.createBuffer(1, float32.length, 24000);
-      buffer.copyToChannel(float32, 0);
-
-      // Play
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(ctx.destination);
-      source.start();
-    },
-    [getAudioContext]
-  );
-
-  // Process audio queue
-  const processAudioQueue = useCallback(async () => {
-    if (isPlayingRef.current || audioQueueRef.current.length === 0) {
-      return;
-    }
-
-    isPlayingRef.current = true;
-
-    while (audioQueueRef.current.length > 0) {
-      const audio = audioQueueRef.current.shift();
-      if (audio) {
-        await playAudio(audio);
-        onTtsAudio?.(audio);
-      }
-    }
-
-    isPlayingRef.current = false;
-  }, [playAudio, onTtsAudio]);
-
-  // Handle WebSocket messages
-  const handleMessage = useCallback(
-    (event: MessageEvent) => {
-      if (event.data instanceof ArrayBuffer) {
-        // Binary audio data
-        audioQueueRef.current.push(event.data);
-        processAudioQueue();
-      } else {
-        // JSON message
-        try {
-          const msg: S2SMessage = JSON.parse(event.data);
-
-          switch (msg.type) {
-            case 'session_ready':
-              console.log('S2S session ready:', msg.session_id);
-              break;
-
-            case 'asr_partial':
-              setCurrentTranscript(msg.text || '');
-              onAsrPartial?.(msg.text || '');
-              break;
-
-            case 'asr_final':
-              setCurrentTranscript(msg.text || '');
-              onAsrFinal?.(msg.text || '');
-              if (msg.text) {
-                setIsResponding(true);
-                setCurrentResponse('');
-                onResponseStart?.();
-              }
-              break;
-
-            case 'llm_token':
-              setCurrentResponse((prev) => prev + (msg.token || ''));
-              onLlmToken?.(msg.token || '');
-              break;
-
-            case 'response_end':
-              setIsResponding(false);
-              onResponseEnd?.();
-              break;
-
-            case 'interrupted':
-              setIsResponding(false);
-              audioQueueRef.current = [];
-              break;
-
-            case 'error':
-              setError(msg.message || 'Unknown error');
-              onError?.(msg.message || 'Unknown error');
-              break;
-          }
-        } catch (err) {
-          console.error('Failed to parse S2S message:', err);
-        }
-      }
-    },
-    [
+  // Update refs on each render
+  useEffect(() => {
+    callbacksRef.current = {
       onAsrPartial,
       onAsrFinal,
       onLlmToken,
+      onTtsAudio,
       onResponseStart,
       onResponseEnd,
       onError,
-      processAudioQueue,
-    ]
-  );
+      onConnectionChange,
+    };
+  }, [onAsrPartial, onAsrFinal, onLlmToken, onTtsAudio, onResponseStart, onResponseEnd, onError, onConnectionChange]);
 
-  // Connect to server
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return;
+  // Get singleton client
+  const clientRef = useRef<S2SClient | null>(null);
+
+  useEffect(() => {
+    const client = getS2SClient();
+    clientRef.current = client;
+
+    // Configure client
+    if (serverUrl) {
+      client.setServerUrl(serverUrl);
     }
+    client.setLanguage(language);
 
-    setError(null);
+    // Sync initial state
+    const state = client.getState();
+    setIsConnected(state.isConnected);
+    setIsListening(state.isListening);
+    setIsResponding(state.isResponding);
+    setCurrentTranscript(state.currentTranscript);
+    setCurrentResponse(state.currentResponse);
+    setAudioLevel(state.audioLevel);
+    setError(state.error);
 
-    const ws = new WebSocket(serverUrl);
-    ws.binaryType = 'arraybuffer';
+    // Event listeners
+    const onConnecting = () => {
+      console.log('useS2S: Connecting...');
+    };
 
-    ws.onopen = () => {
-      console.log('S2S connected');
+    const onConnected = () => {
+      console.log('useS2S: Connected');
       setIsConnected(true);
-      onConnectionChange?.(true);
-
-      // Send session start
-      ws.send(
-        JSON.stringify({
-          type: 'session_start',
-          lang: language,
-          audio: {
-            sample_rate: 16000,
-            format: 'pcm16',
-            channels: 1,
-          },
-        })
-      );
+      callbacksRef.current.onConnectionChange?.(true);
     };
 
-    ws.onmessage = handleMessage;
-
-    ws.onerror = (event) => {
-      console.error('S2S WebSocket error:', event);
-      setError('Connection error');
-      onError?.('Connection error');
-    };
-
-    ws.onclose = () => {
-      console.log('S2S disconnected');
+    const onDisconnected = () => {
+      console.log('useS2S: Disconnected');
       setIsConnected(false);
       setIsListening(false);
-      setIsResponding(false);
-      onConnectionChange?.(false);
-      wsRef.current = null;
+      callbacksRef.current.onConnectionChange?.(false);
     };
 
-    wsRef.current = ws;
-  }, [serverUrl, language, handleMessage, onConnectionChange, onError]);
+    const onSessionReady = (data: { session_id: string }) => {
+      console.log('useS2S: Session ready:', data.session_id);
+    };
 
-  // Disconnect
+    const onAsrPartialEvent = (data: { text: string }) => {
+      setCurrentTranscript(data.text);
+      callbacksRef.current.onAsrPartial?.(data.text);
+    };
+
+    const onAsrFinalEvent = (data: { text: string }) => {
+      console.log('useS2S: ASR final:', data.text);
+      setCurrentTranscript(data.text);
+      callbacksRef.current.onAsrFinal?.(data.text);
+    };
+
+    const onLlmTokenEvent = (data: { token: string }) => {
+      setCurrentResponse(prev => prev + data.token);
+      callbacksRef.current.onLlmToken?.(data.token);
+    };
+
+    const onResponseStartEvent = () => {
+      setIsResponding(true);
+      setCurrentResponse('');
+      callbacksRef.current.onResponseStart?.();
+    };
+
+    const onResponseEndEvent = () => {
+      console.log('useS2S: Response end');
+      setIsResponding(false);
+      callbacksRef.current.onResponseEnd?.();
+    };
+
+    const onTtsAudioEvent = (data: { audio: ArrayBuffer }) => {
+      callbacksRef.current.onTtsAudio?.(data.audio);
+    };
+
+    const onInterruptedEvent = () => {
+      setIsResponding(false);
+    };
+
+    const onErrorEvent = (data: { message: string }) => {
+      setError(data.message);
+      callbacksRef.current.onError?.(data.message);
+    };
+
+    const onAudioLevelEvent = (data: { level: number }) => {
+      setAudioLevel(data.level);
+    };
+
+    // Subscribe to events
+    client.on('connecting', onConnecting);
+    client.on('connected', onConnected);
+    client.on('disconnected', onDisconnected);
+    client.on('session_ready', onSessionReady);
+    client.on('asr_partial', onAsrPartialEvent);
+    client.on('asr_final', onAsrFinalEvent);
+    client.on('llm_token', onLlmTokenEvent);
+    client.on('response_start', onResponseStartEvent);
+    client.on('response_end', onResponseEndEvent);
+    client.on('tts_audio', onTtsAudioEvent);
+    client.on('interrupted', onInterruptedEvent);
+    client.on('error', onErrorEvent);
+    client.on('audio_level', onAudioLevelEvent);
+
+    // Auto-connect if requested
+    if (autoConnect && !state.isConnected) {
+      client.connect();
+    }
+
+    // Cleanup: Remove listeners but DO NOT disconnect
+    // This is critical for the singleton pattern - connection survives unmount
+    return () => {
+      client.off('connecting', onConnecting);
+      client.off('connected', onConnected);
+      client.off('disconnected', onDisconnected);
+      client.off('session_ready', onSessionReady);
+      client.off('asr_partial', onAsrPartialEvent);
+      client.off('asr_final', onAsrFinalEvent);
+      client.off('llm_token', onLlmTokenEvent);
+      client.off('response_start', onResponseStartEvent);
+      client.off('response_end', onResponseEndEvent);
+      client.off('tts_audio', onTtsAudioEvent);
+      client.off('interrupted', onInterruptedEvent);
+      client.off('error', onErrorEvent);
+      client.off('audio_level', onAudioLevelEvent);
+    };
+  }, [serverUrl, language, autoConnect]);
+
+  // Controls
+  const connect = useCallback(() => {
+    clientRef.current?.connect();
+  }, []);
+
   const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
+    clientRef.current?.disconnect();
+  }, []);
 
-    stopRecording();
-
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-
-    setIsConnected(false);
-    setIsListening(false);
-    setIsResponding(false);
-  }, [stopRecording]);
-
-  // Start listening
-  const startListeningFn = useCallback(() => {
-    if (!isConnected) {
-      connect();
-      // Wait for connection then start
-      const checkConnection = setInterval(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          clearInterval(checkConnection);
-          startRecording();
-          setIsListening(true);
-          setCurrentTranscript('');
-        }
-      }, 100);
-
-      // Timeout after 5 seconds
-      setTimeout(() => clearInterval(checkConnection), 5000);
-    } else {
-      startRecording();
+  const startListening = useCallback(async () => {
+    try {
+      await clientRef.current?.startListening();
       setIsListening(true);
       setCurrentTranscript('');
-    }
-  }, [isConnected, connect, startRecording]);
-
-  // Stop listening
-  const stopListeningFn = useCallback(() => {
-    stopRecording();
-    setIsListening(false);
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'audio_end' }));
-    }
-  }, [stopRecording]);
-
-  // Interrupt response
-  const interrupt = useCallback(() => {
-    audioQueueRef.current = [];
-    setIsResponding(false);
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'interrupt' }));
+    } catch (e) {
+      console.error('useS2S: Failed to start listening', e);
     }
   }, []);
 
-  // Send text directly
-  const sendText = useCallback(
-    (text: string) => {
-      if (!text.trim()) return;
+  const stopListening = useCallback(() => {
+    clientRef.current?.stopListening();
+    setIsListening(false);
+  }, []);
 
-      if (!isConnected) {
-        connect();
-        // Queue the text to send after connection
-        const checkConnection = setInterval(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            clearInterval(checkConnection);
-            wsRef.current.send(
-              JSON.stringify({
-                type: 'text_input',
-                text: text.trim(),
-              })
-            );
-            setIsResponding(true);
-            setCurrentResponse('');
-            onResponseStart?.();
-          }
-        }, 100);
+  const interrupt = useCallback(() => {
+    clientRef.current?.interrupt();
+    setIsResponding(false);
+  }, []);
 
-        setTimeout(() => clearInterval(checkConnection), 5000);
-      } else if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'text_input',
-            text: text.trim(),
-          })
-        );
-        setIsResponding(true);
-        setCurrentResponse('');
-        onResponseStart?.();
-      }
-    },
-    [isConnected, connect, onResponseStart]
-  );
+  const sendText = useCallback((text: string) => {
+    clientRef.current?.sendText(text);
+  }, []);
 
-  // Clear state
   const clear = useCallback(() => {
+    clientRef.current?.clear();
     setCurrentTranscript('');
     setCurrentResponse('');
     setError(null);
   }, []);
 
-  // Auto-connect
-  useEffect(() => {
-    if (autoConnect) {
-      connect();
-    }
-
-    return () => {
-      disconnect();
-    };
-  }, [autoConnect]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync audio error
-  useEffect(() => {
-    if (audioError) {
-      setError(audioError);
-    }
-  }, [audioError]);
-
   return {
     // State
     isConnected,
-    isListening: isListening && isRecording,
+    isListening,
     isResponding,
     currentTranscript,
     currentResponse,
@@ -450,8 +319,8 @@ export function useS2S({
     // Controls
     connect,
     disconnect,
-    startListening: startListeningFn,
-    stopListening: stopListeningFn,
+    startListening,
+    stopListening,
     interrupt,
     sendText,
     clear,
