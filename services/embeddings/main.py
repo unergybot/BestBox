@@ -3,6 +3,7 @@ BestBox Embeddings Service
 Serves BGE-M3 embeddings via FastAPI for RAG pipeline
 """
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 import numpy as np
@@ -17,6 +18,15 @@ app = FastAPI(
     title="BestBox Embeddings API",
     description="BGE-M3 embeddings for RAG pipeline",
     version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Global model instance

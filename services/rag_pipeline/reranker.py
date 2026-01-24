@@ -3,6 +3,7 @@ BestBox Reranker Service
 Serves BGE-reranker-base for precision boosting in RAG pipeline
 """
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import CrossEncoder
 from typing import List
@@ -49,6 +50,15 @@ app = FastAPI(
     description="BGE-reranker for RAG pipeline",
     version="1.0.0",
     lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class RerankRequest(BaseModel):
