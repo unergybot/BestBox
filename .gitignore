@@ -198,3 +198,10 @@ temp/
 
 # Git worktrees
 .worktrees/
+
+# Project Specific
+.agent/
+third_party/
+bin/
+*.pcm
+*.wav

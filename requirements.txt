@@ -4,3 +4,20 @@ langchain-community>=0.2.0
 langchain-openai>=0.1.0
 requests
 pydantic>=2.0
+
+# FastAPI and async support
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+websockets>=12.0
+
+# Speech-to-Speech (S2S) components
+# ASR - Speech Recognition
+faster-whisper>=1.0.0
+webrtcvad>=2.0.10
+
+# TTS - Text-to-Speech
+TTS>=0.22.0
+
+# Audio processing
+numpy>=1.24.0
+sounddevice>=0.4.6

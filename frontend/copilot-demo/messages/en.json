@@ -3,6 +3,32 @@
         "title": "BestBox AI Assistant",
         "initial": "Hello! I'm your BestBox AI assistant. I can help you with:\n\n• ERP queries (invoices, inventory, vendors)\n• System information\n• Scenarios\n\nTry asking: 'What's the system status?' or 'Show me unpaid invoices'"
     },
+    "Voice": {
+        "title": "Voice Assistant",
+        "subtitle": "Use voice to interact with BestBox AI assistant",
+        "modes": {
+            "panel": "Full Panel",
+            "button": "Button Only"
+        },
+        "instructions": {
+            "title": "Instructions",
+            "step1": "Ensure S2S service is running",
+            "step2": "Click the microphone button to start recording",
+            "step3": "Click again when you finish speaking",
+            "step4": "The assistant will respond with voice"
+        },
+        "status": {
+            "listening": "Listening...",
+            "responding": "Responding...",
+            "ready": "Click to speak",
+            "connected": "Connected",
+            "disconnected": "Disconnected"
+        },
+        "labels": {
+            "you": "You:",
+            "assistant": "Assistant:"
+        }
+    },
     "Home": {
         "title": "BestBox Enterprise Agent",
         "subtitle": "AI-Powered ERP/CRM/OA Assistant with Local LLM",

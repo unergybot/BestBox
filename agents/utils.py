@@ -1,6 +1,7 @@
 from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 import os
+import httpx
 
 # Configuration for local services
 LLM_BASE_URL = "http://127.0.0.1:8080/v1"
@@ -9,6 +10,9 @@ EMBEDDINGS_BASE_URL = "http://127.0.0.1:8081/v1" # OpenAI compatible endpoint if
 def get_llm(temperature: float = 0.7):
     """
     Get the configured ChatOpenAI instance connected to local llama-server.
+
+    Note: The startup script unsets proxy environment variables to ensure local
+    services can communicate directly without going through proxies.
     """
     return ChatOpenAI(
         base_url=LLM_BASE_URL,

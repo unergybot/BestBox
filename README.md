@@ -375,3 +375,12 @@ For questions or issues, refer to the documentation or contact the BestBox devel
         "https://docker.mirrors.ustc.edu.cn"
     ]
     
+
+
+  3. Start services and test the RAG pipeline:                                  
+  docker compose up -d                                                          
+  ./scripts/start-embeddings.sh                                                 
+  ./scripts/start-reranker.sh                                                   
+  python scripts/seed_knowledge_base.py  # If not already seeded                
+                                                                                
+  The RAG pipeline implementation is complete and merged! 🎉    

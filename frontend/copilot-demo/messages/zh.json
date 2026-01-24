@@ -3,6 +3,32 @@
         "title": "BestBox AI 助手",
         "initial": "你好！我是您的 BestBox AI 助手。我可以帮您处理：\n\n• ERP 查询（发票、库存、供应商）\n• 系统信息\n• 场景\n\n试着问我：'系统状态如何？' 或 '显示未付发票'"
     },
+    "Voice": {
+        "title": "语音助手",
+        "subtitle": "使用语音与 BestBox 智能助手对话",
+        "modes": {
+            "panel": "完整面板",
+            "button": "仅按钮"
+        },
+        "instructions": {
+            "title": "使用说明",
+            "step1": "确保 S2S 服务正在运行",
+            "step2": "点击麦克风按钮开始录音",
+            "step3": "说话完毕后再次点击按钮",
+            "step4": "助手会用语音回复"
+        },
+        "status": {
+            "listening": "正在听...",
+            "responding": "正在回复...",
+            "ready": "点击开始说话",
+            "connected": "已连接",
+            "disconnected": "未连接"
+        },
+        "labels": {
+            "you": "你说：",
+            "assistant": "助手："
+        }
+    },
     "Home": {
         "title": "BestBox 企业级智能体",
         "subtitle": "基于本地大模型的 AI 驱动 ERP/CRM/OA 助手",

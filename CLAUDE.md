@@ -82,6 +82,7 @@ python scripts/seed_knowledge_base.py
 | Embeddings (BGE-M3) | 8081 |
 | Reranker (BGE-reranker-v2-m3) | 8082 |
 | Agent API | 8000 |
+| S2S Gateway | 8765 |
 | Frontend | 3000 |
 | Qdrant | 6333/6334 |
 | PostgreSQL | 5432 |
@@ -98,6 +99,43 @@ python scripts/seed_knowledge_base.py
 - Backend: Vulkan (not HIP/ROCm directly - llama.cpp uses Vulkan for gfx1151)
 - Context: 4096 tokens
 - Performance: ~527 tok/s prompt processing, ~24 tok/s generation
+
+## Speech-to-Speech (S2S)
+
+The S2S feature provides voice interaction with the agent system.
+
+**Status:** ⚠️ Partially working - WebSocket and ASR functional, TTS disabled by default (see `docs/S2S_QUICK_FIX_RESULTS.md`)
+
+### Start S2S Service
+```bash
+./scripts/start-s2s.sh                  # S2S Gateway on :8765
+# TTS disabled by default to prevent startup hang
+# To enable TTS: export S2S_ENABLE_TTS=true
+```
+
+### S2S Environment Variables
+- `S2S_ENABLE_TTS` - Enable TTS synthesis (default: false)
+- `ASR_DEVICE` - ASR device: cuda or cpu (default: cuda, falls back to cpu on AMD)
+- `ASR_MODEL` - Whisper model size (default: large-v3)
+- `ASR_LANGUAGE` - Recognition language (default: zh)
+
+### S2S Architecture
+```
+Mic → WebSocket → ASR (faster-whisper) → LangGraph → TTS (XTTS v2) → Audio Playback
+```
+
+### S2S Components
+- `services/speech/asr.py` - Streaming ASR with VAD
+- `services/speech/tts.py` - XTTS v2 synthesis + SpeechBuffer
+- `services/speech/s2s_server.py` - FastAPI WebSocket gateway
+- `frontend/.../hooks/useS2S.ts` - Client-side audio hooks
+- `frontend/.../components/VoiceButton.tsx` - Voice UI
+
+### S2S WebSocket Protocol
+```
+Client → Server: Binary (PCM16 16kHz) or JSON control
+Server → Client: JSON (asr_partial, llm_token) or Binary (PCM16 24kHz)
+```
 
 ## Adding a New Agent
 

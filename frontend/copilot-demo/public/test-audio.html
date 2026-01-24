@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>S2S Mic Test (Robust)</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        #log {
+            background: #f0f0f0;
+            padding: 10px;
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            font-family: monospace;
+        }
+
+        .bar-container {
+            width: 100%;
+            height: 20px;
+            background: #ddd;
+            margin-top: 5px;
+        }
+
+        .bar {
+            height: 100%;
+            bg-color: #4CAF50;
+            width: 0%;
+            transition: width 0.1s;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>S2S Microphone Test (AudioWorklet)</h1>
+    <div id="controls">
+        <div style="margin-bottom: 10px; padding: 10px; background: #e0e0e0;">
+            <label for="langSelect"><strong>Language:</strong></label>
+            <select id="langSelect" style="font-size: 16px; padding: 5px;">
+                <option value="en">English (Whisper)</option>
+                <option value="zh">Chinese (Whisper)</option>
+            </select>
+        </div>
+
+        <button id="startBtn">Start Recording</button>
+        <button id="stopBtn" disabled>Stop Recording</button>
+        <button id="playBtn" disabled>Play Recording</button>
+        <hr>
+        <button id="sampleEn">Send "Hello" (EN)</button>
+        <button id="sampleZh">Send "Hello" (ZH)</button>
+        <hr>
+        <h3>Upload Audio File</h3>
+        <input type="file" id="fileInput" accept="audio/*">
+        <button id="uploadBtn">Upload & Send</button>
+    </div>
+    <div id="status">Status: Idle</div>
+    <div class="bar-container">
+        <div id="volBar" class="bar" style="background:green;"></div>
+    </div>
+    <div id="log"></div>
+
+    <script>
+        // AudioWorklet Processor Code (embedded as blob)
+        const workletCode = `
+            class AudioProcessor extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this._bufferSize = 1024; // 64ms @ 16kHz
+                    this._buffer = new Float32Array(this._bufferSize);
+                    this._bytesWritten = 0;
+                }
+
+                process(inputs, outputs, parameters) {
+                    const input = inputs[0];
+                    if (input.length > 0) {
+                        const channel0 = input[0];
+                        
+                        // Fill buffer
+                        for (let i = 0; i < channel0.length; i++) {
+                            this._buffer[this._bytesWritten++] = channel0[i];
+                            
+                            // Check if buffer full
+                            if (this._bytesWritten >= this._bufferSize) {
+                                this.flush();
+                            }
+                        }
+                    }
+                    return true;
+                }
+
+                flush() {
+                    // Send to main thread
+                    this.port.postMessage(this._buffer.slice(0, this._bytesWritten));
+                    this._bytesWritten = 0;
+                }
+            }
+            registerProcessor('audio-processor', AudioProcessor);
+        `;
+
+        let socket;
+        let audioContext;
+        let workletNode;
+        let stream;
+        let recordedChunks = [];
+        let isRecording = false;
+
+        const statusDiv = document.getElementById('status');
+        const logDiv = document.getElementById('log');
+        const volBar = document.getElementById('volBar');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const playBtn = document.getElementById('playBtn');
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logDiv.appendChild(div);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(msg);
+        }
+
+        async function initAudioWorklet(ctx) {
+            if (ctx.audioWorklet) {
+                try {
+                    const blob = new Blob([workletCode], { type: 'application/javascript' });
+                    const url = URL.createObjectURL(blob);
+                    await ctx.audioWorklet.addModule(url);
+                    return true;
+                } catch (e) {
+                    log("AudioWorklet failed: " + e);
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        startBtn.onclick = async () => {
+            try {
+                startBtn.disabled = true;
+                const langSelect = document.getElementById('langSelect');
+                const lang = langSelect ? langSelect.value : 'en';
+
+                log(`Connecting WebSocket for Mic (${lang})...`);
+
+                socket = new WebSocket('ws://localhost:8765/ws/s2s');
+                socket.binaryType = 'arraybuffer';
+
+                socket.onopen = () => {
+                    log('WebSocket Connected');
+                    socket.send(JSON.stringify({ type: 'session_start', lang: lang }));
+                };
+
+                socket.onmessage = (event) => {
+                    if (typeof event.data === 'string') {
+                        const data = JSON.parse(event.data);
+
+                        if (data.type === 'session_ready') {
+                            log(`Session Ready: ${data.session_id}`);
+                            // Only start recording when session is ready
+                            startAudio();
+                        }
+                        else if (data.type === 'asr_partial') {
+                            statusDiv.innerText = `ASR: ${data.text}`;
+                        } else if (data.type === 'asr_final') {
+                            statusDiv.innerText = `Final: ${data.text}`;
+                            log(`Final: ${data.text}`);
+                        }
+                    } else {
+                        log(`Received Audio: ${event.data.byteLength} bytes`);
+                    }
+                };
+
+                socket.onerror = (e) => {
+                    log('WebSocket Error');
+                    stopBtn.click();
+                };
+
+            } catch (e) {
+                log('Error: ' + e);
+                startBtn.disabled = false;
+            }
+        };
+
+        async function startAudio() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        autoGainControl: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                log('Mic Permission Granted');
+
+                audioContext = new AudioContext({ sampleRate: 16000 });
+                const workletReady = await initAudioWorklet(audioContext);
+
+                const source = audioContext.createMediaStreamSource(stream);
+
+                if (workletReady) {
+                    workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+                    workletNode.port.onmessage = (e) => handleAudioData(e.data);
+                    source.connect(workletNode);
+                    workletNode.connect(audioContext.destination);
+                } else {
+                    log("Using ScriptProcessor Fallback");
+                    workletNode = audioContext.createScriptProcessor(1024, 1, 1);
+                    workletNode.onaudioprocess = (e) => handleAudioData(e.inputBuffer.getChannelData(0));
+                    source.connect(workletNode);
+                    workletNode.connect(audioContext.destination);
+                }
+
+                isRecording = true;
+                stopBtn.disabled = false;
+                playBtn.disabled = true;
+                recordedChunks = [];
+                statusDiv.innerText = "Recording... (Listening)";
+                log('Recording started');
+
+            } catch (e) {
+                log('Audio Error: ' + e);
+                stopBtn.click();
+            }
+        }
+
+        let packetCount = 0;
+        function handleAudioData(float32Data) {
+            if (!isRecording) return;
+
+            packetCount++;
+            if (packetCount % 50 === 0) {
+                log(`Mic Data: ${float32Data.length} samples. Max Amp: ${Math.max(...float32Data.map(Math.abs)).toFixed(4)}`);
+            }
+
+            const chunkCopy = new Float32Array(float32Data);
+            recordedChunks.push(chunkCopy);
+
+            // Visual
+            let sum = 0;
+            for (let i = 0; i < chunkCopy.length; i += 100) sum += Math.abs(chunkCopy[i]);
+            const avg = sum / (chunkCopy.length / 100);
+            volBar.style.width = Math.min(100, avg * 500) + '%';
+
+            // Convert
+            const pcm16 = new Int16Array(chunkCopy.length);
+            for (let i = 0; i < chunkCopy.length; i++) {
+                let s = Math.max(-1, Math.min(1, chunkCopy[i]));
+                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+
+            // Send
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(pcm16.buffer);
+            }
+        }
+
+        stopBtn.onclick = () => {
+            isRecording = false;
+            if (workletNode) workletNode.disconnect();
+            if (stream) stream.getTracks().forEach(t => t.stop());
+            if (audioContext) audioContext.close();
+
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'audio_end' }));
+                log('Sent audio_end');
+            }
+            // Delay close to allow response (increased for slow CPU chain)
+            setTimeout(() => { if (socket) socket.close(); }, 30000);
+
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            playBtn.disabled = false;
+            statusDiv.innerText = "Stopped";
+            volBar.style.width = '0%';
+            log('Stopped');
+        };
+
+        playBtn.onclick = () => {
+            if (recordedChunks.length === 0) return;
+            log('Playing local recording...');
+            const playbackCtx = new AudioContext();
+            const totalLen = recordedChunks.reduce((acc, c) => acc + c.length, 0);
+            const buffer = playbackCtx.createBuffer(1, totalLen, 16000);
+            const data = buffer.getChannelData(0);
+            let offset = 0;
+            for (const chunk of recordedChunks) {
+                data.set(chunk, offset);
+                offset += chunk.length;
+            }
+            const source = playbackCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(playbackCtx.destination);
+            source.start();
+            source.onended = () => log('Playback finished');
+        };
+
+        // ==========================================
+        // ROBUST FILE UPLOAD & SAMPLE LOGIC
+        // ==========================================
+        async function sendBuffer(buffer, lang) {
+            try {
+                // 1. Decode Audio
+                const offlineCtx = new AudioContext({ sampleRate: 16000 });
+                const audioBuffer = await offlineCtx.decodeAudioData(buffer);
+                const pcmData = audioBuffer.getChannelData(0);
+
+                log(`Audio decoded: ${pcmData.length} samples (${audioBuffer.duration.toFixed(2)}s)`);
+
+                // 2. Convert to PCM16
+                const pcm16 = new Int16Array(pcmData.length);
+                for (let i = 0; i < pcmData.length; i++) {
+                    let s = Math.max(-1, Math.min(1, pcmData[i]));
+                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+
+                // 3. Connect Socket
+                const fileSocket = new WebSocket('ws://localhost:8765/ws/s2s');
+                fileSocket.binaryType = 'arraybuffer';
+
+                let sendInterval = null;
+
+                // 4. Transmission Logic (Called ONLY after Session Ready)
+                const startSending = () => {
+                    log('Starting transmission...');
+                    const CHUNK_SIZE = 4096; // ~256ms
+                    let offset = 0;
+
+                    sendInterval = setInterval(() => {
+                        if (offset >= pcm16.length) {
+                            clearInterval(sendInterval);
+                            if (fileSocket.readyState === WebSocket.OPEN) {
+                                fileSocket.send(JSON.stringify({ type: 'audio_end' }));
+                                log('File sent completely');
+                            }
+                            return;
+                        }
+
+                        // Backpressure check
+                        if (fileSocket.bufferedAmount > 1024 * 1024) return;
+
+                        const end = Math.min(offset + CHUNK_SIZE, pcm16.length);
+                        const chunk = pcm16.slice(offset, end);
+
+                        if (fileSocket.readyState !== WebSocket.OPEN) {
+                            clearInterval(sendInterval);
+                            log("Socket closed unexpectedly during upload");
+                            return;
+                        }
+
+                        fileSocket.send(chunk.buffer);
+                        offset += CHUNK_SIZE;
+                    }, 50); // ~20 chunks/sec
+                };
+
+                fileSocket.onopen = () => {
+                    log('Socket Connected. Sending session_start...');
+                    fileSocket.send(JSON.stringify({ type: 'session_start', lang: lang }));
+                };
+
+                fileSocket.onmessage = (event) => {
+                    if (typeof event.data === 'string') {
+                        const data = JSON.parse(event.data);
+
+                        // *** CRITICAL FIX: WAIT FOR THIS ***
+                        if (data.type === 'session_ready') {
+                            log(`Session Ready: ${data.session_id}`);
+                            startSending();
+                        }
+                        else if (data.type === 'asr_partial') {
+                            statusDiv.innerText = `ASR: ${data.text}`;
+                            log(`ASR Partial: ${data.text}`);
+                        } else if (data.type === 'asr_final') {
+                            statusDiv.innerText = `ASR Final: ${data.text}`;
+                            log(`ASR Final: ${data.text}`);
+                        } else if (data.type === 'error') {
+                            log(`Server Error: ${data.message}`);
+                        }
+                    } else {
+                        log(`Received Response Audio: ${event.data.byteLength} bytes`);
+                    }
+                };
+
+                fileSocket.onerror = (e) => {
+                    log(`Socket Error! Type: ${e.type}`);
+                    console.error(e);
+                };
+
+                fileSocket.onclose = (e) => {
+                    log(`Socket Closed. Code: ${e.code}, Reason: ${e.reason}`);
+                    if (sendInterval) clearInterval(sendInterval);
+                };
+
+            } catch (e) {
+                log('Setup Error: ' + e);
+            }
+        }
+
+        async function fetchAndSend(url, lang) {
+            try {
+                log(`Fetching ${url}...`);
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const buf = await res.arrayBuffer();
+                sendBuffer(buf, lang);
+            } catch (e) {
+                log("Fetch failed: " + e);
+            }
+        }
+
+        document.getElementById('sampleEn').onclick = () => fetchAndSend('/samples/hello_en.wav', 'en');
+        document.getElementById('sampleZh').onclick = () => fetchAndSend('/samples/hello_zh.wav', 'zh');
+
+        document.getElementById('uploadBtn').onclick = () => {
+            const fileInput = document.getElementById('fileInput');
+            const langSelect = document.getElementById('langSelect');
+            const lang = langSelect ? langSelect.value : 'en';
+
+            if (fileInput.files.length > 0) {
+                const file = fileInput.files[0];
+                log(`Reading ${file.name} as ${lang.toUpperCase()}...`);
+                const reader = new FileReader();
+                reader.onload = (e) => sendBuffer(e.target.result, lang);
+                reader.readAsArrayBuffer(file);
+            } else {
+                log('Please select a file first');
+            }
+        };
+    </script>
+</body>
+
+</html>
