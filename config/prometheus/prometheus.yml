@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'bestbox-local'
+    environment: 'production'
+
+# Load alert rules
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+  # BestBox Agent API metrics
+  - job_name: 'agent-api'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s  # More frequent for real-time dashboards
+
+  # LLM Server health
+  - job_name: 'llm-server'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+    metrics_path: '/health'
+    scrape_interval: 30s
+
+  # Embeddings service
+  - job_name: 'embeddings'
+    static_configs:
+      - targets: ['host.docker.internal:8081']
+    metrics_path: '/health'
+    scrape_interval: 30s

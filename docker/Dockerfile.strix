@@ -1,0 +1,31 @@
+# Dockerfile.strix
+FROM rocm/pytorch:latest
+
+ENV ROCM_HOME=/opt/rocm
+# Target Strix Halo specifically
+ENV PYTORCH_ROCM_ARCH="gfx1151"
+# Fallback to gfx1100 if 1151 compilation fails in PyTorch
+ENV HSA_OVERRIDE_GFX_VERSION=11.5.0
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y build-essential python3-dev git cmake ninja-build && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip build
+
+# We will mount the source code or copy it
+WORKDIR /app/vllm
+
+COPY . /app/vllm
+
+# Create constraints file to pin torch versions
+RUN echo "torch===2.9.1+rocm7.2.0.lw.git7e1940d4\ntorchaudio===2.9.0+rocm7.2.0.gite3c6ee2b\ntorchvision===0.24.0+rocm7.2.0.gitb919bd0c" > /app/vllm/constraints.txt
+
+# Install dependencies (no conda, system python3.12)
+RUN pip install -r requirements/rocm.txt -c /app/vllm/constraints.txt --extra-index-url https://download.pytorch.org/whl/rocm6.2 --prefer-binary
+
+RUN python3 setup.py install
+
+# Patch local installed vllm to detect ROCm via torch.version.hip
+RUN sed -i '/def rocm_platform_plugin() -> str | None:/a \    import torch\n    if hasattr(torch.version, "hip") and torch.version.hip:\n        return "vllm.platforms.rocm.RocmPlatform"' $(find /opt/venv/lib/python3.12/site-packages -path "*/vllm/platforms/__init__.py")
+
+WORKDIR /

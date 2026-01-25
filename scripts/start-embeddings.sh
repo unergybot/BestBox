@@ -10,6 +10,10 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # Activate virtual environment
 source "${PROJECT_DIR}/venv/bin/activate"
 
+# Unset proxy variables to ensure local services communicate directly
+unset http_proxy https_proxy ftp_proxy all_proxy no_proxy
+unset HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY NO_PROXY
+
 # Check if already running
 if pgrep -f "uvicorn.*8081" > /dev/null; then
     echo "⚠️  Embeddings service already running on port 8081"

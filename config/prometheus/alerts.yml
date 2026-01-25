@@ -1,0 +1,96 @@
+groups:
+  - name: bestbox_sla_alerts
+    interval: 30s
+    rules:
+      # TTFT SLA Violation
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, rate(agent_latency_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: llm
+          sla: ttft
+        annotations:
+          summary: "P95 latency exceeds 2s SLA target"
+          description: "Agent P95 response latency is {{ $value }}s (SLA target: <2s)"
+          dashboard: "http://localhost:3001/d/system-health"
+
+      # Critical latency (P95 > 5s)
+      - alert: CriticalLatency
+        expr: histogram_quantile(0.95, rate(agent_latency_seconds_bucket[5m])) > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          component: llm
+        annotations:
+          summary: "Critical latency degradation"
+          description: "P95 latency is {{ $value }}s - immediate investigation required"
+
+      # High Error Rate
+      - alert: HighErrorRate
+        expr: rate(tool_executions_total{status="error"}[1m]) > 0.083
+        for: 2m
+        labels:
+          severity: critical
+          component: agents
+        annotations:
+          summary: "Error rate exceeds 5 errors/minute threshold"
+          description: "Current error rate: {{ $value }} errors/sec"
+
+      # Service Down
+      - alert: ServiceDown
+        expr: up{job=~"agent-api|llm-server|embeddings"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "Critical service is down"
+          description: "{{ $labels.job }} has been unreachable for 1+ minutes"
+
+      # Memory Pressure (>90% for 10+ minutes)
+      - alert: HighMemoryUsage
+        expr: (process_resident_memory_bytes{job="agent-api"} / (128 * 1024 * 1024 * 1024)) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+          component: infrastructure
+        annotations:
+          summary: "System memory usage critically high"
+          description: "Memory usage at {{ $value | humanizePercentage }}"
+
+      # Low User Satisfaction
+      - alert: LowUserSatisfaction
+        expr: sum(user_feedback_total{rating="positive"}) / sum(user_feedback_total) < 0.7
+        for: 1h
+        labels:
+          severity: warning
+          component: ux
+        annotations:
+          summary: "User satisfaction below 70% target"
+          description: "Current satisfaction: {{ $value | humanizePercentage }} (target: >80%)"
+
+  - name: bestbox_capacity_alerts
+    interval: 60s
+    rules:
+      # Approaching concurrent user limit
+      - alert: HighConcurrentSessions
+        expr: active_sessions > 8
+        for: 5m
+        labels:
+          severity: warning
+          component: capacity
+        annotations:
+          summary: "Approaching concurrent user capacity limit"
+          description: "{{ $value }} active sessions (designed capacity: 5-8 users)"
+
+      # Very high concurrency (system overload)
+      - alert: SystemOverload
+        expr: active_sessions > 12
+        for: 1m
+        labels:
+          severity: critical
+          component: capacity
+        annotations:
+          summary: "System is overloaded - user experience degraded"
+          description: "{{ $value }} concurrent sessions exceeds safe operating limit"
