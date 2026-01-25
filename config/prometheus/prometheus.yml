@@ -23,20 +23,20 @@ scrape_configs:
   # BestBox Agent API metrics
   - job_name: 'agent-api'
     static_configs:
-      - targets: ['host.docker.internal:8000']
+      - targets: ['172.17.0.1:8000']  # Docker bridge gateway IP on Linux
     metrics_path: '/metrics'
     scrape_interval: 10s  # More frequent for real-time dashboards
 
   # LLM Server health
   - job_name: 'llm-server'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['172.17.0.1:8080']  # Docker bridge gateway IP on Linux
     metrics_path: '/health'
     scrape_interval: 30s
 
   # Embeddings service
   - job_name: 'embeddings'
     static_configs:
-      - targets: ['host.docker.internal:8081']
+      - targets: ['172.17.0.1:8081']  # Docker bridge gateway IP on Linux
     metrics_path: '/health'
     scrape_interval: 30s
