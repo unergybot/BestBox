@@ -4,13 +4,16 @@ import { useLocale } from 'next-intl';
 import { useState, useRef, useCallback } from 'react';
 import { useCopilotChat } from "@copilotkit/react-core";
 import { TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
+import { LiveKitVoiceButton } from './LiveKitVoiceButton';
 
 export function VoiceInput(props: InputProps) {
     const [text, setText] = useState('');
+    const [interimTranscript, setInterimTranscript] = useState('');
+    const [isSpeaking, setIsSpeaking] = useState(false);
     const locale = useLocale();
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
-    // key is optional but good practice if multiple chat instances exist, 
+    // key is optional but good practice if multiple chat instances exist,
     // but here we just want the default context.
     const { appendMessage } = useCopilotChat();
 
@@ -28,16 +31,22 @@ export function VoiceInput(props: InputProps) {
         }
     };
 
+    const handleInterimTranscript = useCallback((transcript: string) => {
+        setInterimTranscript(transcript);
+        setIsSpeaking(true);
+    }, []);
+
     const handleTranscript = useCallback(async (transcript: string) => {
         if (!transcript) return;
 
-        await appendMessage(
-            new TextMessage({
-                role: MessageRole.User,
-                content: transcript,
-            })
-        );
-    }, [appendMessage]);
+        // Put final transcript in textarea for user to edit before sending
+        setText(transcript);
+        setInterimTranscript('');
+        setIsSpeaking(false);
+
+        // Focus textarea so user can immediately edit or press Enter to send
+        inputRef.current?.focus();
+    }, []);
 
     const handleResponse = useCallback(async (response: string) => {
         if (!response) return;
@@ -50,32 +59,58 @@ export function VoiceInput(props: InputProps) {
         );
     }, [appendMessage]);
 
+    const useLiveKit = process.env.NEXT_PUBLIC_USE_LIVEKIT === 'true';
+
     return (
         <div className="p-4 border-t border-gray-100 bg-white">
             <div className="flex items-end gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
 
                 {/* Voice S2S Button (Integrated) */}
                 <div className="flex-shrink-0 mb-1">
-                    <VoiceButton
-                        language={locale}
-                        size="sm"
-                        showText={false}
-                        onTranscript={handleTranscript}
-                        onResponse={handleResponse}
-                    />
+                    {useLiveKit ? (
+                        <LiveKitVoiceButton
+                            size="sm"
+                            showText={false}
+                            onInterimTranscript={handleInterimTranscript}
+                            onTranscript={handleTranscript}
+                            onResponse={handleResponse}
+                        />
+                    ) : (
+                        <VoiceButton
+                            language={locale}
+                            size="sm"
+                            showText={false}
+                            onInterimTranscript={handleInterimTranscript}
+                            onTranscript={handleTranscript}
+                            onResponse={handleResponse}
+                        />
+                    )}
                 </div>
 
-                {/* Text Area */}
-                <div className="flex-grow min-h-[44px] flex items-center">
+                {/* Text Area with Interim Transcript Overlay */}
+                <div className="relative flex-grow min-h-[44px] flex items-center">
                     <textarea
                         ref={inputRef}
                         className="w-full bg-transparent border-none focus:ring-0 p-0 text-gray-900 placeholder-gray-400 resize-none h-24"
-                        placeholder="Type a message or use voice..."
+                        placeholder={isSpeaking ? '' : 'Type a message or use voice...'}
                         value={text}
-                        onChange={(e) => setText(e.target.value)}
+                        onChange={(e) => {
+                            setText(e.target.value);
+                            // Clear interim transcript if user starts typing
+                            if (interimTranscript) {
+                                setInterimTranscript('');
+                                setIsSpeaking(false);
+                            }
+                        }}
                         onKeyDown={handleKeyDown}
                         disabled={props.inProgress}
                     />
+                    {/* Interim transcript overlay */}
+                    {isSpeaking && interimTranscript && !text && (
+                        <div className="absolute inset-0 pointer-events-none p-2 text-gray-400 italic overflow-hidden">
+                            {interimTranscript}...
+                        </div>
+                    )}
                 </div>
 
                 {/* Send Button */}

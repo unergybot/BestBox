@@ -35,6 +35,7 @@ cd "$PROJECT_ROOT"
 
 # Default configuration
 export S2S_HOST="${S2S_HOST:-0.0.0.0}"
+export S2S_PORT="${S2S_PORT:-8765}"
 export ASR_MODEL="${ASR_MODEL:-Systran/faster-distil-whisper-large-v3}"
 export ASR_DEVICE="cpu"
 export ASR_LANGUAGE="${ASR_LANGUAGE:-zh}"

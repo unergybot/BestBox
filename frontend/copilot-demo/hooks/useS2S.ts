@@ -15,13 +15,13 @@ import { S2SClient, getS2SClient } from '@/lib/S2SClient';
 
 export interface S2SMessage {
   type:
-    | 'session_ready'
-    | 'asr_partial'
-    | 'asr_final'
-    | 'llm_token'
-    | 'response_end'
-    | 'interrupted'
-    | 'error';
+  | 'session_ready'
+  | 'asr_partial'
+  | 'asr_final'
+  | 'llm_token'
+  | 'response_end'
+  | 'interrupted'
+  | 'error';
   text?: string;
   token?: string;
   message?: string;
@@ -77,6 +77,8 @@ export interface S2SControls {
   interrupt: () => void;
   /** Send text directly (skip speech) */
   sendText: (text: string) => void;
+  /** Request TTS for text */
+  speak: (text: string, flush?: boolean) => void;
   /** Clear current state */
   clear: () => void;
 }
@@ -300,6 +302,10 @@ export function useS2S({
     clientRef.current?.sendText(text);
   }, []);
 
+  const speak = useCallback((text: string, flush: boolean = true) => {
+    clientRef.current?.speak(text, flush);
+  }, []);
+
   const clear = useCallback(() => {
     clientRef.current?.clear();
     setCurrentTranscript('');
@@ -323,6 +329,7 @@ export function useS2S({
     stopListening,
     interrupt,
     sendText,
+    speak,
     clear,
   };
 }

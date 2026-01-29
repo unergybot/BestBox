@@ -18,15 +18,17 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ASRConfig:
     """Configuration for streaming ASR."""
-    model_size: str = "Systran/faster-distil-whisper-large-v3"  # Multilingual + Fast
+    model_size: str = "tiny"   # Optimized for CPU usage and speed
     device: str = "cpu"         # Force CPU to avoid ROCm/CUDA errors
     compute_type: str = "int8"  # Optimized for CPU speed
-    language: str = ""          # Empty string = auto-detect, or "zh", "en", etc.
+    language: str = "en"        # English - explicit for .en models
     sample_rate: int = 16000
     frame_ms: int = 20
-    vad_aggressiveness: int = 1
-    partial_interval: float = 0.5
+    vad_aggressiveness: int = 3   # Strict (3) to prevent noise from keeping VAD open
+    partial_interval: float = 1.0 # Buffer more audio before inference to reduce CPU load
     max_buffer_seconds: float = 30.0
+    max_utterance_seconds: float = 15.0  # Force finalize after this duration to prevent infinite loops
+    silence_threshold: float = 0.6       # Silence duration to trigger finalization
 
 
 class StreamingASR:
@@ -128,14 +130,24 @@ class StreamingASR:
             # and Whisper's internal VAD during inference to filter silence.
             self.speech_buffer.extend(frame.tolist())
             
-            # Use VAD only for triggering "partial" updates (activity detection)
+            # Use VAD + RMS energy check for triggering "partial" updates (activity detection)
             is_speech = self.vad.is_speech(frame.tobytes(), self.config.sample_rate)
             
-            if is_speech:
+            # Simple RMS energy check to filter out ambient noise that mimics speech
+            # For 16-bit PCM, values are +/- 32768. 
+            # 100-200 is a reasonable noise floor for many mics.
+            rms = np.sqrt(np.mean(frame.astype(np.float32)**2))
+            is_loud_enough = rms > 300  # Adjustable threshold
+            
+            if is_speech and is_loud_enough:
                 if not self.is_speaking:
                     self.is_speaking = True
                     self.speech_start_time = time.time()
                 self.last_partial_time = time.time()  # Keep alive
+            elif not is_loud_enough and self.is_speaking:
+                # If it's too quiet, don't update last_partial_time, 
+                # allowing the silence_threshold (0.6s) to eventually trigger finalize.
+                pass
             
             # Emit partial if enough time passed AND we recently heard speech
             now = time.time()
@@ -144,32 +156,79 @@ class StreamingASR:
             has_enough_audio = len(self.speech_buffer) >= self.config.sample_rate * 0.5  # At least 0.5s of audio
             
             if has_recent_speech and has_enough_audio and time_since_last_emit >= self.config.partial_interval:
-                text = self._transcribe_buffer()
+                text, lang = self._transcribe_buffer()
                 if text.strip():
                     result = {
                         "type": "partial",
                         "text": text,
+                        "language": lang,
                         "duration_ms": int((now - self.speech_start_time) * 1000)
                     }
                 self._last_emit = now
+
+            # Check for end of speech (silence timeout)
+            # If we were speaking, but haven't heard speech for > 1.0s (silence threshold), finalize.
+            # We can make this configurable in ASRConfig later.
+            silence_duration = now - self.last_partial_time
+            if self.is_speaking:
+                current_utterance_duration = now - self.speech_start_time
                 
+                # watchdog: Force finalize if utterance is too long (hallucination guard)
+                if current_utterance_duration > self.config.max_utterance_seconds:
+                    logger.warning(f"⚠️ ASR Watchdog: Utterance too long ({current_utterance_duration:.1f}s > {self.config.max_utterance_seconds}s). Forcing finalize.")
+                    final_res = self.finalize()
+                    if final_res and final_res["text"]:
+                        result = final_res
+                
+                # Normal silence detection
+                elif silence_duration > self.config.silence_threshold:
+                    logger.info(f"Silence detected ({silence_duration:.2f}s), finalizing speech segment.")
+                    final_res = self.finalize()
+                    logger.info(f"🔍 DEBUG: final_res={final_res}, has_text={bool(final_res and final_res.get('text'))}")
+                    if final_res and final_res.get("text"):
+                        logger.info(f"🎯 RETURNING FINAL RESULT: '{final_res['text']}'")
+                        result = final_res
+                    else:
+                        logger.warning(f"⚠️  Finalize returned empty text, NOT returning result")
+                 
         return result
     
     def finalize(self) -> Dict[str, Any]:
         """Get final transcription."""
+        buffer_duration = len(self.speech_buffer) / self.config.sample_rate
+        logger.info(f"🔚 Finalize called: buffer has {buffer_duration:.2f}s of audio ({len(self.speech_buffer)} samples). PID: {id(self)}")
+        
         if not self.speech_buffer:
             self.is_speaking = False
+            logger.warning("⚠️  Finalize: Empty speech buffer!")
             return {"type": "final", "text": ""}
-            
-        text = self._transcribe_buffer()
+
+        # Require minimum audio duration for final transcription
+        if buffer_duration < 0.3:
+            logger.warning(f"⚠️  Finalize: Buffer too short ({buffer_duration:.2f}s < 0.3s), skipping transcription")
+            self.speech_buffer.clear()
+            self.is_speaking = False
+            return {"type": "final", "text": ""}
+
+        text, lang = self._transcribe_buffer()
+        logger.info(f"✅ Finalize result: '{text}' ({lang}) (from {buffer_duration:.2f}s audio)")
+        
+        # CLEAR BUFFER
+        prev_len = len(self.speech_buffer)
         self.speech_buffer.clear()
         self.is_speaking = False
         
-        return {"type": "final", "text": text.strip()}
+        # VERIFY CLEAR
+        if len(self.speech_buffer) != 0:
+             logger.error(f"❌ CRITICAL: speech_buffer.clear() FAILED! Len is {len(self.speech_buffer)}")
+        else:
+             logger.info(f"✨ Buffer cleared successfully (was {prev_len} samples)")
+
+        return {"type": "final", "text": text.strip(), "language": lang}
     
-    def _transcribe_buffer(self) -> str:
+    def _transcribe_buffer(self) -> tuple[str, str]:
         if not self.speech_buffer:
-            return ""
+            return "", "en"
             
         # faster-whisper expects float32
         audio = np.array(self.speech_buffer, dtype=np.int16).astype(np.float32) / 32768.0
@@ -184,20 +243,21 @@ class StreamingASR:
                 audio,
                 language=language,
                 beam_size=1,
-                vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500)
+                vad_filter=False,  # Disable aggressive filter as it was deleting real speech
+                log_prob_threshold=None,  # Accept all transcripts regardless of log prob
+                no_speech_threshold=0.95  # Very lenient - transcribe even if no_speech prob is high
             )
             
             text = " ".join([segment.text for segment in segments])
             
             elapsed = time.time() - start_time
-            detected_lang = info.language if hasattr(info, 'language') else 'unknown'
+            detected_lang = info.language if hasattr(info, 'language') else 'en'
             logger.info(f"Inference: {elapsed:.3f}s (Audio: {len(audio)/16000:.2f}s, Lang: {detected_lang}) -> '{text[:50]}...'")
-            return text.strip()
+            return text.strip(), detected_lang
             
         except Exception as e:
             logger.error(f"Transcribe error: {e}")
-            return ""
+            return "", "en"
 
 
 class ASRPool:

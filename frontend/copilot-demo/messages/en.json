@@ -39,6 +39,15 @@
             "status": "Status",
             "operational": "Operational"
         },
+        "portals": {
+            "title": "Management Portals",
+            "erp": "ERPNext System",
+            "clawdbot": "ClawdBot Admin",
+            "grafana": "Grafana Dashboard",
+            "jaeger": "Jaeger Tracing",
+            "prometheus": "Prometheus Metrics",
+            "qdrant": "Qdrant Vector DB"
+        },
         "scenarios": {
             "title": "Scenarios",
             "erp": {
@@ -89,6 +98,20 @@
                 "Schedule a team meeting next Tuesday",
                 "Generate leave request form"
             ]
+        },
+        "VoiceChat": {
+            "title": "Voice Assistant",
+            "connecting": "Connecting...",
+            "connected": "Connected",
+            "disconnected": "Disconnected",
+            "listening": "Listening...",
+            "processing": "Thinking...",
+            "micEnabled": "Microphone on",
+            "micDisabled": "Microphone off",
+            "ttsEnabled": "Voice on",
+            "ttsMuted": "Voice muted",
+            "clearChat": "Clear conversation",
+            "connectionError": "Connection failed. Please refresh."
         }
     }
 }

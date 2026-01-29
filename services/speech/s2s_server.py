@@ -545,6 +545,35 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
         session.touch()
         await ws.send_text(json.dumps({"type": "pong"}))
     
+    elif msg_type == "tts":
+        # Direct TTS request (from CopilotKit or other sources)
+        text = data.get("text", "").strip()
+        if text:
+            # Add to speech buffer and synthesize
+            logger.info(f"Direct TTS request: '{text[:30]}...'")
+            session.is_speaking = True
+            
+            # Use speech buffer to handle partial phrases if needed
+            # For simplicity, we just synthesize the whole chunk if it's short,
+            # or rely on the buffer's existing logic
+            phrase = session.speech_buffer.add(text)
+            
+            # Ensure model loaded
+            model = await get_tts_model()
+            
+            if phrase and model:
+                audio = model.synthesize(phrase, language=session.language)
+                if audio:
+                    await ws.send_bytes(audio)
+            
+            # Flush if indicated (e.g. end of sentence/message)
+            if data.get("flush", False):
+                remaining = session.speech_buffer.flush()
+                if remaining and model:
+                    audio = model.synthesize(remaining, language=session.language)
+                    if audio:
+                        await ws.send_bytes(audio)
+                        
     else:
         logger.warning(f"Unknown message type: {msg_type}")
 

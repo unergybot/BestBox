@@ -74,6 +74,9 @@ python scripts/seed_knowledge_base.py
 - `services/` - FastAPI backends (agent_api.py, embeddings/main.py)
 - `frontend/copilot-demo/` - Next.js + CopilotKit UI
 - `scripts/` - Startup scripts and tests
+- `plugins/` - Plugin system core (registry, loader, hooks)
+- `skills/` - Lightweight SKILL.md plugins
+- `plugins_contrib/` - Full plugin modules
 
 ### Service Ports
 | Service | Port |
@@ -93,12 +96,13 @@ python scripts/seed_knowledge_base.py
 - `current_agent` - Active agent (erp, crm, it_ops, oa)
 - `tool_calls` - SLA counter (max 5)
 - `confidence` - Classification confidence (0.0-1.0)
+- `plugin_context` - Plugin system data (active_plugins, tool_results, hook_data)
 
 ### LLM Configuration
-- Model: Qwen2.5-14B-Instruct-Q4_K_M via llama.cpp
+- Model: Qwen3-30B-A3B-Instruct-2507-Q4_K_M via llama.cpp (MoE architecture: 30B total, 3B active per token)
 - Backend: Vulkan (not HIP/ROCm directly - llama.cpp uses Vulkan for gfx1151)
-- Context: 4096 tokens
-- Performance: ~527 tok/s prompt processing, ~24 tok/s generation
+- Context: 8192 tokens
+- Performance: ~206 tok/s prompt processing, ~85 tok/s generation (3.5x faster than previous model)
 
 ## Speech-to-Speech (S2S)
 
@@ -163,8 +167,64 @@ Next.js 16 with CopilotKit integration:
 - `app/api/copilotkit/route.ts` - Bridges to Python agent API at :8000
 - Uses React 19 and Tailwind CSS 4
 
+## Plugin System
+
+BestBox includes an extensible plugin system for adding tools, lifecycle hooks, and HTTP routes.
+
+### Plugin Types
+
+1. **Skills** - Lightweight plugins with `SKILL.md` files (YAML frontmatter)
+2. **Full Plugins** - Complete Python modules with `bestbox.plugin.json` manifests
+
+### Discovery Locations (priority order)
+1. Bundled: `skills/`, `plugins_contrib/`
+2. Global: `~/.bestbox/plugins/`
+3. Workspace: `.bestbox/plugins/`
+4. Config-specified paths
+
+### Creating a Skill
+
+```yaml
+---
+name: my-skill
+version: 1.0.0
+tools:
+  - name: my_tool
+    description: Tool description
+    parameters: {type: object}
+hooks:
+  - event: BEFORE_ROUTING
+    handler: skills.my_skill.hooks.handler
+---
+
+Skill documentation...
+```
+
+### Creating a Plugin
+
+1. Create `plugins_contrib/my-plugin/bestbox.plugin.json`
+2. Add `__init__.py` with `register(api)` function
+3. Restart agent API
+
+### Lifecycle Hooks
+
+Available events: `BEFORE_ROUTING`, `AFTER_ROUTING`, `BEFORE_TOOL_CALL`, `AFTER_TOOL_CALL`, etc.
+
+Hooks execute in priority order and can modify agent state.
+
+### Testing
+
+```bash
+pytest tests/test_plugins.py -v                   # Unit tests
+pytest tests/test_plugin_integration.py -v        # Integration tests
+```
+
+See `docs/PLUGIN_SYSTEM.md` for complete documentation.
+
 ## Documentation
 
 - `docs/system_design.md` - Complete architecture specification (800+ lines)
 - `docs/rocm_deployment_guide.md` - Hardware and ROCm setup
 - `docs/PROJECT_STATUS.md` - Current development status
+- `docs/PLUGIN_SYSTEM.md` - Plugin system guide
+- `PLUGIN_SYSTEM_IMPLEMENTATION.md` - Implementation summary

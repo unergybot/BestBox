@@ -1,0 +1,7 @@
+# Minimal LiveKit Server Configuration
+port: 7880
+logging:
+  level: info
+
+keys:
+  devkey: secret

@@ -5,9 +5,9 @@
 | Component | Specification |
 |-----------|---------------|
 | APU | AMD Ryzen AI Max+ 395 (Strix Halo) |
-| iGPU | Radeon 8060S (RDNA 3.5, gfx1103 architecture) |
+| iGPU | Radeon 8060S (RDNA 3.5, gfx1151 architecture) |
 | RAM | 30GB system RAM (up to ~75GB shared with iGPU via VGM) |
-| OS | Linux (Ubuntu 24.04) |
+| OS | Linux (Ubuntu 24.04), ROCm 7.2 (Detected) |
 | Use Case | Development/Debugging, Large Models (70B+) |
 
 ---
@@ -17,7 +17,7 @@
 ### 1.1 Prerequisites
 
 ```bash
-# Check kernel version (ROCm 7.1 requires 6.10.x or newer)
+# Check kernel version (ROCm 7.x requires 6.10.x or newer)
 uname -r
 
 # Verify iGPU detection
@@ -28,7 +28,7 @@ sudo apt update
 sudo apt install wget gnupg2 software-properties-common
 ```
 
-### 1.2 Install ROCm 7.1 (Strix Halo Compatible)
+### 1.2 Install ROCm 7.x (Strix Halo Compatible)
 
 ```bash
 # Add ROCm repository
@@ -79,7 +79,7 @@ cd llama.cpp
 # Build with ROCm support
 HIPCXX="$(hipconfig -l)/clang" HIP_PATH="$(hipconfig -R)" \
 cmake -S. -Bbuild -DGGML_HIP=ON \
--DAMDGPU_TARGETS=gfx1103 \
+-DAMDGPU_TARGETS=gfx1151 \
 -DCMAKE_BUILD_TYPE=Release \
 -DLLAMA_CURL=ON \
 && cmake --build build --config Release -j$(nproc)

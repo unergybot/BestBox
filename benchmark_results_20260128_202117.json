@@ -1,0 +1,126 @@
+{
+  "metadata": {
+    "model": "Qwen/Qwen2.5-14B-Instruct",
+    "hardware": "AMD Ryzen AI Max+ 395 (gfx1151)",
+    "timestamp": "2026-01-28T20:21:17.783797",
+    "vllm_base_url": "http://localhost:8000/v1"
+  },
+  "completion_tests": {
+    "short": {
+      "success": true,
+      "total_time_seconds": 16.20335817337036,
+      "prompt_tokens": 33,
+      "completion_tokens": 100,
+      "total_tokens": 133,
+      "tokens_per_second": 6.171560174751084,
+      "time_per_token_ms": 162.0335817337036,
+      "response_text": "Python is a high-level, interpreted programming language that emphasizes code readability and simplicity. It was created by Guido van Rossum and first released in 1991. Python supports multiple programming paradigms, including procedural, object-oriented, and functional programming. It has a large and comprehensive standard library, which makes it very useful for a wide variety of applications, from web development to data analysis, artificial intelligence, scientific computing, and more.\n\nKey features of Python include:\n\n- **Ease of",
+      "gpu_before": {
+        "card0": {
+          "GPU use (%)": "1",
+          "VRAM Total Memory (B)": "103079215104",
+          "VRAM Total Used Memory (B)": "95996334080"
+        }
+      },
+      "gpu_after": {
+        "card0": {
+          "GPU use (%)": "93",
+          "VRAM Total Memory (B)": "103079215104",
+          "VRAM Total Used Memory (B)": "96053764096"
+        }
+      }
+    },
+    "medium": {
+      "success": true,
+      "total_time_seconds": 46.74923920631409,
+      "prompt_tokens": 46,
+      "completion_tokens": 300,
+      "total_tokens": 346,
+      "tokens_per_second": 6.417216731079575,
+      "time_per_token_ms": 155.83079735438028,
+      "response_text": "Machine learning is a subset of artificial intelligence that focuses on building systems that can learn from data, identify patterns, and make decisions with minimal human intervention. The core idea behind machine learning is to develop algorithms that can improve automatically through experience.\n\nIn more technical terms, machine learning involves using statistical techniques to give computers the ability to \"learn\" (i.e., progressively improve performance on a specific task) with data, without being explicitly programmed. This process typically involves feeding large amounts of data into a model, allowing it to recognize patterns and use those insights to make predictions or decisions.\n\nHere are three real-world applications of machine learning:\n\n1. **Recommendation Systems**: Online platforms such as Amazon, Netflix, and Spotify use machine learning to recommend products, movies, or music to their users based on their past behavior, preferences, and interactions with the platform. These systems analyze vast amounts of user data to predict what a user might like or be interested in next.\n\n2. **Fraud Detection**: Banks and financial institutions utilize machine learning algorithms to detect fraudulent transactions. By analyzing historical transaction data, these models can identify unusual patterns or behaviors that deviate from the norm, which could indicate fraudulent activity. Machine learning helps in reducing false positives and negatives, thereby enhancing security measures.\n\n3. **Healthcare Diagnostics**: Machine learning plays a crucial role in improving healthcare diagnostics. For example, it can be used to analyze medical images like X-rays and MRIs to assist doctors in diagnosing diseases such as cancer.",
+      "gpu_before": {
+        "card0": {
+          "GPU use (%)": "33",
+          "VRAM Total Memory (B)": "103079215104",
+          "VRAM Total Used Memory (B)": "96053760000"
+        }
+      },
+      "gpu_after": {
+        "card0": {
+          "GPU use (%)": "94",
+          "VRAM Total Memory (B)": "103079215104",
+          "VRAM Total Used Memory (B)": "96051728384"
+        }
+      }
+    },
+    "long": {
+      "success": false,
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=120)"
+    },
+    "code": {
+      "success": true,
+      "total_time_seconds": 77.99362897872925,
+      "prompt_tokens": 56,
+      "completion_tokens": 500,
+      "total_tokens": 556,
+      "tokens_per_second": 6.410780041230831,
+      "time_per_token_ms": 155.9872579574585,
+      "response_text": "Below is a Python implementation of a Binary Search Tree (BST) with methods to insert, search, and delete nodes. This implementation includes error handling for cases such as attempting to delete a non-existent node. Each method is documented with a docstring to explain its functionality.\n\n```python\nclass Node:\n    \"\"\"\n    Represents a node in the Binary Search Tree.\n    \"\"\"\n    def __init__(self, key):\n        self.left = None\n        self.right = None\n        self.val = key\n\nclass BinarySearchTree:\n    \"\"\"\n    A Binary Search Tree (BST) data structure supporting insertion, searching, and deletion operations.\n    \"\"\"\n    \n    def __init__(self):\n        \"\"\"Initialize an empty Binary Search Tree.\"\"\"\n        self.root = None\n    \n    def insert(self, key):\n        \"\"\"\n        Insert a new node with the given key into the BST.\n        \n        :param key: The value of the node to be inserted.\n        \"\"\"\n        if self.root is None:\n            self.root = Node(key)\n        else:\n            self._insert_recursive(self.root, key)\n    \n    def _insert_recursive(self, root, key):\n        \"\"\"\n        Helper method to recursively find the correct position and insert a new node.\n        \n        :param root: The current node in the recursion.\n        :param key: The value of the node to be inserted.\n        \"\"\"\n        if key < root.val:\n            if root.left is None:\n                root.left = Node(key)\n            else:\n                self._insert_recursive(root.left, key)\n        else:\n            if root.right is None:\n                root.right = Node(key)\n            else:\n                self._insert_recursive(root.right, key)\n                \n    def search(self, key):\n        \"\"\"\n        Search for a node with the given key in the BST.\n        \n        :param key: The value to search for.\n        :return: True if the key is found, False otherwise.\n        \"\"\"\n        return self._search_recursive(self.root, key)\n    \n    def _search_recursive(self, root, key):\n        \"\"\"\n        Helper method to recursively search for a node with the given key.\n        \n        :param root: The current node in the recursion.\n        :param key: The value to search for.\n        :return: True if the key is found, False otherwise.\n        \"\"\"\n        if root is None or root.val == key:\n            return root is not None\n        if key < root.val:\n            return self._search_recursive",
+      "gpu_before": {
+        "card0": {
+          "GPU use (%)": "44",
+          "VRAM Total Memory (B)": "103079215104",
+          "VRAM Total Used Memory (B)": "96051798016"
+        }
+      },
+      "gpu_after": {
+        "card0": {
+          "GPU use (%)": "95",
+          "VRAM Total Memory (B)": "103079215104",
+          "VRAM Total Used Memory (B)": "96054833152"
+        }
+      }
+    }
+  },
+  "streaming_tests": {
+    "short": {
+      "success": true,
+      "ttft_ms": 171.37980461120605,
+      "total_time_seconds": 15.594398260116577,
+      "tokens_received": 100,
+      "tokens_per_second": 6.412559069736907
+    },
+    "medium": {
+      "success": true,
+      "ttft_ms": 200.23441314697266,
+      "total_time_seconds": 46.709444999694824,
+      "tokens_received": 300,
+      "tokens_per_second": 6.422683891918648
+    },
+    "long": {
+      "success": true,
+      "ttft_ms": 189.98956680297852,
+      "total_time_seconds": 125.0688636302948,
+      "tokens_received": 800,
+      "tokens_per_second": 6.396476123464354
+    },
+    "code": {
+      "success": true,
+      "ttft_ms": 191.9553279876709,
+      "total_time_seconds": 78.04848051071167,
+      "tokens_received": 500,
+      "tokens_per_second": 6.406274622237881
+    }
+  },
+  "summary": {
+    "avg_tokens_per_second": 6.333185649020497,
+    "median_tokens_per_second": 6.410780041230831,
+    "min_tokens_per_second": 6.171560174751084,
+    "max_tokens_per_second": 6.417216731079575,
+    "avg_ttft_ms": 188.38977813720703,
+    "median_ttft_ms": 190.9724473953247,
+    "min_ttft_ms": 171.37980461120605,
+    "max_ttft_ms": 200.23441314697266
+  }
+}

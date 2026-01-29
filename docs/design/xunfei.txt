@@ -1,0 +1,12 @@
+APPID
+57a8697d
+
+APISecret
+Yjk5YjEwNTdlMmFjOWRhOWZjNWFkOTg0
+
+APIKey
+7de586494bb83ef31d1309701c77b120
+
+
+https://global.xfyun.cn/doc/asr/voicedictation/API.html
+

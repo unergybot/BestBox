@@ -23,8 +23,7 @@
 ### Grafana Admin Panel
 - **URL:** http://localhost:3001
 - **Username:** `admin`
-- **Password:** `m1JNg7LYDTKr6kGcaJWJhCzUV`
-- ⚠️ **Save this password securely!**
+- **Password:** `bestbox`
 
 ### Frontend Admin Panel
 - **URL:** http://localhost:3000/admin (after frontend starts)

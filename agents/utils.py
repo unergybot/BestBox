@@ -10,6 +10,17 @@ logger = logging.getLogger(__name__)
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
 EMBEDDINGS_BASE_URL = os.environ.get("EMBEDDINGS_BASE_URL", "http://127.0.0.1:8081/v1")
 
+SPEECH_FORMAT_INSTRUCTION = """
+RESPONSE FORMAT:
+You MUST format your response in two parts:
+1. A short, conversational summary for speech synthesis (1-2 sentences), enclosed in [SPEECH] tags.
+2. The full detailed response for the chat display.
+
+Example:
+[SPEECH]The Q4 revenue was 15 million dollars, which is a 20% increase.[/SPEECH]
+Based on the financial reports, the Q4 revenue hit $15M... (rest of detailed answer)
+"""
+
 def get_llm(temperature: float = 0.7):
     """
     Get the configured ChatOpenAI instance connected to local llama-server.
@@ -24,10 +35,11 @@ def get_llm(temperature: float = 0.7):
     return ChatOpenAI(
         base_url=LLM_BASE_URL,
         api_key="sk-no-key-required",  # Local server doesn't need real API key
-        model=os.environ.get("LLM_MODEL", "qwen2.5-14b"),
+        model=os.environ.get("LLM_MODEL", "qwen3-30b-a3b"),
         temperature=temperature,
         streaming=True,
-        request_timeout=60,  # 60 second timeout
+        request_timeout=120,  # Increased to 120 seconds for complex queries
+        max_retries=2,  # Retry on transient failures
     )
 
 class LocalBGEEmbeddings(OpenAIEmbeddings):

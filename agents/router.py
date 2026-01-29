@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from agents.state import AgentState
 from agents.utils import get_llm
+from agents.context_manager import apply_sliding_window
 
 class RouteDecision(BaseModel):
     """Decision on which agent to route the request to."""
@@ -14,41 +15,25 @@ class RouteDecision(BaseModel):
     )
     reasoning: str = Field(..., description="The reasoning behind the routing decision.")
 
-ROUTER_SYSTEM_PROMPT = """You are the Router Agent for BestBox, an enterprise AI assistant.
-Your job is to analyze the user's request and route it to the most appropriate specialist agent.
+ROUTER_SYSTEM_PROMPT = """You are the BestBox Router. Route user requests to the correct agent.
 
-Available Agents:
-1. **erp_agent**: Handles finance, procurement, inventory, invoices, vendors, and suppliers.
-   - Keywords: price, cost, spend, invoice, inventory, stock, vendor, vendors, supplier, suppliers,
-     procurement, P&L, financial, purchase, order, payment, budget, expense, top vendors, top suppliers.
-   
-2. **crm_agent**: Handles sales, leads, customers, deals, and opportunities.
-   - Keywords: lead, churn, customer, sales, quote, deal, opportunity, revenue pipeline, prospect.
-   
-3. **it_ops_agent**: Handles system status, servers, logs, alerts, and troubleshooting.
-   - Keywords: server, slow, error, crash, log, alert, diagnosis, failure, maintenance, IT.
-   
-4. **oa_agent**: Handles office automation, documents, emails, and scheduling.
-   - Keywords: email, draft, letter, schedule, meeting, calendar, leave request, approval.
+Agents:
+- erp_agent: Finance, procurement, inventory, invoices, vendors, suppliers, costs, P&L
+- crm_agent: Sales, leads, customers, deals, opportunities, revenue, churn
+- it_ops_agent: Servers, errors, logs, alerts, IT issues, maintenance
+- oa_agent: Emails, scheduling, meetings, calendar, documents, leave requests
+- general_agent: Greetings, help requests, cross-domain, policies, AI system questions
 
-5. **general_agent**: Handles general questions, cross-domain queries, knowledge base lookups,
-   greetings, help requests, and questions that span multiple domains.
-   - Use when request doesn't clearly fit one domain
-   - Use for general information requests
-   - Use for conversational messages like "hi", "help", "what can you do?"
-   - Use when user asks about company policies or procedures that span domains
-
-IMPORTANT ROUTING RULES:
-- Questions about "vendors", "suppliers", "top vendors", or "procurement" should go to erp_agent
-- Prefer general_agent for ambiguous requests rather than fallback
-- Only use fallback if the request is truly out of scope (completely unrelated to enterprise tasks)
-- For greetings ("hi", "hello"), route to general_agent (NOT fallback)
-- For help requests ("help", "what can you do?"), route to general_agent
+Rules:
+- Vendors/suppliers → erp_agent
+- Greetings/help/Hudson Group → general_agent
+- Only use fallback for completely unrelated requests
 """
 
 def router_node(state: AgentState):
     """
     Analyzes the latest message and decides the next agent.
+    Uses context management to prevent context overflow.
     """
     llm = get_llm(temperature=0.1) # Low temp for classification
     
@@ -58,8 +43,14 @@ def router_node(state: AgentState):
     
     structured_llm = llm.with_structured_output(RouteDecision)
     
-    # Get the last user message
-    messages = state["messages"]
+    # Apply sliding window to prevent context overflow
+    # Router only needs recent context for classification
+    messages = apply_sliding_window(
+        state["messages"], 
+        max_tokens=1500,  # Router needs minimal context
+        max_messages=3,   # Only recent messages matter for routing
+        keep_system=False
+    )
     
     # Create prompt
     prompt = ChatPromptTemplate.from_messages([
@@ -79,7 +70,7 @@ def router_node(state: AgentState):
     except Exception as e:
         # Fallback if parsing fails
         print(f"Router failed: {e}")
-        return {"current_agent": "fallback", "confidence": 0.0}
+        return {"current_agent": "general_agent", "confidence": 0.0}
 
 def route_decision(state: AgentState) -> str:
     """

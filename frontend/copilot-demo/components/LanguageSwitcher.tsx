@@ -19,7 +19,7 @@ export default function LanguageSwitcher() {
     };
 
     return (
-        <div className="absolute top-4 right-4 z-50">
+        <div className="">
             <select
                 defaultValue={locale}
                 className="bg-white/80 backdrop-blur-sm border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all cursor-pointer"

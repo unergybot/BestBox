@@ -5,29 +5,33 @@ import { CopilotSidebar } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
 import "@copilotkit/react-ui/styles.css";
-import { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 
 export default function Home() {
   const tCopilot = useTranslations("Copilot");
 
+  const labels = useMemo(() => ({
+    title: tCopilot("title"),
+    initial: tCopilot("initial"),
+  }), [tCopilot]);
+
   return (
     <CopilotKit runtimeUrl="/api/copilotkit">
       <CopilotSidebar
         defaultOpen={true}
         clickOutsideToClose={false}
-        labels={{
-          title: tCopilot("title"),
-          initial: tCopilot("initial"),
-        }}
+        labels={labels}
         Input={VoiceInput}
       >
-        <DashboardContent />
+        <MemoizedDashboardContent />
       </CopilotSidebar>
     </CopilotKit>
   );
 }
+
+const MemoizedDashboardContent = React.memo(DashboardContent);
 
 function DashboardContent() {
   const t = useTranslations("Home");

@@ -1,0 +1,14 @@
+{
+  "passed": 5,
+  "total": 7,
+  "percentage": 71.42857142857143,
+  "results": {
+    "frontend_accessible": true,
+    "livekit_server": true,
+    "token_generation": true,
+    "agent_dispatch": false,
+    "agent_registration": false,
+    "graph_wrapper": true,
+    "audio_components": true
+  }
+}

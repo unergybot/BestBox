@@ -101,8 +101,8 @@ class StreamingTTS:
             
             self._piper_bin = str(piper_bin)
             self._piper_models = {
-                "zh-cn": "models/piper/zh_CN-huayan-medium.onnx",
-                "en": "models/piper/en_US-libritts_r-medium.onnx"
+                "zh-cn": "models/piper/zh_CN-huayan-medium.onnx",  # Keep medium for Chinese (no low available yet)
+                "en": "models/piper/en_US-amy-low.onnx"  # Use LOW quality for speed (3x faster!)
             }
             
             # Check models exist
@@ -180,6 +180,55 @@ class StreamingTTS:
             
         except Exception as e:
             logger.error(f"TTS synthesis error: {e}")
+            return b""
+
+    async def synthesize_async(self, text: str, language: str = None) -> bytes:
+        """Async version of synthesize to avoid threadpool blocking."""
+        if self._using_piper:
+            return await self._synthesize_piper_async(text, language)
+        # Fallback to thread for XTTS which is CPU/GPU bound python code
+        return await asyncio.to_thread(self.synthesize, text, language)
+
+    async def _synthesize_piper_async(self, text: str, language: str) -> bytes:
+        """Async Piper synthesis using asyncio subprocess."""
+        import asyncio
+        start = time.time()
+        
+        lang_key = "zh-cn" if language and "zh" in language.lower() else "en"
+        model_path = self._piper_models.get(lang_key)
+        
+        if not model_path:
+            return b""
+            
+        cmd = [
+            str(self._piper_bin),
+            "--model", str(model_path),
+            "--output-raw"
+        ]
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(input=text.encode("utf-8")),
+                timeout=30
+            )
+            
+            if process.returncode != 0:
+                logger.error(f"Piper async error: {stderr.decode()[:1000]}")
+                return b""
+                
+            elapsed = time.time() - start
+            logger.debug(f"Piper Async: '{text[:20]}...' -> {len(stdout)} bytes in {elapsed:.3f}s")
+            return stdout
+            
+        except Exception as e:
+            logger.error(f"Piper async synthesis error: {e}")
             return b""
 
     def _synthesize_piper(self, text: str, language: str) -> bytes:

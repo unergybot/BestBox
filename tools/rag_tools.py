@@ -176,7 +176,7 @@ def search_knowledge_base(
 
     Args:
         query: Natural language search query
-        domain: Optional domain filter - "erp", "crm", "it_ops", or "oa" (default: None for all domains)
+        domain: Optional domain filter - "erp", "crm", "it_ops", "oa", or "hudson" (default: None for all domains)
         top_k: Number of top results to return after reranking (default: 5)
 
     Returns:

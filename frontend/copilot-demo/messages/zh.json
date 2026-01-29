@@ -39,6 +39,15 @@
             "status": "状态",
             "operational": "运行正常"
         },
+        "portals": {
+            "title": "管理入口",
+            "erp": "ERPNext 系统",
+            "clawdbot": "ClawdBot 管理",
+            "grafana": "Grafana 面板",
+            "jaeger": "Jaeger 链路追踪",
+            "prometheus": "Prometheus 指标",
+            "qdrant": "Qdrant 向量库"
+        },
         "scenarios": {
             "title": "场景",
             "erp": {
@@ -89,6 +98,20 @@
                 "安排下周二的团队会议",
                 "生成休假申请表"
             ]
+        },
+        "VoiceChat": {
+            "title": "语音助手",
+            "connecting": "连接中...",
+            "connected": "已连接",
+            "disconnected": "已断开",
+            "listening": "聆听中...",
+            "processing": "思考中...",
+            "micEnabled": "麦克风开启",
+            "micDisabled": "麦克风关闭",
+            "ttsEnabled": "语音开启",
+            "ttsMuted": "语音静音",
+            "clearChat": "清空对话",
+            "connectionError": "连接失败，请刷新页面"
         }
     }
 }

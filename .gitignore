@@ -200,7 +200,6 @@ temp/
 .worktrees/
 
 # Project Specific
-.agent/
 third_party/
 bin/
 *.pcm

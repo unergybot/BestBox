@@ -40,6 +40,21 @@ if OPENTELEMETRY_AVAILABLE:
     LangChainInstrumentor().instrument()
     print("✅ OpenTelemetry instrumentation enabled")
 
+# Initialize plugin system BEFORE importing graph
+# This ensures plugins are loaded before graph is compiled
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+try:
+    from plugins import PluginRegistry, PluginLoader
+    registry = PluginRegistry()
+    loader = PluginLoader(registry, workspace_dir=os.getcwd())
+    plugin_count = loader.load_all()
+    logger.info(f"✅ Loaded {plugin_count} plugins before graph compilation")
+except Exception as e:
+    logger.error(f"⚠️  Plugin loading failed: {e}", exc_info=True)
+
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
@@ -49,7 +64,6 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from agents.graph import app as agent_app
 from agents.state import AgentState
 import uvicorn
-import logging
 import json
 import time
 import uuid
@@ -71,9 +85,6 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
     print("⚠️  Prometheus metrics not available. Install with: pip install prometheus-client")
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 app = FastAPI(title="BestBox Agent API")
 
 # Add CORS middleware
@@ -93,8 +104,44 @@ db_pool: Optional[asyncpg.Pool] = None
 
 @app.on_event("startup")
 async def startup():
-    """Initialize database connection pool on startup"""
+    """Initialize database connection pool and register plugin HTTP routes on startup"""
     global db_pool
+
+    # Register plugin HTTP routes (plugins already loaded at module level)
+    try:
+        from plugins import PluginRegistry
+        registry = PluginRegistry()
+
+        # Log loaded plugins
+        plugins = registry.get_all_plugins()
+        if plugins:
+            logger.info(f"Active plugins: {', '.join([p.name for p in plugins])}")
+
+        # Register plugin HTTP routes
+        http_routes = registry.get_http_routes()
+        for route_info in http_routes:
+            plugin_name = route_info["plugin"]
+            route = route_info["route"]
+            handler = route_info["handler"]
+            methods = route_info["methods"]
+
+            # Register route dynamically
+            for method in methods:
+                if method == "GET":
+                    app.get(route)(handler)
+                elif method == "POST":
+                    app.post(route)(handler)
+                elif method == "PUT":
+                    app.put(route)(handler)
+                elif method == "DELETE":
+                    app.delete(route)(handler)
+
+            logger.info(f"Registered HTTP route: {route} from plugin {plugin_name}")
+
+    except Exception as e:
+        logger.error(f"⚠️  Plugin HTTP route registration failed: {e}", exc_info=True)
+
+    # Initialize database connection pool
     try:
         db_pool = await asyncpg.create_pool(
             host=os.getenv('POSTGRES_HOST', 'localhost'),

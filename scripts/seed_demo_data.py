@@ -29,59 +29,51 @@ API_SECRET = ""
 
 # Demo data definitions
 COMPANY = {
-    "name": "BestBox Manufacturing Ltd",
-    "abbr": "BBM",
+    "name": "Unergy Robotics",
+    "abbr": "UR",
     "country": "China",
     "default_currency": "CNY"
 }
 
 VENDORS = [
-    {"id": "VND-001", "name": "Shanghai Steel Supply Co.", "category": "Raw Materials", "price_trend": 0.25},  # 25% increase in Q4
+    {"id": "VND-001", "name": "Shanghai Steel Supply Co.", "category": "Raw Materials", "price_trend": 0.25},
     {"id": "VND-002", "name": "Guangzhou Parts Ltd", "category": "Components", "price_trend": 0.05},
-    {"id": "VND-003", "name": "Beijing Industrial Tools", "category": "Equipment", "price_trend": -0.02},
-    {"id": "VND-004", "name": "Shenzhen Electronics", "category": "Electronics", "price_trend": 0.10},
-    {"id": "VND-005", "name": "Suzhou Precision Mfg", "category": "Precision Parts", "price_trend": 0.08},
+    {"id": "VND-003", "name": "Sunlord (顺络电子)", "category": "Passive Components", "price_trend": 0.02},
+    {"id": "VND-004", "name": "Fenghua Advanced (风华高科)", "category": "Passive Components", "price_trend": 0.03},
+    {"id": "VND-005", "name": "Guobo Electronics (国博电子)", "category": "RF Components", "price_trend": 0.08},
 ]
 
 CUSTOMERS = [
     {"id": "CUS-001", "name": "Acme Corporation", "tier": "Enterprise", "churn_risk": 0.15},
     {"id": "CUS-002", "name": "GlobalTech Industries", "tier": "Enterprise", "churn_risk": 0.10},
-    {"id": "CUS-003", "name": "Delta Manufacturing", "tier": "Mid-Market", "churn_risk": 0.85},  # High churn risk
-    {"id": "CUS-004", "name": "Omega Solutions", "tier": "Mid-Market", "churn_risk": 0.20},
-    {"id": "CUS-005", "name": "Tech Innovators Inc", "tier": "Enterprise", "churn_risk": 0.05},
-    {"id": "CUS-006", "name": "Pacific Trading Co", "tier": "SMB", "churn_risk": 0.40},
+    {"id": "CUS-003", "name": "Delta Manufacturing", "tier": "Mid-Market", "churn_risk": 0.85},
+    {"id": "CUS-004", "name": "Xiaomi Ecosystem Partner", "tier": "Enterprise", "churn_risk": 0.05},
+    {"id": "CUS-005", "name": "Automotive Tier 1 Supplier", "tier": "Enterprise", "churn_risk": 0.05},
+    {"id": "CUS-006", "name": "Smart Home OEM", "tier": "SMB", "churn_risk": 0.20},
     {"id": "CUS-007", "name": "Eastern Steel Works", "tier": "Enterprise", "churn_risk": 0.12},
-    {"id": "CUS-008", "name": "Summit Industrial", "tier": "Mid-Market", "churn_risk": 0.65},
+    {"id": "CUS-008", "name": "IoT Device Maker", "tier": "Mid-Market", "churn_risk": 0.15},
     {"id": "CUS-009", "name": "Harbor Logistics", "tier": "SMB", "churn_risk": 0.30},
     {"id": "CUS-010", "name": "Prime Manufacturing", "tier": "Enterprise", "churn_risk": 0.08},
 ]
 
 ITEMS = [
-    # Raw Materials
+    # E-shine Distributor Products - Radar Modules
+    {"code": "ESVSD-400", "name": "Smart Cabin Radar Module", "group": "Radar Modules", "uom": "Nos", "rate": 185.00},
+    {"code": "ES58U4-2020", "name": "5.8GHz Radar Sensor", "group": "Radar Modules", "uom": "Nos", "rate": 45.00},
+    {"code": "ES-IDR-V2", "name": "Inching Detection Radar", "group": "Radar Modules", "uom": "Nos", "rate": 120.00},
+    {"code": "ES-DEV-RADAR", "name": "Radar Development Kit", "group": "Tooling", "uom": "Set", "rate": 1500.00},
+    # RF Components
+    {"code": "ES-FBAR-B1", "name": "FBAR Filter (Band 1)", "group": "RF Components", "uom": "Nos", "rate": 2.50},
+    {"code": "ES-FBAR-B3", "name": "FBAR Filter (Band 3)", "group": "RF Components", "uom": "Nos", "rate": 2.80},
+    {"code": "ES-SAW-WF2", "name": "SAW Filter (Wi-Fi)", "group": "RF Components", "uom": "Nos", "rate": 1.20},
+    {"code": "ES-LNA-5G01", "name": "Low Noise Amplifier (LNA)", "group": "RF Discrete", "uom": "Nos", "rate": 5.50},
+    # Passive Components
+    {"code": "HFC-0402-100J", "name": "High-Frequency Capacitor 10pF", "group": "Passive Components", "uom": "Nos", "rate": 0.05},
+    {"code": "HFI-0402-1N5", "name": "HF Ceramic Inductor 1.5nH", "group": "Passive Components", "uom": "Nos", "rate": 0.08},
+    # Original Demo Items
     {"code": "RM-001", "name": "Steel Sheet 4mm", "group": "Raw Materials", "uom": "Kg", "rate": 8.50},
-    {"code": "RM-002", "name": "Aluminum Profile", "group": "Raw Materials", "uom": "Meter", "rate": 25.00},
-    {"code": "RM-003", "name": "Copper Wire 2mm", "group": "Raw Materials", "uom": "Meter", "rate": 4.20},
-    {"code": "RM-004", "name": "Stainless Steel Rod", "group": "Raw Materials", "uom": "Kg", "rate": 15.80},
-    {"code": "RM-005", "name": "Rubber Gasket Material", "group": "Raw Materials", "uom": "Sheet", "rate": 120.00},
-    # Components
     {"code": "CP-001", "name": "Compressor Valve", "group": "Components", "uom": "Nos", "rate": 450.00},
-    {"code": "CP-002", "name": "Coolant Pump", "group": "Components", "uom": "Nos", "rate": 1200.00},
-    {"code": "CP-003", "name": "Filter Mesh Assembly", "group": "Components", "uom": "Nos", "rate": 85.00},
-    {"code": "CP-004", "name": "Pressure Sensor", "group": "Components", "uom": "Nos", "rate": 320.00},
-    {"code": "CP-005", "name": "Control Board PCB", "group": "Components", "uom": "Nos", "rate": 580.00},
-    # Finished Goods
     {"code": "FG-001", "name": "Industrial Compressor Unit A", "group": "Finished Goods", "uom": "Nos", "rate": 25000.00},
-    {"code": "FG-002", "name": "Industrial Compressor Unit B", "group": "Finished Goods", "uom": "Nos", "rate": 35000.00},
-    {"code": "FG-003", "name": "Cooling System Module", "group": "Finished Goods", "uom": "Nos", "rate": 8500.00},
-    # Consumables
-    {"code": "CN-001", "name": "Lubricant Oil 5L", "group": "Consumables", "uom": "Can", "rate": 180.00},
-    {"code": "CN-002", "name": "Coolant Fluid 10L", "group": "Consumables", "uom": "Can", "rate": 250.00},
-    {"code": "CN-003", "name": "Cleaning Solvent", "group": "Consumables", "uom": "Liter", "rate": 45.00},
-    # Spare Parts
-    {"code": "SP-001", "name": "Valve Seal Kit", "group": "Spare Parts", "uom": "Kit", "rate": 65.00},
-    {"code": "SP-002", "name": "Bearing Assembly", "group": "Spare Parts", "uom": "Nos", "rate": 280.00},
-    {"code": "SP-003", "name": "Filter Cartridge", "group": "Spare Parts", "uom": "Nos", "rate": 95.00},
-    {"code": "SP-004", "name": "Gasket Set", "group": "Spare Parts", "uom": "Set", "rate": 42.00},
 ]
 
 WAREHOUSES = [
@@ -120,6 +112,15 @@ class ERPNextClient:
         response = self.session.get(url, params=params)
         return response.json().get("data", [])
 
+    def update_doc(self, doctype: str, name: str, data: dict) -> dict:
+        """Update a document in ERPNext."""
+        url = f"{self.base_url}/api/resource/{doctype}/{name}"
+        response = self.session.put(url, json=data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            raise Exception(f"Failed to update {doctype} {name}: {response.text}")
+
 
 def generate_purchase_orders(start_date: datetime, end_date: datetime, count: int = 50) -> list:
     """Generate realistic purchase order data."""
@@ -146,9 +147,9 @@ def generate_purchase_orders(start_date: datetime, end_date: datetime, count: in
         if vendor["id"] == "VND-001" and order_date.month >= 10:
             price_multiplier = 1.25  # 25% increase in Q4
         
-        # Select 1-5 items for this order
+        # Select 1-5 items for this order (mostly components and passives)
         num_items = random.randint(1, 5)
-        selected_items = random.sample(ITEMS[:10], min(num_items, 10))  # Only raw materials and components
+        selected_items = random.sample(ITEMS[4:], min(num_items, len(ITEMS[4:])))
         
         items = []
         total = 0
@@ -194,9 +195,10 @@ def generate_sales_orders(start_date: datetime, end_date: datetime, count: int =
         else:
             status = random.choice(["To Deliver and Bill", "To Bill", "Completed"])
         
-        # Select finished goods
+        # Select products normally sold (Radar modules and Finished Goods)
         num_items = random.randint(1, 3)
-        selected_items = random.sample(ITEMS[10:14], min(num_items, 4))  # Finished goods
+        saleable_items = ITEMS[:4] + [ITEMS[-1]] # Radar modules + Compressor
+        selected_items = random.sample(saleable_items, min(num_items, len(saleable_items)))
         
         items = []
         total = 0
@@ -227,13 +229,239 @@ def generate_sales_orders(start_date: datetime, end_date: datetime, count: int =
     return orders
 
 
+def ensure_dependencies(client: ERPNextClient):
+    """Ensure prerequisite data exists."""
+    print("Checking dependencies...")
+    
+    # Item Groups
+    item_groups = set(item["group"] for item in ITEMS)
+    for group in item_groups:
+        try:
+            if not client.get_list("Item Group", filters={"item_group_name": group}):
+                client.create_doc("Item Group", {"doctype": "Item Group", "item_group_name": group, "parent_item_group": "All Item Groups", "is_group": 0})
+                print(f"  Created Item Group: {group}")
+        except Exception as e:
+            print(f"  Error checking Item Group {group}: {e}")
+
+    # Supplier Groups
+    supplier_groups = set(vendor["category"] for vendor in VENDORS)
+    for group in supplier_groups:
+        try:
+            if not client.get_list("Supplier Group", filters={"supplier_group_name": group}):
+                client.create_doc("Supplier Group", {"doctype": "Supplier Group", "supplier_group_name": group})
+                print(f"  Created Supplier Group: {group}")
+        except Exception as e:
+            print(f"  Error checking Supplier Group {group}: {e}")
+            
+    # Warehouses
+    for wh in WAREHOUSES:
+        try:
+            if not client.get_list("Warehouse", filters={"warehouse_name": wh["name"]}):
+                # Need a parent warehouse, usually 'All Warehouses' - 'Company'
+                # But creating under All Warehouses for simplicity if allowed
+                
+                # Check for Company
+                company = COMPANY["name"]
+                
+                doc_data = {
+                    "doctype": "Warehouse",
+                    "warehouse_name": wh["name"],
+                    "company": company,
+                    "parent_warehouse": f"All Warehouses - {COMPANY['abbr']}" # This might need adjustment if company not set up exactly this way
+                }
+                # Fallback parent
+                try:
+                    client.create_doc("Warehouse", doc_data)
+                    print(f"  Created Warehouse: {wh['name']}")
+                except:
+                     # Retry without parent or finding root
+                     pass
+        except Exception as e:
+            print(f"  Error checking Warehouse {wh['name']}: {e}")
+
+    # UOMs
+    uoms = set(item["uom"] for item in ITEMS)
+    for uom in uoms:
+        try:
+            if not client.get_list("UOM", filters={"uom_name": uom}):
+                client.create_doc("UOM", {"doctype": "UOM", "uom_name": uom})
+                print(f"  Created UOM: {uom}")
+        except Exception as e:
+            print(f"  Error checking UOM {uom}: {e}")
+
+
+def configure_language(client: ERPNextClient):
+    """Configure ERPNext to use Chinese (Simplified)."""
+    print("Configuring language settings...")
+    
+    # 1. System Settings
+    try:
+        # We perform a PUT on the System Settings singleton
+        print("  Setting System Language to 'zh'...")
+        client.update_doc("System Settings", "System Settings", {"language": "zh"})
+        print("  ✓ System language updated")
+    except Exception as e:
+        print(f"  Error updating System Settings: {e}")
+
+    # 2. Administrator User
+    try:
+        print("  Setting Administrator Language to 'zh'...")
+        client.update_doc("User", "Administrator", {"language": "zh"})
+        print("  ✓ Administrator language updated")
+    except Exception as e:
+        print(f"  Error updating Administrator User: {e}")
+
+
 def seed_to_erpnext(client: ERPNextClient):
     """Seed data to a live ERPNext instance."""
     print("Seeding data to ERPNext...")
     
-    # This would create actual documents via API
-    # For now, we'll save to JSON for mock data
-    raise NotImplementedError("Live ERPNext seeding not yet implemented")
+    configure_language(client)
+    ensure_dependencies(client)
+
+    # 1. Setup Company (if needed, usually created by wizard/setup)
+    company_name = COMPANY["name"]
+    # ...
+
+    # 2. Create Items
+    print(f"Creating {len(ITEMS)} Items...")
+    for item in ITEMS:
+        try:
+            # Check if exists
+            existing = client.get_list("Item", filters={"item_code": item["code"]})
+            if existing:
+                print(f"  Skipping Item {item['code']} (already exists)")
+                continue
+
+            doc_data = {
+                "doctype": "Item",
+                "item_code": item["code"],
+                "item_name": item["name"],
+                "item_group": item["group"],
+                "stock_uom": item["uom"],
+                "is_stock_item": 1,
+                "valuation_rate": item["rate"],
+                "standard_rate": item["rate"],
+                "opening_stock": 0 # We will add stock via Stock Entry or Purchase Receipt
+            }
+            client.create_doc("Item", doc_data)
+            print(f"  Created Item {item['code']}")
+        except Exception as e:
+            print(f"  Error creating Item {item['code']}: {e}")
+
+    # 3. Create Suppliers (Vendors)
+    print(f"Creating {len(VENDORS)} Suppliers...")
+    for vendor in VENDORS:
+        try:
+            existing = client.get_list("Supplier", filters={"supplier_name": vendor["name"]})
+            if existing:
+                print(f"  Skipping Supplier {vendor['name']} (already exists)")
+                continue
+                
+            doc_data = {
+                "doctype": "Supplier",
+                "supplier_name": vendor["name"],
+                "supplier_group": vendor["category"]
+            }
+            client.create_doc("Supplier", doc_data)
+            print(f"  Created Supplier {vendor['name']}")
+        except Exception as e:
+            print(f"  Error creating Supplier {vendor['name']}: {e}")
+
+    # 4. Create Customers
+    print(f"Creating {len(CUSTOMERS)} Customers...")
+    for customer in CUSTOMERS:
+        try:
+            existing = client.get_list("Customer", filters={"customer_name": customer["name"]})
+            if existing:
+                print(f"  Skipping Customer {customer['name']} (already exists)")
+                continue
+                
+            doc_data = {
+                "doctype": "Customer",
+                "customer_name": customer["name"],
+                "customer_group": "All Customer Groups", 
+                "territory": "All Territories",
+                "customer_type": "Company"
+            }
+            client.create_doc("Customer", doc_data)
+            print(f"  Created Customer {customer['name']}")
+        except Exception as e:
+            print(f"  Error creating Customer {customer['name']}: {e}")
+
+    # Generate orders in memory
+    start_date = datetime(2025, 7, 1)
+    end_date = datetime(2025, 12, 31)
+    purchase_orders = generate_purchase_orders(start_date, end_date, 50)
+    sales_orders = generate_sales_orders(start_date, end_date, 30)
+
+    # 5. Create Purchase Orders
+    print(f"Creating {len(purchase_orders)} Purchase Orders...")
+    for po in purchase_orders:
+        try:
+            # Check duplicates by ID (internal ID we generated)
+            # ERPNext might not map it directly unless we use a custom field or 'name' (if manual naming allowed)
+            # We'll use title or api logic.
+            # Assuming re-run is fine for now, or check via filters on supplier + date?
+            # Let's just create.
+            
+            supplier_name = po["vendor_name"]
+            
+            items_list = []
+            for item in po["items"]:
+               items_list.append({
+                   "item_code": item["item_code"],
+                   "qty": item["qty"],
+                   "rate": item["rate"],
+                   "schedule_date": po["date"] 
+               })
+
+            doc_data = {
+                "doctype": "Purchase Order",
+                "company": company_name,
+                "supplier": supplier_name,
+                "transaction_date": po["date"],
+                "schedule_date": po["date"],
+                "items": items_list,
+                "docstatus": 0
+            }
+            
+            new_po = client.create_doc("Purchase Order", doc_data)
+            print(f"  Created PO {new_po.get('name')} for {supplier_name}")
+        except Exception as e:
+            print(f"  Error creating PO for {po['vendor_name']}: {e}")
+
+    # 6. Create Sales Orders
+    print(f"Creating {len(sales_orders)} Sales Orders...")
+    for so in sales_orders:
+        try:
+            customer_name = so["customer_name"]
+            
+            items_list = []
+            for item in so["items"]:
+               items_list.append({
+                   "item_code": item["item_code"],
+                   "qty": item["qty"],
+                   "rate": item["rate"],
+                   "delivery_date": so["date"]
+               })
+
+            doc_data = {
+                "doctype": "Sales Order",
+                "company": company_name,
+                "customer": customer_name,
+                "transaction_date": so["date"],
+                "delivery_date": so["date"],
+                "items": items_list,
+                "docstatus": 0
+            }
+            
+            new_so = client.create_doc("Sales Order", doc_data)
+            print(f"  Created SO {new_so.get('name')} for {customer_name}")
+        except Exception as e:
+            print(f"  Error creating SO for {customer_name}: {e}")
+
+    print("Seeding complete!")
 
 
 def seed_to_json(output_dir: str = "data/demo"):

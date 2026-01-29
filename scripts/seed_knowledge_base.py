@@ -79,7 +79,7 @@ def seed_knowledge_base():
 
     # Process each domain
     demo_docs_dir = project_root / "data" / "demo_docs"
-    domains = ["erp", "crm", "itops", "oa"]
+    domains = ["erp", "crm", "itops", "oa", "hudson"]
 
     total_docs = 0
     total_chunks = 0

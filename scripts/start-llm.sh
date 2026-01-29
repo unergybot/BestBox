@@ -9,10 +9,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Configuration
 LLAMA_SERVER="${PROJECT_DIR}/third_party/llama.cpp/build/bin/llama-server"
-MODEL_PATH="${HOME}/models/14b/Qwen2.5-14B-Instruct-Q4_K_M.gguf"
+MODEL_PATH="${HOME}/models/30b/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"
 PORT=8080
 HOST="0.0.0.0"
-CONTEXT_SIZE=4096
+# Increased from 4096 to 8192 for multi-turn conversations
+# Model supports up to 32768, but 8K is a good balance of latency vs capacity
+CONTEXT_SIZE=8192
 GPU_LAYERS=999
 LOG_FILE="${PROJECT_DIR}/llama-server.log"
 

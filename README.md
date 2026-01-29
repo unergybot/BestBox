@@ -289,16 +289,6 @@ Remaining capacity: ~50GB for additional models or larger batches.
 
 ## Getting Help
 
-### RAG Pipeline
-
-```bash
-# One-time: Seed knowledge base with demo documents
-python scripts/seed_knowledge_base.py
-
-# Start reranker service (in separate terminal)
-./scripts/start-reranker.sh
-```
-
 ### Common Commands
 
 ```bash
@@ -375,26 +365,23 @@ For questions or issues, refer to the documentation or contact the BestBox devel
         "https://docker.mirrors.ustc.edu.cn"
     ]
     
+=== ERPNext Ready ===
+URL: http://localhost:8002
+Username: Administrator
+Password: admin
 
 
-  3. Start services and test the RAG pipeline:                                  
-  docker compose up -d                                                          
-  ./scripts/start-embeddings.sh                                                 
-  ./scripts/start-reranker.sh                                                   
-  python scripts/seed_knowledge_base.py  # If not already seeded                
-                                                                                
-  The RAG pipeline implementation is complete and merged! 🎉    
+/home/unergy/BestBox/restart-agent.sh
 
-### Kill old service processes                                                  
+## Startup
+USE_LIVEKIT=true ./scripts/start-all-services.sh
+./scripts/start-livekit-agent.sh dev
+cd frontend/copilot-demo
+npm run dev
 
-  pkill -9 -f "services.embeddings.main"                                        
-  pkill -9 -f "services.agent_api"                                              
-  pkill -9 -f "reranker.py" 
+Nvidia API Key
+API RateLimit: up to 40rpm
 
-### Restart all services                                                        
-  cd ~/BestBox                                                                  
-  ./scripts/start-all-services.sh                                               
-                                                                                
-### In another terminal, start frontend                                         
-  cd ~/BestBox/frontend/copilot-demo                                            
-  npm run dev      
+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
+
+URL: https://integrate.api.nvidia.com Endpoint: POST /v1/chat/completions minimaxai/minimax-m2

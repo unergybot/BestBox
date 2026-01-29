@@ -96,6 +96,28 @@ router_confidence = Histogram(
 )
 
 # ==========================================================
+# Context Management Metrics
+# ==========================================================
+
+context_tokens_used = Histogram(
+    'context_tokens_used',
+    'Estimated tokens used in context per request',
+    buckets=[500, 1000, 2000, 3000, 4000, 6000, 8000]
+)
+
+context_truncation_events = Counter(
+    'context_truncation_total',
+    'Number of times context was truncated to fit limits',
+    ['agent_type']
+)
+
+llm_errors = Counter(
+    'llm_errors_total',
+    'LLM errors by type',
+    ['error_type']  # context_exceeded, timeout, connection_error, other
+)
+
+# ==========================================================
 # Usage Example
 # ==========================================================
 

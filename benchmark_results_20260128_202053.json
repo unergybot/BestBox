@@ -1,0 +1,62 @@
+{
+  "metadata": {
+    "model": "Qwen/Qwen3-14B-Instruct",
+    "hardware": "AMD Ryzen AI Max+ 395 (gfx1151)",
+    "timestamp": "2026-01-28T20:20:53.556890",
+    "vllm_base_url": "http://localhost:8000/v1"
+  },
+  "completion_tests": {
+    "short": {
+      "success": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"The model `Qwen/Qwen3-14B-Instruct` does not exist.\",\"type\":\"NotFoundError\",\"param\":\"model\",\"code\":404}}"
+    },
+    "medium": {
+      "success": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"The model `Qwen/Qwen3-14B-Instruct` does not exist.\",\"type\":\"NotFoundError\",\"param\":\"model\",\"code\":404}}"
+    },
+    "long": {
+      "success": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"The model `Qwen/Qwen3-14B-Instruct` does not exist.\",\"type\":\"NotFoundError\",\"param\":\"model\",\"code\":404}}"
+    },
+    "code": {
+      "success": false,
+      "error": "HTTP 404: {\"error\":{\"message\":\"The model `Qwen/Qwen3-14B-Instruct` does not exist.\",\"type\":\"NotFoundError\",\"param\":\"model\",\"code\":404}}"
+    }
+  },
+  "streaming_tests": {
+    "short": {
+      "success": true,
+      "ttft_ms": 0,
+      "total_time_seconds": 0.002746105194091797,
+      "tokens_received": 0,
+      "tokens_per_second": 0.0
+    },
+    "medium": {
+      "success": true,
+      "ttft_ms": 0,
+      "total_time_seconds": 0.003594636917114258,
+      "tokens_received": 0,
+      "tokens_per_second": 0.0
+    },
+    "long": {
+      "success": true,
+      "ttft_ms": 0,
+      "total_time_seconds": 0.002889871597290039,
+      "tokens_received": 0,
+      "tokens_per_second": 0.0
+    },
+    "code": {
+      "success": true,
+      "ttft_ms": 0,
+      "total_time_seconds": 0.0027730464935302734,
+      "tokens_received": 0,
+      "tokens_per_second": 0.0
+    }
+  },
+  "summary": {
+    "avg_ttft_ms": 0,
+    "median_ttft_ms": 0.0,
+    "min_ttft_ms": 0,
+    "max_ttft_ms": 0
+  }
+}

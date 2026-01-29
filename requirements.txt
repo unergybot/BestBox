@@ -21,3 +21,7 @@ TTS>=0.22.0
 # Audio processing
 numpy>=1.24.0
 sounddevice>=0.4.6
+slack_sdk>=3.0.0
+slack_bolt>=1.18.0
+aiohttp>=3.9.0
+python-telegram-bot>=20.0

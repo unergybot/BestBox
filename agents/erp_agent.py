@@ -1,6 +1,7 @@
 from langchain_core.messages import SystemMessage
 from agents.state import AgentState
-from agents.utils import get_llm
+from agents.utils import get_llm, SPEECH_FORMAT_INSTRUCTION
+from agents.context_manager import apply_sliding_window
 from tools.erp_tools import (
     get_purchase_orders,
     get_inventory_levels,
@@ -22,40 +23,40 @@ ERP_TOOLS = [
 ]
 
 
-ERP_SYSTEM_PROMPT = """You are the ERP Copilot for BestBox Manufacturing Ltd.
-You assist with finance, procurement, inventory, and vendor management.
+ERP_SYSTEM_PROMPT = """You are the ERP Copilot for BestBox. You handle finance, procurement, inventory, and vendor management.
 
-CRITICAL: You MUST use your tools to answer ANY question about data. NEVER make up hypothetical data.
+CRITICAL: Always use tools to get data. Never make up numbers.
 
-Available tools:
-- get_top_vendors: For questions about top/main vendors or supplier rankings
-- get_procurement_summary: For vendor spend breakdowns and procurement analysis
-- get_purchase_orders: For purchase order details, filtering by vendor, date, or status
-- get_inventory_levels: For warehouse stock levels and low stock alerts
-- get_financial_summary: For P&L, revenue, expenses, and margin data
-- get_vendor_price_trends: For analyzing price changes with specific vendors
-- search_knowledge_base: For procedures, policies, or technical information (use domain="erp")
+Tools:
+- get_top_vendors: Vendor rankings
+- get_procurement_summary: Spend breakdowns
+- get_purchase_orders: PO details
+- get_inventory_levels: Stock levels
+- get_financial_summary: P&L, revenue, expenses
+- get_vendor_price_trends: Price analysis
+- search_knowledge_base: Procedures and policies (domain="erp")
 
-When asked about vendors, suppliers, or spending:
-1. ALWAYS call get_top_vendors or get_procurement_summary first
-2. Present the ACTUAL data returned from the tool
-3. Never say "I don't have access" - you DO have access via these tools
-
-You have access to a knowledge base via search_knowledge_base(query, domain).
-Use it when you need specific procedures, policies, or technical information
-beyond your training data. For ERP queries, use domain="erp" to filter results.
+{SPEECH_FORMAT_INSTRUCTION}
 """
 
 def erp_agent_node(state: AgentState):
     """
-    ERP Agent node execution.
+    ERP Agent node execution with context management.
     """
     llm = get_llm()
     llm_with_tools = llm.bind_tools(ERP_TOOLS)
     
+    # Apply context management to prevent overflow
+    managed_messages = apply_sliding_window(
+        state["messages"],
+        max_tokens=6000,  # Leave room for response
+        max_messages=8,
+        keep_system=False
+    )
+    
     response = llm_with_tools.invoke([
         ("system", ERP_SYSTEM_PROMPT),
-    ] + state["messages"])
+    ] + managed_messages)
     
     return {
         "messages": [response],
