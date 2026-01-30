@@ -239,6 +239,29 @@ class ChatResponse(BaseModel):
 async def health():
     return {"status": "ok", "service": "langgraph-agent"}
 
+@app.get("/api/troubleshooting/images/{image_id}")
+async def get_troubleshooting_image(image_id: str):
+    """
+    Serve troubleshooting case images.
+    Images are stored in data/troubleshooting/processed/images/
+    """
+    import os
+    from fastapi.responses import FileResponse
+
+    # Sanitize image_id to prevent directory traversal
+    if '..' in image_id or '/' in image_id:
+        raise HTTPException(status_code=400, detail="Invalid image ID")
+
+    image_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "troubleshooting", "processed", "images", image_id
+    )
+
+    if not os.path.exists(image_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(image_path, media_type="image/jpeg")
+
 @app.get("/health/db")
 async def health_check_database():
     """
