@@ -9,8 +9,8 @@ from agents.context_manager import apply_sliding_window
 
 class RouteDecision(BaseModel):
     """Decision on which agent to route the request to."""
-    destination: Literal["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "general_agent", "fallback"] = Field(
-        ..., 
+    destination: Literal["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "mold_agent", "general_agent", "fallback"] = Field(
+        ...,
         description="The target agent to handle the user request."
     )
     reasoning: str = Field(..., description="The reasoning behind the routing decision.")
@@ -20,13 +20,15 @@ ROUTER_SYSTEM_PROMPT = """You are the BestBox Router. Route user requests to the
 Agents:
 - erp_agent: Finance, procurement, inventory, invoices, vendors, suppliers, costs, P&L
 - crm_agent: Sales, leads, customers, deals, opportunities, revenue, churn
-- it_ops_agent: Servers, errors, logs, alerts, IT issues, maintenance
+- it_ops_agent: Servers, errors, logs, alerts, IT system issues, maintenance
 - oa_agent: Emails, scheduling, meetings, calendar, documents, leave requests
+- mold_agent: Mold troubleshooting, manufacturing defects, product quality issues (披锋/flash, 拉白/whitening, 火花纹/spark marks, 模具/mold problems, 表面污染/contamination, trial results T0/T1/T2)
 - general_agent: Greetings, help requests, cross-domain, policies, AI system questions
 
 Rules:
 - Vendors/suppliers → erp_agent
 - Greetings/help/Hudson Group → general_agent
+- Manufacturing/mold/product defects → mold_agent
 - Only use fallback for completely unrelated requests
 """
 

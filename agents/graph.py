@@ -6,6 +6,7 @@ from agents.erp_agent import erp_agent_node, ERP_TOOLS
 from agents.crm_agent import crm_agent_node, CRM_TOOLS
 from agents.it_ops_agent import it_ops_agent_node, IT_OPS_TOOLS
 from agents.oa_agent import oa_agent_node, OA_TOOLS
+from agents.mold_agent import mold_agent_node, MOLD_TOOLS
 from agents.general_agent import general_agent_node, GENERAL_TOOLS
 from langchain_core.messages import AIMessage, BaseMessage
 import logging
@@ -20,7 +21,7 @@ _plugin_registry = PluginRegistry()
 _hook_runner = HookRunner(_plugin_registry)
 
 # Combine all tools for the tool node
-ALL_TOOLS = ERP_TOOLS + CRM_TOOLS + IT_OPS_TOOLS + OA_TOOLS + GENERAL_TOOLS
+ALL_TOOLS = ERP_TOOLS + CRM_TOOLS + IT_OPS_TOOLS + OA_TOOLS + MOLD_TOOLS + GENERAL_TOOLS
 
 # Add plugin tools
 plugin_tools = _plugin_registry.get_all_tools()
@@ -106,6 +107,7 @@ workflow.add_node("erp_agent", erp_agent_node)
 workflow.add_node("crm_agent", crm_agent_node)
 workflow.add_node("it_ops_agent", it_ops_agent_node)
 workflow.add_node("oa_agent", oa_agent_node)
+workflow.add_node("mold_agent", mold_agent_node)
 workflow.add_node("general_agent", general_agent_node)
 workflow.add_node("fallback", fallback_node)
 workflow.add_node("tools", tools_node_with_hooks)
@@ -122,13 +124,14 @@ workflow.add_conditional_edges(
         "crm_agent": "crm_agent",
         "it_ops_agent": "it_ops_agent",
         "oa_agent": "oa_agent",
+        "mold_agent": "mold_agent",
         "general_agent": "general_agent",
         "fallback": "fallback"
     }
 )
 
 # Agent -> Tools or END
-agent_names = ["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "general_agent"]
+agent_names = ["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "mold_agent", "general_agent"]
 for agent in agent_names:
     workflow.add_conditional_edges(
         agent,
@@ -148,6 +151,7 @@ workflow.add_conditional_edges(
         "crm_agent": "crm_agent",
         "it_ops_agent": "it_ops_agent",
         "oa_agent": "oa_agent",
+        "mold_agent": "mold_agent",
         "general_agent": "general_agent"
     }
 )

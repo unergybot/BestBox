@@ -36147,3 +36147,41 @@
 2026-01-29 08:56:22.060189 - Waiting for text input...
 2026-01-29 08:56:22.060208 - Input channel closed
 2026-01-29 08:56:22.060216 - [LocalTTSStream] _run() FINISHED/CLEANUP
+2026-01-29 08:56:56.284086 - [LocalTTSStream] _run() called STARTED
+2026-01-29 08:56:56.285384 - Initializing emitter with request_id=tts_e61e0f2e
+2026-01-29 08:56:56.285431 - 🔊 TTS: Emitter initialized successfully
+2026-01-29 08:56:56.285441 - Waiting for text input...
+2026-01-29 08:56:56.295138 - [LocalTTSStream] _run() called STARTED
+2026-01-29 08:56:56.295210 - Initializing emitter with request_id=tts_4f3a7721
+2026-01-29 08:56:56.295239 - 🔊 TTS: Emitter initialized successfully
+2026-01-29 08:56:56.295247 - Waiting for text input...
+2026-01-29 08:56:56.733896 - Received text: [VOICE]You're so welcome—keep shining! [/VOICE]
+
+2026-01-29 08:56:56.733960 - Processing text: '[VOICE]You're so wel...'
+2026-01-29 08:56:56.733969 - Calling synthesize_async for '[VOICE]You're so wel...'
+2026-01-29 08:56:57.345059 - Synthesis returned 123392 bytes in 611ms
+2026-01-29 08:57:00.148805 - Waiting for text input...
+2026-01-29 08:57:00.148843 - Received text: [TEXT]Your enthusiasm is contagious! If you ever n
+2026-01-29 08:57:00.148853 - Processing text: '[TEXT]Your enthusias...'
+2026-01-29 08:57:00.148876 - Calling synthesize_async for '[TEXT]Your enthusias...'
+2026-01-29 08:57:00.829937 - Synthesis returned 513536 bytes in 681ms
+2026-01-29 08:57:06.476122 - [LocalTTSStream] _run() called STARTED
+2026-01-29 08:57:06.476317 - Initializing emitter with request_id=tts_327245af
+2026-01-29 08:57:06.476352 - 🔊 TTS: Emitter initialized successfully
+2026-01-29 08:57:06.476360 - Waiting for text input...
+2026-01-29 08:57:06.874118 - Received text: [VOICE]You're absolutely welcome—keep believing in
+2026-01-29 08:57:06.874218 - Processing text: '[VOICE]You're absolu...'
+2026-01-29 08:57:06.874228 - Calling synthesize_async for '[VOICE]You're absolu...'
+2026-01-29 08:57:07.271256 - Synthesis returned 176640 bytes in 397ms
+2026-01-29 08:57:11.294729 - Waiting for text input...
+2026-01-29 08:57:11.294794 - Received text: [TEXT]Thank you for the kind words! I'm here whene
+2026-01-29 08:57:11.295006 - Processing text: '[TEXT]Thank you for ...'
+2026-01-29 08:57:11.295031 - Calling synthesize_async for '[TEXT]Thank you for ...'
+2026-01-29 08:57:11.962287 - Synthesis returned 475136 bytes in 667ms
+2026-01-29 08:57:12.495100 - [LocalTTSStream] _run() FINISHED/CLEANUP
+2026-01-29 08:57:22.748868 - Waiting for text input...
+2026-01-29 08:57:22.748941 - Received text: <livekit.agents.tts.tts.SynthesizeStream._FlushSen
+2026-01-29 08:57:22.748956 - Received FlushSentinel
+2026-01-29 08:57:22.748971 - Waiting for text input...
+2026-01-29 08:57:22.748986 - Input channel closed
+2026-01-29 08:57:22.748994 - [LocalTTSStream] _run() FINISHED/CLEANUP
