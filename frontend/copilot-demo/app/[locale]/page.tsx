@@ -18,6 +18,12 @@ function TroubleshootingCardsOverlay() {
   // Extract troubleshooting results from all assistant messages
   const allResults = useMemo(() => {
     const results = [];
+
+    // Guard against undefined or non-array visibleMessages
+    if (!visibleMessages || !Array.isArray(visibleMessages)) {
+      return results;
+    }
+
     for (const msg of visibleMessages) {
       // Check if this is an assistant message with content
       if (msg && typeof msg === "object" && "content" in msg) {
