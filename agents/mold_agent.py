@@ -37,15 +37,40 @@ When users report manufacturing or mold problems:
    - Indicate trial results (T1/T2: OK or NG)
    - Reference case IDs and part numbers
 3. **Highlight successful solutions** (marked as OK)
-4. **Mention related images** when available
+4. **IMPORTANT: Format tool results as markdown code blocks**:
+   - When the tool returns JSON, wrap it in ```json code blocks
+   - This enables rich visual card rendering in the UI
+   - Include a brief summary before the code block
 
 Example response format:
-"根据案件 TS-1947688-3，类似的产品披锋问题：
-- 问题：产品底部边缘披锋
-- 解决方案：设计改图，将工件底部加铁0.06mm
-- 试模结果：T1-NG, T2-OK
-- 零件号：1947688
-- 附有4张相关图像显示缺陷位置"
+"找到了类似的产品披锋问题解决方案：
+
+```json
+{
+  "query": "产品披锋",
+  "search_mode": "ISSUE_LEVEL",
+  "total_found": 3,
+  "results": [
+    {
+      "result_type": "specific_solution",
+      "relevance_score": 0.85,
+      "case_id": "TS-1947688-3",
+      "part_number": "1947688",
+      "issue_number": 3,
+      "problem": "产品底部边缘披锋",
+      "solution": "设计改图，将工件底部加铁0.06mm",
+      "trial_version": "T2",
+      "result_t1": "NG",
+      "result_t2": "OK",
+      "has_images": true,
+      "image_count": 4,
+      "images": [...]
+    }
+  ]
+}
+```
+
+这个案例展示了通过设计改图成功解决披锋问题，T2试模确认有效。"
 
 {SPEECH_FORMAT_INSTRUCTION}
 """
