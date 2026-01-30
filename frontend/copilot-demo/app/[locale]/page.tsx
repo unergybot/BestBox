@@ -19,23 +19,36 @@ function TroubleshootingCardsOverlay() {
   const allResults = useMemo(() => {
     const results = [];
 
+    console.log("=== TroubleshootingCardsOverlay Debug ===");
+    console.log("visibleMessages:", visibleMessages);
+    console.log("visibleMessages type:", typeof visibleMessages);
+    console.log("Is array:", Array.isArray(visibleMessages));
+
     // Guard against undefined or non-array visibleMessages
     if (!visibleMessages || !Array.isArray(visibleMessages)) {
+      console.log("❌ No messages or not array");
       return results;
     }
 
+    console.log("Message count:", visibleMessages.length);
+
     for (const msg of visibleMessages) {
+      console.log("Processing message:", msg);
       // Check if this is an assistant message with content
       if (msg && typeof msg === "object" && "content" in msg) {
         const content = typeof msg.content === "string" ? msg.content : "";
+        console.log("Message content:", content?.substring(0, 100));
         if (content) {
           const detected = detectTroubleshootingResults(content);
+          console.log("Detected results:", detected.length);
           // Only include specific_solution type results
           const issues = detected.filter(r => r.result_type === "specific_solution");
+          console.log("Filtered issues:", issues.length);
           results.push(...issues);
         }
       }
     }
+    console.log("Total results:", results.length);
     return results;
   }, [visibleMessages]);
 
