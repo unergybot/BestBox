@@ -4,10 +4,32 @@ import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
+import { TroubleshootingCardDetector } from "@/components/troubleshooting";
 import "@copilotkit/react-ui/styles.css";
 import React, { useState, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
+import type { Message } from "@copilotkit/runtime-client-gql";
+
+// Custom message component that adds troubleshooting card detection
+function CustomMessage({ message, inProgress }: { message: Message; inProgress: boolean }) {
+  const isAssistant = message.role === "assistant";
+  const content = typeof message.content === "string" ? message.content : "";
+
+  return (
+    <div className="copilot-message-wrapper">
+      {/* Let CopilotKit render the default message UI */}
+      <div className="copilot-message-content">
+        {content}
+      </div>
+
+      {/* Add troubleshooting card detection for assistant messages */}
+      {isAssistant && content && (
+        <TroubleshootingCardDetector message={content} className="mt-4" />
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const tCopilot = useTranslations("Copilot");
@@ -24,6 +46,7 @@ export default function Home() {
         clickOutsideToClose={false}
         labels={labels}
         Input={VoiceInput}
+        Message={CustomMessage}
       >
         <MemoizedDashboardContent />
       </CopilotSidebar>
@@ -37,7 +60,7 @@ function DashboardContent() {
   const t = useTranslations("Home");
   const [demoScenario, setDemoScenario] = useState<string | null>(null);
 
-  const scenarios = ["erp", "crm", "itops", "oa"] as const;
+  const scenarios = ["erp", "crm", "itops", "oa", "mold"] as const;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
@@ -70,11 +93,13 @@ function DashboardContent() {
                   ? s === "erp" ? "border-blue-500 bg-blue-50" :
                     s === "crm" ? "border-green-500 bg-green-50" :
                       s === "itops" ? "border-orange-500 bg-orange-50" :
-                        "border-purple-500 bg-purple-50"
+                        s === "mold" ? "border-teal-500 bg-teal-50" :
+                          "border-purple-500 bg-purple-50"
                   : `border-gray-200 hover:${s === "erp" ? "border-blue-300" :
                     s === "crm" ? "border-green-300" :
                       s === "itops" ? "border-orange-300" :
-                        "border-purple-300"
+                        s === "mold" ? "border-teal-300" :
+                          "border-purple-300"
                   }`
                   }`}
               >
