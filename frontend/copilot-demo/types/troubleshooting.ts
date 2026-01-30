@@ -3,14 +3,8 @@
 export interface TroubleshootingImage {
   image_id: string;
   image_url: string;
-  description: string;
+  description: string; // Display-friendly description (derived from backend's vl_description field)
   defect_type: string;
-  file_path?: string;
-  cell_location?: string;
-  vl_description?: string | null;
-  text_in_image?: string | null;
-  equipment_part?: string;
-  visual_annotations?: string;
 }
 
 export interface TroubleshootingIssue {
