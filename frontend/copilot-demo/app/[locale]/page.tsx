@@ -1,32 +1,49 @@
 "use client";
 
-import { CopilotKit } from "@copilotkit/react-core";
+import { CopilotKit, useCopilotChat } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
-import { TroubleshootingCardDetector } from "@/components/troubleshooting";
+import { detectTroubleshootingResults } from "@/lib/troubleshooting-detector";
+import { TroubleshootingCard } from "@/components/troubleshooting";
 import "@copilotkit/react-ui/styles.css";
 import React, { useState, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
-import type { Message } from "@copilotkit/runtime-client-gql";
 
-// Custom message component that adds troubleshooting card detection
-function CustomMessage({ message, inProgress }: { message: Message; inProgress: boolean }) {
-  const isAssistant = message.role === "assistant";
-  const content = typeof message.content === "string" ? message.content : "";
+// Component that monitors chat messages and displays troubleshooting cards
+function TroubleshootingCardsOverlay() {
+  const { visibleMessages } = useCopilotChat();
+
+  // Extract troubleshooting results from all assistant messages
+  const allResults = useMemo(() => {
+    const results = [];
+    for (const msg of visibleMessages) {
+      // Check if this is an assistant message with content
+      if (msg && typeof msg === "object" && "content" in msg) {
+        const content = typeof msg.content === "string" ? msg.content : "";
+        if (content) {
+          const detected = detectTroubleshootingResults(content);
+          // Only include specific_solution type results
+          const issues = detected.filter(r => r.result_type === "specific_solution");
+          results.push(...issues);
+        }
+      }
+    }
+    return results;
+  }, [visibleMessages]);
+
+  if (allResults.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="copilot-message-wrapper">
-      {/* Let CopilotKit render the default message UI */}
-      <div className="copilot-message-content">
-        {content}
-      </div>
-
-      {/* Add troubleshooting card detection for assistant messages */}
-      {isAssistant && content && (
-        <TroubleshootingCardDetector message={content} className="mt-4" />
-      )}
+    <div className="fixed bottom-4 right-4 max-w-md max-h-96 overflow-y-auto space-y-4 z-50 pointer-events-none">
+      {allResults.map((result, index) => (
+        <div key={result.case_id || index} className="pointer-events-auto">
+          <TroubleshootingCard data={result} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -46,10 +63,10 @@ export default function Home() {
         clickOutsideToClose={false}
         labels={labels}
         Input={VoiceInput}
-        Message={CustomMessage}
       >
         <MemoizedDashboardContent />
       </CopilotSidebar>
+      <TroubleshootingCardsOverlay />
     </CopilotKit>
   );
 }

@@ -41,15 +41,17 @@ class Qwen2VLService:
 
         try:
             # Import here to allow graceful degradation
-            from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+            # Use AutoModelForVision2Seq for better compatibility
+            from transformers import AutoModelForVision2Seq, AutoProcessor
 
             # Load Qwen2.5-VL model (smaller, faster)
             logger.info("Loading Qwen2.5-VL model (this may take a few minutes)...")
-            self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+            self.model = AutoModelForVision2Seq.from_pretrained(
                 model_name,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                 device_map="auto",
-                trust_remote_code=True
+                trust_remote_code=True,
+                attn_implementation="eager"  # Avoid flash attention issues on ROCm
             )
 
             self.processor = AutoProcessor.from_pretrained(

@@ -32,7 +32,8 @@ class VLProcessor:
         self,
         vl_service_url: str = "http://localhost:8083",
         max_workers: int = 4,
-        language: str = "zh"
+        language: str = "zh",
+        enabled: bool = False  # Disabled by default due to ROCm compatibility issues
     ):
         """
         Initialize VL processor.
@@ -41,16 +42,25 @@ class VLProcessor:
             vl_service_url: URL of VL service
             max_workers: Max concurrent VL requests
             language: Output language ('zh' or 'en')
+            enabled: Enable VL processing (disabled by default)
         """
         self.vl_service_url = vl_service_url
         self.max_workers = max_workers
         self.language = language
+        self.enabled = enabled
+        self.service_available = False
 
-        # Check service health
+        if not enabled:
+            logger.info("🔕 VL processing DISABLED (text-only search mode)")
+            logger.info("   Images will be extracted and stored, but not analyzed")
+            return
+
+        # Check service health only if enabled
         try:
             response = requests.get(f"{vl_service_url}/health", timeout=5)
             if response.status_code == 200:
                 logger.info(f"✅ VL service connected: {vl_service_url}")
+                self.service_available = True
             else:
                 logger.warning(f"⚠️  VL service returned status {response.status_code}")
         except requests.exceptions.ConnectionError:
@@ -65,7 +75,7 @@ class VLProcessor:
             case_data: Case dictionary from ExcelExtractor
 
         Returns:
-            Enriched case data with VL descriptions
+            Enriched case data with VL descriptions (or empty VL fields if disabled)
         """
         logger.info(f"🔍 Processing images for case {case_data['case_id']}")
 
@@ -74,10 +84,21 @@ class VLProcessor:
         for issue in case_data['issues']:
             all_images.extend(issue['images'])
 
-        logger.info(f"   Total images to process: {len(all_images)}")
+        logger.info(f"   Total images: {len(all_images)}")
 
         if not all_images:
             logger.info("   No images to process")
+            return case_data
+
+        # If VL is disabled, just add empty VL fields and return
+        if not self.enabled:
+            logger.info("   ⏭️  VL processing disabled - adding empty VL fields")
+            for img in all_images:
+                img['vl_description'] = ''
+                img['defect_type'] = ''
+                img['equipment_part'] = ''
+                img['text_in_image'] = ''
+                img['visual_annotations'] = ''
             return case_data
 
         # Process images in parallel
@@ -200,18 +221,23 @@ class VLProcessor:
 
 
 # Convenience function
-def enrich_with_vl(case_data: Dict, vl_service_url: str = "http://localhost:8083") -> Dict:
+def enrich_with_vl(
+    case_data: Dict,
+    vl_service_url: str = "http://localhost:8083",
+    enabled: bool = False
+) -> Dict:
     """
     Quick enrichment function.
 
     Args:
         case_data: Case data from ExcelExtractor
         vl_service_url: VL service URL
+        enabled: Enable VL processing (default: False)
 
     Returns:
-        Enriched case data
+        Enriched case data (with empty VL fields if disabled)
     """
-    processor = VLProcessor(vl_service_url=vl_service_url)
+    processor = VLProcessor(vl_service_url=vl_service_url, enabled=enabled)
     return processor.enrich_case(case_data)
 
 

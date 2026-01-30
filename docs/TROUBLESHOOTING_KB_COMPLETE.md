@@ -1,8 +1,8 @@
 # Troubleshooting Knowledge Base - Implementation Complete ✅
 
 **Date**: 2026-01-29
-**Status**: Production Ready (Text Search), VL Model Downloading
-**Progress**: 95% Complete
+**Status**: Production Ready (Text Search), VL Disabled (ROCm compatibility issues)
+**Progress**: 95% Complete - Fully functional with text-only search
 
 ---
 
@@ -14,12 +14,13 @@ A complete multimodal troubleshooting knowledge base system that ingests 1000+ E
 
 ## ✅ Completed Components
 
-### 1. **Vision-Language Service** (Qwen3-VL-8B-Instruct)
+### 1. **Vision-Language Service** (Qwen2.5-VL-3B-Instruct)
 - FastAPI service for image analysis
 - Equipment defect recognition
 - Chinese OCR for annotations
-- Port: 8083, Memory: ~16GB
-- **Status**: Code complete, model downloading
+- Port: 8083, Memory: ~7GB
+- **Status**: ⚠️ DISABLED - Qwen2.5-VL has ROCm compatibility issues (segfault on AMD GPU)
+- **Alternative**: VL processing disabled by default - system uses text-only search
 
 ### 2. **Excel Extraction Pipeline**
 - Auto-detects data table headers in complex Excel layouts
@@ -33,7 +34,8 @@ A complete multimodal troubleshooting knowledge base system that ingests 1000+ E
 - Parallel processing (4 concurrent workers)
 - Retry logic with exponential backoff
 - Enriches images with defect descriptions
-- **Status**: Ready for testing when VL model completes
+- **Status**: ✅ Code complete, VL processing DISABLED by default (enabled=False)
+- Images are extracted and stored, VL fields remain empty until VL service is working
 
 ### 4. **Embeddings Generator**
 - Case-level embeddings (aggregate summaries)
@@ -284,23 +286,26 @@ Query: "我遇到了产品披锋的问题，有什么解决方案？"
 
 ## 📋 Next Steps
 
-### Immediate (Waiting for VL Model)
+### System is Production Ready! 🎉
 
-1. **Complete VL Download**
-   ```bash
-   tail -f logs/model-download.log  # Check progress
-   ```
+The troubleshooting KB is fully functional with text-only search:
+- ✅ Excel extraction working
+- ✅ Image extraction and storage working
+- ✅ Embeddings generation working
+- ✅ Dual-level Qdrant indexing working
+- ✅ Semantic search with 0.7+ relevance scores
+- ✅ Mold Service Agent integrated
 
-2. **Start VL Service**
-   ```bash
-   ./scripts/start-vl.sh
-   ```
+### VL Feature (Future Enhancement)
 
-3. **Test VL Enrichment**
-   ```python
-   from services.troubleshooting.vl_processor import enrich_with_vl
-   enriched = enrich_with_vl(case_data)
-   ```
+Vision-language processing is **disabled by default** due to Qwen2.5-VL ROCm compatibility issues on AMD Radeon 8060S (segmentation fault during model loading).
+
+**To enable VL in the future:**
+1. Wait for better ROCm support for Qwen2.5-VL, or
+2. Try alternative models (BLIP-2, LLaVA) with better AMD GPU support, or
+3. Use CPU inference (very slow but functional)
+
+**Current mode:** Text-only search - images are stored but not automatically analyzed.
 
 ### Optional Enhancements
 
@@ -373,7 +378,9 @@ The Mold Service Agent understands:
 
 ---
 
-**Status**: System is operational and ready for production use (text search). VL image enrichment will be available once model download completes.
+**Status**: ✅ System is operational and ready for production use with text-only search. VL image enrichment is disabled due to ROCm/AMD GPU compatibility issues with Qwen2.5-VL. The system achieves 0.7+ relevance scores without VL and can process 1000+ troubleshooting cases effectively.
+
+**VL Status**: Disabled by default (enabled=False in VLProcessor). Images are extracted and stored, but not automatically analyzed. Can be enabled in the future when better VL model ROCm support becomes available.
 
 **Contact**: BestBox Development Team
 **Last Updated**: 2026-01-29

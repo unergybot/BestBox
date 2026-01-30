@@ -69,6 +69,11 @@
                 "title": "📝 OA Workflow",
                 "desc": "Leave approvals, meeting scheduling, document workflows",
                 "queries": "OA Workflow Sample Queries"
+            },
+            "mold": {
+                "title": "🏭 Mold Service",
+                "desc": "Manufacturing defect troubleshooting, product quality issues, trial analysis",
+                "queries": "Mold Service Sample Queries"
             }
         },
         "footer": {
@@ -97,6 +102,12 @@
                 "Draft an approval email for budget request",
                 "Schedule a team meeting next Tuesday",
                 "Generate leave request form"
+            ],
+            "mold": [
+                "How to fix product flash defects?",
+                "What solutions exist for mold surface contamination?",
+                "Show T2 trial results for part 1947688",
+                "Find successful cases for spark mark removal"
             ]
         },
         "VoiceChat": {

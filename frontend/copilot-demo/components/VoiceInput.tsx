@@ -80,7 +80,6 @@ export function VoiceInput(props: InputProps) {
                             language={locale}
                             size="sm"
                             showText={false}
-                            onInterimTranscript={handleInterimTranscript}
                             onTranscript={handleTranscript}
                             onResponse={handleResponse}
                         />
