@@ -63,18 +63,21 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
         </div>
 
         {/* Image preview */}
-        {data.image_count > 0 && (
+        {data.image_count > 0 && data.images?.length > 0 && (
           <div className="flex items-center gap-1 pt-2">
             <div className="flex gap-1">
-              {data.images.slice(0, 3).map((img, idx) => (
+              {data.images.slice(0, 3).map((img) => (
                 <div
-                  key={idx}
+                  key={img.image_id}
                   className="w-16 h-16 bg-gray-100 rounded border border-gray-200 overflow-hidden"
                 >
                   <img
                     src={img.image_url}
                     alt={img.description || "Defect image"}
                     className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
                   />
                 </div>
               ))}
