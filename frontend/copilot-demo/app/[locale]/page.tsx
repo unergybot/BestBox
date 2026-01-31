@@ -112,7 +112,7 @@ export default function Home() {
     initial: tCopilot("initial"),
   }), [tCopilot]);
 
-  const markdownComponents = useMemo(() => ({
+  const markdownTagRenderers = useMemo(() => ({
     code: TroubleshootingCodeBlock,
   }), []);
 
@@ -124,7 +124,7 @@ export default function Home() {
           clickOutsideToClose={false}
           labels={labels}
           Input={VoiceInput}
-          markdownComponents={markdownComponents}
+          markdownTagRenderers={markdownTagRenderers}
         >
           <CopilotChatRecorder>
             <MemoizedDashboardContent />
