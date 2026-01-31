@@ -2,6 +2,10 @@
 BestBox Embeddings Service
 Serves BGE-M3 embeddings via FastAPI for RAG pipeline
 """
+import os
+# Force CPU-only to avoid CUDA OOM (RTX 3080 is full with vLLM)
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -52,9 +56,12 @@ async def load_model():
     global model
     logger.info("Loading BGE-M3 embedding model...")
     start = time.time()
-    model = SentenceTransformer("BAAI/bge-m3")
+    # Use CPU to avoid CUDA OOM (RTX 3080 is full with vLLM, Tesla P100 incompatible with PyTorch 2.10)
+    device = "cpu"
+    logger.info(f"Using device: {device}")
+    model = SentenceTransformer("BAAI/bge-m3", device=device)
     elapsed = time.time() - start
-    logger.info(f"Model loaded in {elapsed:.2f}s")
+    logger.info(f"Model loaded in {elapsed:.2f}s on {device}")
     logger.info(f"Embedding dimensions: {model.get_sentence_embedding_dimension()}")
 
 @app.get("/health", response_model=HealthResponse)

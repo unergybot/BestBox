@@ -204,3 +204,4 @@ third_party/
 bin/
 *.pcm
 *.wav
+.agent/

@@ -1,0 +1,215 @@
+# BestBox Infrastructure Services
+# Docker Compose configuration for RAG and database infrastructure
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose logs -f qdrant # View Qdrant logs
+#   docker compose down           # Stop all services
+
+services:
+  # Vector Database for RAG
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: bestbox-qdrant
+    ports:
+      - "6333:6333" # REST API
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__ENABLE_CORS=true
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '(echo > /dev/tcp/localhost/6333) >/dev/null 2>&1'" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: bestbox-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: bestbox
+      POSTGRES_PASSWORD: bestbox
+      POSTGRES_DB: bestbox
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U bestbox" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: bestbox-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # LiveKit Server (Voice)
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: bestbox-livekit
+    command: --config /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "50000-50020:50000-50020/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml
+    restart: unless-stopped
+
+  # ==========================================================
+  # ERPNext Services (Manufacturing Demo)
+  # ==========================================================
+
+  # MariaDB for ERPNext (required, ERPNext doesn't support PostgreSQL)
+  mariadb:
+    image: mariadb:10.6
+    container_name: bestbox-mariadb
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_DATABASE: erpnext
+      MYSQL_USER: erpnext
+      MYSQL_PASSWORD: erpnext
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-padmin" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # ERPNext Application (v16 stable)
+  erpnext:
+    image: frappe/erpnext:v16
+    container_name: bestbox-erpnext
+    ports:
+      - "8002:8000"
+    environment:
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - REDIS_CACHE=redis://redis:6379
+      - REDIS_QUEUE=redis://redis:6379
+      - SOCKETIO_PORT=9000
+      - SITE_NAME=bestbox.local
+    volumes:
+      - erpnext-sites:/home/frappe/frappe-bench/sites
+      - erpnext-logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: /home/frappe/frappe-bench/env/bin/gunicorn --chdir=/home/frappe/frappe-bench/sites --bind=0.0.0.0:8000 --threads=4 --workers=2 --worker-class=gthread --worker-tmp-dir=/dev/shm --timeout=120 --preload with_assets:application
+    restart: unless-stopped
+
+  # ==========================================================
+  # Observability Stack
+  # ==========================================================
+
+  # OpenTelemetry Collector - Central telemetry hub
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    container_name: bestbox-otel-collector
+    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    volumes:
+      - ./config/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "8888:8888" # Prometheus metrics endpoint (collector's own metrics)
+    restart: unless-stopped
+
+  # Jaeger - Distributed tracing UI
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: bestbox-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "14268:14268" # Jaeger collector HTTP
+    restart: unless-stopped
+
+  # Prometheus - Metrics storage
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    container_name: bestbox-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus/alerts.yml:/etc/prometheus/alerts.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # Grafana - Unified dashboard
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: bestbox-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=bestbox
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/etc/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000" # Port 3001 to avoid conflict with Next.js
+    depends_on:
+      - prometheus
+      - jaeger
+    restart: unless-stopped
+
+volumes:
+  qdrant-data:
+    name: bestbox-qdrant-data
+  postgres-data:
+    name: bestbox-postgres-data
+  redis-data:
+    name: bestbox-redis-data
+  mariadb-data:
+    name: bestbox-mariadb-data
+  erpnext-sites:
+    name: bestbox-erpnext-sites
+  erpnext-logs:
+    name: bestbox-erpnext-logs
+  prometheus-data:
+    name: bestbox-prometheus-data
+  grafana-data:
+    name: bestbox-grafana-data
+
+# Note: LLM server (llama-server) runs natively for GPU access
+# Use scripts/start-llm.sh for Vulkan backend
