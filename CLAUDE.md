@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BestBox is an enterprise agentic applications demo kit running on AMD hardware (Ryzen AI Max+ 395, Radeon 8060S GPU). It demonstrates multi-agent orchestration using LangGraph with four specialized agents: ERP, CRM, IT Ops, and Office Automation. The system runs entirely on-premise with local LLM inference via llama.cpp and Vulkan backend.
+BestBox is an enterprise agentic applications demo kit supporting both AMD and NVIDIA GPUs. It demonstrates multi-agent orchestration using LangGraph with four specialized agents: ERP, CRM, IT Ops, and Office Automation. The system runs entirely on-premise with local LLM inference.
+
+### Supported Hardware
+- **AMD**: Ryzen AI Max+ 395, Radeon 8060S GPU (via llama.cpp + Vulkan)
+- **NVIDIA**: RTX 3080, P100, etc. (via vLLM)
 
 ## Common Commands
 
@@ -99,10 +103,24 @@ python scripts/seed_knowledge_base.py
 - `plugin_context` - Plugin system data (active_plugins, tool_results, hook_data)
 
 ### LLM Configuration
+
+**AMD (default):**
 - Model: Qwen3-30B-A3B-Instruct-2507-Q4_K_M via llama.cpp (MoE architecture: 30B total, 3B active per token)
 - Backend: Vulkan (not HIP/ROCm directly - llama.cpp uses Vulkan for gfx1151)
 - Context: 8192 tokens
-- Performance: ~206 tok/s prompt processing, ~85 tok/s generation (3.5x faster than previous model)
+- Performance: ~206 tok/s prompt processing, ~85 tok/s generation
+
+**NVIDIA (via vLLM):**
+- Model: Qwen/Qwen3-4B-Instruct-2507 via vLLM
+- Backend: CUDA
+- GPU: RTX 3080, P100, or similar
+
+**Frontend Environment Variables** (set in `.env.local`):
+```bash
+LLM_MODEL=Qwen3-30B-A3B-Instruct    # or Qwen3-4B-Instruct for NVIDIA
+LLM_BACKEND=llama.cpp (Vulkan)       # or vLLM for NVIDIA
+GPU_NAME=AMD Radeon 8060S            # or RTX 3080 for NVIDIA
+```
 
 ## Speech-to-Speech (S2S)
 

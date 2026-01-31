@@ -5,8 +5,14 @@ import {
 } from "@copilotkit/runtime";
 import { NextRequest } from "next/server";
 
-const AGENT_API_URL = process.env.OPENAI_BASE_URL || "http://localhost:8002";
+// Agent API configuration - supports both AMD (llama.cpp) and NVIDIA (vLLM) backends
+const AGENT_API_URL = process.env.OPENAI_BASE_URL || "http://localhost:8000";
 const API_KEY = process.env.OPENAI_API_KEY || "sk-no-key-required";
+
+// Hardware/model configuration - set via environment for multi-GPU support
+const LLM_MODEL = process.env.LLM_MODEL || "Qwen3-30B-A3B-Instruct";
+const LLM_BACKEND = process.env.LLM_BACKEND || "llama.cpp (Vulkan)";
+const GPU_NAME = process.env.GPU_NAME || "AMD Radeon 8060S";
 
 // Create a custom service adapter that forwards to our Agent API
 class BestBoxAgentAdapter extends OpenAIAdapter {
@@ -30,9 +36,9 @@ const runtime = new CopilotRuntime({
           framework: "LangGraph (Python)",
           agents: ["Router", "ERP", "CRM", "IT Ops", "OA"],
           status: "connected",
-          model: "Qwen/Qwen3-4B-Instruct",
-          backend: "vLLM",
-          gpu: "RTX 3080 + P100",
+          model: LLM_MODEL,
+          backend: LLM_BACKEND,
+          gpu: GPU_NAME,
         };
       },
     },
