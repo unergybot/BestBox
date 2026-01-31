@@ -117,7 +117,7 @@ def search_troubleshooting_kb(
                     "images": [
                         {
                             "image_id": img['image_id'],
-                            "image_url": f"/api/troubleshooting/images/{img['image_id']}.jpg",
+                            "image_url": f"/api/troubleshooting/images/{img['image_id']}",
                             "description": img.get('vl_description', 'Image available'),
                             "defect_type": img.get('defect_type', '')
                         }
@@ -231,7 +231,7 @@ def get_troubleshooting_case_details(case_id: str) -> str:
                 "images": [
                     {
                         "image_id": img['image_id'],
-                        "image_url": f"/api/troubleshooting/images/{img['image_id']}.jpg",
+                        "image_url": f"/api/troubleshooting/images/{img['image_id']}",
                         "description": img.get('vl_description', 'Image available'),
                         "defect_type": img.get('defect_type', '')
                     }

@@ -28,12 +28,12 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
 
   return (
     <div
-      className={`bg-white border-2 border-teal-200 rounded-lg shadow-sm hover:shadow-md transition-shadow ${className}`}
+      className={`bg-white border-2 border-teal-200 rounded-lg shadow-sm hover:shadow-md transition-shadow max-w-full ${className}`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-gray-100">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold text-gray-700">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 sm:p-3 border-b border-gray-100">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="text-xs sm:text-sm font-semibold text-gray-700 truncate">
             🏭 Case #{data.part_number}-{data.issue_number}
           </span>
           <SuccessBadge
@@ -45,31 +45,31 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
       </div>
 
       {/* Body */}
-      <div className="p-4 space-y-2">
+      <div className="p-3 sm:p-4 space-y-2">
         {/* Problem */}
-        <div>
+        <div className="min-w-0">
           <span className="text-xs font-medium text-gray-500">Problem:</span>
-          <p className="text-sm text-gray-800 mt-0.5">
-            {truncate(data.problem, 80)}
+          <p className="text-xs sm:text-sm text-gray-800 mt-0.5 break-words">
+            {truncate(data.problem, 100)}
           </p>
         </div>
 
         {/* Solution */}
-        <div>
+        <div className="min-w-0">
           <span className="text-xs font-medium text-gray-500">Solution:</span>
-          <p className="text-sm text-gray-600 mt-0.5">
-            {truncate(data.solution, 120)}
+          <p className="text-xs sm:text-sm text-gray-600 mt-0.5 break-words">
+            {truncate(data.solution, 150)}
           </p>
         </div>
 
         {/* Image preview */}
         {data.image_count > 0 && data.images?.length > 0 && (
-          <div className="flex items-center gap-1 pt-2">
-            <div className="flex gap-1">
+          <div className="flex items-center gap-1 pt-2 overflow-x-auto">
+            <div className="flex gap-1 flex-shrink-0">
               {data.images.slice(0, 3).map((img) => (
                 <div
                   key={img.image_id}
-                  className="w-16 h-16 bg-gray-100 rounded border border-gray-200 overflow-hidden"
+                  className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded border border-gray-200 overflow-hidden flex-shrink-0"
                 >
                   <img
                     src={img.image_url}
@@ -83,7 +83,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
               ))}
             </div>
             {data.image_count > 3 && (
-              <span className="text-xs text-gray-500 ml-1">
+              <span className="text-xs text-gray-500 ml-1 flex-shrink-0">
                 +{data.image_count - 3} more
               </span>
             )}
@@ -91,25 +91,25 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
         )}
 
         {/* Metadata row */}
-        <div className="text-xs text-gray-500 pt-2 border-t border-gray-100">
+        <div className="text-xs text-gray-500 pt-2 border-t border-gray-100 truncate">
           Part: {data.part_number}
           {data.category && ` | Category: ${data.category}`}
         </div>
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+      <div className="px-3 sm:px-4 py-2 sm:py-3 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div className="text-xs text-gray-500">
           {/* Placeholder for social metrics (Phase 4) */}
           👍 0 helpful
         </div>
         <button
           onClick={onExpand}
-          className="text-sm font-medium text-teal-600 hover:text-teal-700 flex items-center gap-1"
+          className="text-xs sm:text-sm font-medium text-teal-600 hover:text-teal-700 flex items-center gap-1 whitespace-nowrap"
           aria-label="View full troubleshooting details"
         >
           View Full Details
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+          <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
             <path
               fillRule="evenodd"
               d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"

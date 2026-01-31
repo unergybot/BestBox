@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotKit, useCopilotChat } from "@copilotkit/react-core";
-import { CopilotSidebar } from "@copilotkit/react-ui";
+import { CopilotChat } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
 import { detectTroubleshootingResults } from "@/lib/troubleshooting-detector";
@@ -30,11 +30,45 @@ function TroubleshootingCodeBlock({ inline, className, children, ...props }: any
       if (parsed && parsed.results && Array.isArray(parsed.results)) {
         const issues = parsed.results.filter((r: any) => r.result_type === 'specific_solution');
 
-        if (issues.length > 0) {
+        console.log('[TroubleshootingCards] Total issues:', issues.length);
+
+        // Deduplicate by case_id + issue_number + problem + solution (multiple solutions for same problem)
+        const seenKeys = new Set<string>();
+        const uniqueIssues = issues.filter((issue: TroubleshootingIssue) => {
+          const key = `${issue.case_id}-${issue.issue_number}-${issue.problem}-${issue.solution}`;
+          console.log('[TroubleshootingCards] Checking:', key.substring(0, 80), 'Seen:', seenKeys.has(key));
+          if (seenKeys.has(key)) {
+            return false;
+          }
+          seenKeys.add(key);
+          return true;
+        });
+
+        console.log('[TroubleshootingCards] Unique issues:', uniqueIssues.length);
+        console.log('[TroubleshootingCards] About to render', uniqueIssues.length, 'cards');
+
+        // Debug: Log each card being rendered
+        uniqueIssues.forEach((issue, idx) => {
+          console.log(`[TroubleshootingCards] Rendering card ${idx + 1}:`, {
+            issue_number: issue.issue_number,
+            problem: issue.problem.substring(0, 30),
+            solution: issue.solution.substring(0, 50)
+          });
+        });
+
+        if (uniqueIssues.length > 0) {
           return (
-            <div className="space-y-4 my-4">
-              {issues.map((issue: TroubleshootingIssue, index: number) => (
-                <TroubleshootingCard key={issue.case_id || index} data={issue} />
+            <div className="space-y-4 my-4 p-4 border-2 border-blue-500 rounded-lg bg-blue-50">
+              <div className="text-lg font-bold text-blue-900 mb-3 p-2 bg-white rounded">
+                🔍 Found {uniqueIssues.length} troubleshooting solution{uniqueIssues.length > 1 ? 's' : ''}
+              </div>
+              {uniqueIssues.map((issue: TroubleshootingIssue, index: number) => (
+                <div key={`card-${index}-${issue.issue_number}`}>
+                  <div className="text-xs text-gray-500 mb-1">Card {index + 1} of {uniqueIssues.length}</div>
+                  <TroubleshootingCard
+                    data={issue}
+                  />
+                </div>
               ))}
             </div>
           );
@@ -119,17 +153,26 @@ export default function Home() {
   return (
     <ChatMessagesProvider>
       <CopilotKit runtimeUrl="/api/copilotkit">
-        <CopilotSidebar
-          defaultOpen={true}
-          clickOutsideToClose={false}
-          labels={labels}
-          Input={VoiceInput}
-          markdownTagRenderers={markdownTagRenderers}
-        >
-          <CopilotChatRecorder>
+        <div className="flex flex-col lg:flex-row h-screen">
+
+          {/* Dashboard Column - 40% on desktop, hidden on mobile */}
+          <div className="hidden lg:block lg:w-[40%] overflow-y-auto bg-gradient-to-br from-blue-50 to-indigo-100">
             <MemoizedDashboardContent />
-          </CopilotChatRecorder>
-        </CopilotSidebar>
+          </div>
+
+          {/* Chat Column - 60% on desktop, full width on mobile */}
+          <div className="w-full lg:w-[60%] flex flex-col border-l border-gray-200">
+            <CopilotChatRecorder>
+              <CopilotChat
+                labels={labels}
+                Input={VoiceInput}
+                markdownTagRenderers={markdownTagRenderers}
+                className="h-full"
+              />
+            </CopilotChatRecorder>
+          </div>
+
+        </div>
       </CopilotKit>
     </ChatMessagesProvider>
   );
