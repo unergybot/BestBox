@@ -5,17 +5,18 @@ import {
 } from "@copilotkit/runtime";
 import { NextRequest } from "next/server";
 
-// Agent API URL - configured via OPENAI_BASE_URL environment variable
-// CopilotKit's OpenAIAdapter will create its own OpenAI client using:
-// - OPENAI_BASE_URL (points to our LangGraph backend)
-// - OPENAI_API_KEY (placeholder for local LLM)
-console.log("OPENAI_BASE_URL:", process.env.OPENAI_BASE_URL);
+const AGENT_API_URL = process.env.OPENAI_BASE_URL || "http://localhost:8002";
+const API_KEY = process.env.OPENAI_API_KEY || "sk-no-key-required";
 
-// Use OpenAIAdapter - it will use env vars to create the client
-// Do NOT pass a custom openai client to avoid version mismatch issues
-const serviceAdapter = new OpenAIAdapter({
-  model: "bestbox-agent",
-});
+// Create a custom service adapter that forwards to our Agent API
+class BestBoxAgentAdapter extends OpenAIAdapter {
+  constructor() {
+    super({
+      url: `${AGENT_API_URL}/v1/chat/completions`,
+      apiKey: API_KEY,
+    });
+  }
+}
 
 const runtime = new CopilotRuntime({
   actions: [
@@ -29,11 +30,34 @@ const runtime = new CopilotRuntime({
           framework: "LangGraph (Python)",
           agents: ["Router", "ERP", "CRM", "IT Ops", "OA"],
           status: "connected",
-          model: "Qwen2.5-14B-Instruct",
-          backend: "llama.cpp (Vulkan)",
-          gpu: "AMD Radeon 8060S",
+          model: "Qwen/Qwen3-4B-Instruct",
+          backend: "vLLM",
+          gpu: "RTX 3080 + P100",
         };
       },
+    },
+  ],
+  // Define the agents that CopilotKit should expose
+  agents: [
+    {
+      name: "default",
+      description: "BestBox Enterprise Agent - handles ERP, CRM, IT Ops, and OA queries",
+    },
+    {
+      name: "erp_agent",
+      description: "ERP Agent - handles purchase orders, invoices, inventory, and financial reporting",
+    },
+    {
+      name: "crm_agent",
+      description: "CRM Agent - handles leads, quotations, opportunities, and sales activities",
+    },
+    {
+      name: "it_ops_agent",
+      description: "IT Ops Agent - handles tickets, knowledge base, and system diagnostics",
+    },
+    {
+      name: "oa_agent",
+      description: "OA Agent - handles leave approvals, meetings, and document workflows",
     },
   ],
 });
@@ -41,9 +65,30 @@ const runtime = new CopilotRuntime({
 export const POST = async (req: NextRequest) => {
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
     runtime,
-    serviceAdapter,
+    serviceAdapter: new BestBoxAgentAdapter(),
     endpoint: "/api/copilotkit",
   });
 
   return handleRequest(req);
+};
+
+export const GET = async (req: NextRequest) => {
+  const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
+    runtime,
+    serviceAdapter: new BestBoxAgentAdapter(),
+    endpoint: "/api/copilotkit",
+  });
+
+  return handleRequest(req);
+};
+
+export const OPTIONS = async () => {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    },
+  });
 };
