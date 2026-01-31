@@ -6,51 +6,86 @@ import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
 import { detectTroubleshootingResults } from "@/lib/troubleshooting-detector";
 import { TroubleshootingCard } from "@/components/troubleshooting";
+import { ChatMessagesProvider, useChatMessages as useTroubleshootingMessages } from "@/contexts/ChatMessagesContext";
 import "@copilotkit/react-ui/styles.css";
 import React, { useState, useMemo } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 
-// Component that monitors chat messages and displays troubleshooting cards
+import { TroubleshootingIssue } from "@/types/troubleshooting";
+
+// Custom code block renderer that detects and renders troubleshooting cards
+function TroubleshootingCodeBlock({ inline, className, children, ...props }: any) {
+  const match = /language-(\w+)/.exec(className || '');
+  const language = match ? match[1] : '';
+
+  // Only process JSON code blocks
+  if (!inline && language === 'json') {
+    const code = String(children).replace(/\n$/, '');
+
+    try {
+      const parsed = JSON.parse(code);
+
+      // Check if this is troubleshooting data
+      if (parsed && parsed.results && Array.isArray(parsed.results)) {
+        const issues = parsed.results.filter((r: any) => r.result_type === 'specific_solution');
+
+        if (issues.length > 0) {
+          return (
+            <div className="space-y-4 my-4">
+              {issues.map((issue: TroubleshootingIssue, index: number) => (
+                <TroubleshootingCard key={issue.case_id || index} data={issue} />
+              ))}
+            </div>
+          );
+        }
+      }
+    } catch (e) {
+      // Not troubleshooting JSON, fallback to default
+    }
+  }
+
+  // Default code block rendering
+  return (
+    <code className={className} {...props}>
+      {children}
+    </code>
+  );
+}
+import { useChatMessages } from "@/contexts/ChatMessagesContext";
+
 function TroubleshootingCardsOverlay() {
-  const { visibleMessages } = useCopilotChat();
+  const { messages } = useChatMessages();
 
-  // Extract troubleshooting results from all assistant messages
   const allResults = useMemo(() => {
-    const results = [];
+    const results: TroubleshootingIssue[] = [];
 
-    console.log("=== TroubleshootingCardsOverlay Debug ===");
-    console.log("visibleMessages:", visibleMessages);
-    console.log("visibleMessages type:", typeof visibleMessages);
-    console.log("Is array:", Array.isArray(visibleMessages));
-
-    // Guard against undefined or non-array visibleMessages
-    if (!visibleMessages || !Array.isArray(visibleMessages)) {
-      console.log("❌ No messages or not array");
+    if (!messages || !Array.isArray(messages)) {
       return results;
     }
 
-    console.log("Message count:", visibleMessages.length);
+    console.log("=== TroubleshootingCardsOverlay Debug ===");
+    console.log("Messages count:", messages.length);
 
-    for (const msg of visibleMessages) {
-      console.log("Processing message:", msg);
-      // Check if this is an assistant message with content
+    for (const msg of messages) {
       if (msg && typeof msg === "object" && "content" in msg) {
         const content = typeof msg.content === "string" ? msg.content : "";
-        console.log("Message content:", content?.substring(0, 100));
         if (content) {
           const detected = detectTroubleshootingResults(content);
-          console.log("Detected results:", detected.length);
-          // Only include specific_solution type results
-          const issues = detected.filter(r => r.result_type === "specific_solution");
-          console.log("Filtered issues:", issues.length);
+          console.log(`Detected ${detected.length} results from message`);
+          if (detected.length > 0) {
+            console.log("First result:", JSON.stringify(detected[0], null, 2));
+          }
+          const issues = detected
+            .filter((r): r is TroubleshootingIssue => r.result_type === "specific_solution")
+            .map(r => r as TroubleshootingIssue);
           results.push(...issues);
         }
       }
     }
-    console.log("Total results:", results.length);
+    console.log("Total issues for cards:", results.length);
     return results;
-  }, [visibleMessages]);
+  }, [messages]);
 
   if (allResults.length === 0) {
     return null;
@@ -67,6 +102,8 @@ function TroubleshootingCardsOverlay() {
   );
 }
 
+import { CopilotChatRecorder } from "@/components/CopilotChatRecorder";
+
 export default function Home() {
   const tCopilot = useTranslations("Copilot");
 
@@ -75,18 +112,26 @@ export default function Home() {
     initial: tCopilot("initial"),
   }), [tCopilot]);
 
+  const markdownComponents = useMemo(() => ({
+    code: TroubleshootingCodeBlock,
+  }), []);
+
   return (
-    <CopilotKit runtimeUrl="/api/copilotkit">
-      <CopilotSidebar
-        defaultOpen={true}
-        clickOutsideToClose={false}
-        labels={labels}
-        Input={VoiceInput}
-      >
-        <MemoizedDashboardContent />
-      </CopilotSidebar>
-      <TroubleshootingCardsOverlay />
-    </CopilotKit>
+    <ChatMessagesProvider>
+      <CopilotKit runtimeUrl="/api/copilotkit">
+        <CopilotSidebar
+          defaultOpen={true}
+          clickOutsideToClose={false}
+          labels={labels}
+          Input={VoiceInput}
+          markdownComponents={markdownComponents}
+        >
+          <CopilotChatRecorder>
+            <MemoizedDashboardContent />
+          </CopilotChatRecorder>
+        </CopilotSidebar>
+      </CopilotKit>
+    </ChatMessagesProvider>
   );
 }
 
