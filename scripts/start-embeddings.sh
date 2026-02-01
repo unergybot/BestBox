@@ -22,6 +22,7 @@ fi
 
 echo "🚀 Starting BGE-M3 Embeddings Service"
 echo "   Model: BAAI/bge-m3"
+echo "   Device: ${EMBEDDINGS_DEVICE:-auto}"
 echo "   Port: 8081"
 echo ""
 

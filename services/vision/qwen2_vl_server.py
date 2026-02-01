@@ -3,7 +3,7 @@
 Qwen2-VL-7B Vision-Language Model Service
 
 Provides image understanding for troubleshooting equipment photos.
-Runs on AMD ROCm GPU alongside other BestBox services.
+Runs on CUDA or ROCm GPU alongside other BestBox services.
 
 Usage:
     uvicorn services.vision.qwen2_vl_server:app --host 0.0.0.0 --port 8083
@@ -51,7 +51,7 @@ class Qwen2VLService:
                 dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                 device_map="auto",
                 trust_remote_code=True,
-                attn_implementation="eager"  # Avoid flash attention issues on ROCm
+                attn_implementation="eager"  # Avoid flash attention issues on some GPUs
             )
 
             self.processor = AutoProcessor.from_pretrained(

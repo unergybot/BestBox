@@ -83,7 +83,7 @@ def load_config() -> S2SConfig:
         host=os.environ.get("S2S_HOST", "0.0.0.0"),
         port=int(os.environ.get("S2S_PORT", "8765")),
         asr_model=os.environ.get("ASR_MODEL", "large-v3"),
-        asr_device="cpu",  # HARDCODED: Enforce CPU to avoid driver mismatch
+        asr_device=os.environ.get("ASR_DEVICE", "cpu"),
         asr_language=os.environ.get("ASR_LANGUAGE", "zh"),
         tts_model=os.environ.get("TTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"),
         tts_gpu=os.environ.get("TTS_GPU", "true").lower() == "true",

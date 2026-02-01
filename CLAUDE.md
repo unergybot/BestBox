@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BestBox is an enterprise agentic applications demo kit running on AMD hardware (Ryzen AI Max+ 395, Radeon 8060S GPU). It demonstrates multi-agent orchestration using LangGraph with four specialized agents: ERP, CRM, IT Ops, and Office Automation. The system runs entirely on-premise with local LLM inference via llama.cpp and Vulkan backend.
+BestBox is an enterprise agentic applications demo kit supporting both AMD (Ryzen AI Max+ 395, Radeon 8060S) and NVIDIA (RTX 3080, Tesla P100) hardware. It demonstrates multi-agent orchestration using LangGraph with four specialized agents: ERP, CRM, IT Ops, and Office Automation. The system runs entirely on-premise with local LLM inference via llama.cpp (Vulkan for AMD, CUDA for NVIDIA).
 
 ## Common Commands
 
 ### Environment Activation
 ```bash
+# AMD ROCm systems
 source ~/BestBox/activate.sh  # Activates venv and sets ROCm environment variables
+
+# NVIDIA CUDA systems
+source ~/BestBox/activate-cuda.sh  # Activates venv and sets CUDA environment variables
 ```
 
 ### Start Services
@@ -19,7 +23,8 @@ source ~/BestBox/activate.sh  # Activates venv and sets ROCm environment variabl
 docker compose up -d                    # Qdrant, PostgreSQL, Redis
 
 # Backend services (each in separate terminal)
-./scripts/start-llm.sh                  # LLM server on :8080
+./scripts/start-llm.sh                  # LLM server on :8080 (AMD Vulkan)
+./scripts/start-llm-cuda.sh             # LLM server on :8080 (NVIDIA CUDA)
 ./scripts/start-embeddings.sh           # Embeddings on :8081
 ./scripts/start-agent-api.sh            # Agent API on :8000
 
@@ -99,10 +104,18 @@ python scripts/seed_knowledge_base.py
 - `plugin_context` - Plugin system data (active_plugins, tool_results, hook_data)
 
 ### LLM Configuration
+
+**AMD (Vulkan):**
 - Model: Qwen3-30B-A3B-Instruct-2507-Q4_K_M via llama.cpp (MoE architecture: 30B total, 3B active per token)
 - Backend: Vulkan (not HIP/ROCm directly - llama.cpp uses Vulkan for gfx1151)
 - Context: 8192 tokens
-- Performance: ~206 tok/s prompt processing, ~85 tok/s generation (3.5x faster than previous model)
+- Performance: ~206 tok/s prompt processing, ~85 tok/s generation
+
+**NVIDIA (CUDA):**
+- Model: Qwen3-4B-Instruct-Q4_K_M (or larger depending on VRAM)
+- Backend: CUDA (llama.cpp with CUDA support)
+- Context: 4096 tokens (adjust based on VRAM)
+- Build: `./scripts/build-llama-cuda.sh`
 
 ## Speech-to-Speech (S2S)
 
@@ -150,8 +163,9 @@ Server → Client: JSON (asr_partial, llm_token) or Binary (PCM16 24kHz)
    - Add edges for routing and tool handling
 4. Update router system prompt in `agents/router.py` to recognize the new domain
 
-## ROCm/GPU Notes
+## GPU Notes
 
+### AMD ROCm
 The system uses AMD ROCm 7.2.0. Key environment variables are set in `activate.sh`:
 ```bash
 HSA_OVERRIDE_GFX_VERSION=11.0.0  # Maps gfx1151 → gfx1100
@@ -159,6 +173,22 @@ PYTORCH_ROCM_ARCH=gfx1100
 ```
 
 llama.cpp uses Vulkan backend (not HIP) because Vulkan has better support for gfx1151 (RDNA 3.5). The LLM server runs natively, not in Docker, for better GPU access.
+
+### NVIDIA CUDA
+For NVIDIA GPUs, use the CUDA activation script and CUDA-specific services:
+```bash
+source ~/BestBox/activate-cuda.sh
+./scripts/build-llama-cuda.sh    # Build llama.cpp with CUDA
+./scripts/start-llm-cuda.sh      # Start LLM with CUDA backend
+```
+
+Key environment variables (set in `.env` or `.env.cuda`):
+```bash
+LLM_MODEL_PATH=~/models/4b/Qwen3-4B-Instruct-Q4_K_M.gguf
+LLM_CUDA_DEVICE=0           # RTX 3080 for LLM
+EMBEDDINGS_DEVICE=cuda:1    # P100 for embeddings
+RERANKER_DEVICE=cuda:1      # P100 for reranker
+```
 
 ## Frontend Architecture
 

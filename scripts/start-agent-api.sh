@@ -15,6 +15,13 @@ source "${PROJECT_DIR}/venv/bin/activate"
 unset http_proxy https_proxy ftp_proxy all_proxy no_proxy
 unset HTTP_PROXY HTTPS_PROXY FTP_PROXY ALL_PROXY NO_PROXY
 
+# Source environment file if it exists (for CUDA/AMD configuration)
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env"
+    set +a
+fi
+
 # Check if already running
 if pgrep -f "uvicorn.*8000" > /dev/null; then
     echo "⚠️  Agent API already running on port 8000"
@@ -23,6 +30,7 @@ fi
 
 echo "🚀 Starting LangGraph Agent API"
 echo "   Port: 8000"
+echo "   LLM Backend: ${LLM_BASE_URL:-http://127.0.0.1:8080/v1}"
 echo ""
 
 cd "${PROJECT_DIR}"

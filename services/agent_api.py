@@ -371,13 +371,163 @@ async def list_models():
 @app.post("/v1/responses")
 async def create_response(request: ChatRequest):
     """
-    CopilotKit-specific streaming responses endpoint.
-    Supports both streaming and non-streaming responses.
+    OpenAI Responses API endpoint for CopilotKit v1.50+.
+    Uses the new event-based streaming format.
     """
     if request.stream:
-        return await chat_completion_stream(request)
+        return await responses_api_stream(request)
     else:
         return await chat_completion(request)
+
+async def responses_api_stream(request: ChatRequest):
+    """Stream the response using OpenAI Responses API format for CopilotKit"""
+    async def generate():
+        response_id = f"resp_{uuid.uuid4().hex[:24]}"
+        item_id = f"msg_{uuid.uuid4().hex[:24]}"
+        
+        try:
+            # Process the request
+            messages_to_process = []
+            
+            if request.messages:
+                messages_to_process = request.messages
+            elif request.input:
+                for item in request.input:
+                    if isinstance(item, dict) and "role" in item:
+                        content = item.get("content", "")
+                        msg = ChatMessage(role=item["role"], content=content)
+                        if "tool_calls" in item:
+                            msg.tool_calls = item["tool_calls"]
+                        messages_to_process.append(msg)
+            
+            if not messages_to_process:
+                yield f"data: {json.dumps({'type': 'error', 'error': {'message': 'No messages provided'}})}\n\n"
+                return
+            
+            # Convert to LangChain messages
+            lc_messages = []
+            for msg in messages_to_process:
+                content_text = parse_message_content(msg.content) if msg.content is not None else ""
+                
+                if msg.role == "user":
+                    lc_messages.append(HumanMessage(content=content_text))
+                elif msg.role == "assistant":
+                    tool_calls = msg.tool_calls or []
+                    lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
+                elif msg.role == "system":
+                    lc_messages.append(SystemMessage(content=content_text))
+            
+            inputs: AgentState = {
+                "messages": lc_messages,
+                "current_agent": "router",
+                "tool_calls": 0,
+                "confidence": 1.0,
+                "context": {},
+                "plan": [],
+                "step": 0
+            }
+            
+            # 1. Send response.created event
+            created_event = {
+                "type": "response.created",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "created_at": int(time.time()),
+                    "status": "in_progress",
+                    "output": [],
+                    "model": request.model or "bestbox-agent"
+                }
+            }
+            yield f"data: {json.dumps(created_event)}\n\n"
+            
+            # 2. Send response.output_item.added event
+            output_item_added = {
+                "type": "response.output_item.added",
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "content": []
+                }
+            }
+            yield f"data: {json.dumps(output_item_added)}\n\n"
+            
+            # Get response from agent
+            result = await agent_app.ainvoke(cast(AgentState, inputs))
+            last_msg = result["messages"][-1]
+            content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+            
+            # Ensure content is never undefined - always a string
+            if content is None:
+                content = ""
+            
+            # 3. Stream the content using response.output_text.delta events
+            # Split content into chunks for a more natural streaming effect
+            chunk_size = 20  # characters per chunk
+            for i in range(0, len(content), chunk_size):
+                chunk_text = content[i:i+chunk_size]
+                delta_event = {
+                    "type": "response.output_text.delta",
+                    "item_id": item_id,
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": chunk_text
+                }
+                yield f"data: {json.dumps(delta_event)}\n\n"
+            
+            # 4. Send response.output_item.done event
+            output_item_done = {
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": content}]
+                }
+            }
+            yield f"data: {json.dumps(output_item_done)}\n\n"
+            
+            # 5. Send response.completed event
+            completed_event = {
+                "type": "response.completed",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "created_at": int(time.time()),
+                    "status": "completed",
+                    "output": [{
+                        "id": item_id,
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": content}]
+                    }],
+                    "model": request.model or "bestbox-agent",
+                    "usage": {
+                        "input_tokens": 0,
+                        "output_tokens": len(content.split())
+                    }
+                }
+            }
+            yield f"data: {json.dumps(completed_event)}\n\n"
+            yield "data: [DONE]\n\n"
+            
+        except Exception as e:
+            logger.error(f"Responses API streaming error: {e}")
+            error_event = {
+                "type": "error",
+                "sequence_number": 0,
+                "error": {
+                    "type": "server_error",
+                    "message": str(e)
+                }
+            }
+            yield f"data: {json.dumps(error_event)}\n\n"
+            yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 async def chat_completion_stream(request: ChatRequest):
     """Stream the response using SSE format"""

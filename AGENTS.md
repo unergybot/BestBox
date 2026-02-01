@@ -5,8 +5,15 @@ This file provides guidelines for AI agents working with the BestBox enterprise 
 ## Build, Lint, and Test Commands
 
 ### Environment Setup
+
+**AMD ROCm (Strix Halo / Radeon):**
 ```bash
 source ~/BestBox/activate.sh  # Activate venv and set ROCm environment variables
+```
+
+**NVIDIA CUDA (RTX / Tesla):**
+```bash
+source ~/BestBox/activate-cuda.sh  # Activate venv and set CUDA environment variables
 ```
 
 ### Backend Testing
@@ -44,11 +51,15 @@ npm run lint       # Run ESLint
 # Infrastructure (run first)
 docker compose up -d
 
-# Individual services
-./scripts/start-llm.sh        # LLM server on :8080
+# Individual services (auto-detects GPU type)
+./scripts/start-llm.sh        # LLM server on :8080 (AMD Vulkan)
+./scripts/start-llm-cuda.sh   # LLM server on :8080 (NVIDIA CUDA)
 ./scripts/start-embeddings.sh # Embeddings on :8081
 ./scripts/start-agent-api.sh   # Agent API on :8000
 ./scripts/start-s2s.sh         # S2S Gateway on :8765
+
+# Build llama.cpp with CUDA support (NVIDIA only)
+./scripts/build-llama-cuda.sh
 ```
 
 ## Code Style Guidelines
@@ -252,11 +263,18 @@ export function useCustomHook(options: Options) {
 
 ## Environment Variables
 
-### Backend Services
+### Backend Services (AMD ROCm)
 - `HSA_OVERRIDE_GFX_VERSION=11.0.0` # AMD GPU support
 - `PYTORCH_ROCM_ARCH=gfx1100`
 - `LLM_HOST=localhost:8080`
 - `EMBEDDINGS_HOST=localhost:8081`
+
+### Backend Services (NVIDIA CUDA)
+- `LLM_MODEL_PATH=~/models/4b/Qwen3-4B-Instruct-Q4_K_M.gguf`
+- `LLM_CUDA_DEVICE=0` # GPU index for LLM
+- `EMBEDDINGS_DEVICE=cuda:1` # GPU for embeddings
+- `RERANKER_DEVICE=cuda:1` # GPU for reranker
+- `ASR_DEVICE=cuda:0` # GPU for ASR
 
 ### Frontend
 - `NEXT_PUBLIC_USE_LIVEKIT=true/false`

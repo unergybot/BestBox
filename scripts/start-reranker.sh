@@ -18,6 +18,7 @@ fi
 
 echo "🚀 Starting BGE-reranker-base Service"
 echo "   Model: BAAI/bge-reranker-base"
+echo "   Device: ${RERANKER_DEVICE:-auto}"
 echo "   Port: 8082"
 echo ""
 

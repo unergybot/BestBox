@@ -2,14 +2,16 @@
 BestBox Embeddings Service
 Serves BGE-M3 embeddings via FastAPI for RAG pipeline
 """
+import logging
+import os
+import time
+from typing import List, Union
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 import numpy as np
-from typing import List, Union
-import time
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,6 +34,31 @@ app.add_middleware(
 # Global model instance
 model = None
 
+DEFAULT_MODEL_NAME = "BAAI/bge-m3"
+
+
+def _cuda_available() -> bool:
+    """Return True if CUDA is available via PyTorch."""
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+def _resolve_device() -> str:
+    """Resolve device string from environment with safe fallbacks."""
+    requested = os.environ.get("EMBEDDINGS_DEVICE", "auto").strip().lower()
+    if requested in {"", "auto"}:
+        return "cuda" if _cuda_available() else "cpu"
+    if requested.startswith("cuda"):
+        if _cuda_available():
+            return requested
+        logger.warning("CUDA requested for embeddings, but CUDA is unavailable. Falling back to CPU.")
+        return "cpu"
+    return requested
+
 class EmbedRequest(BaseModel):
     inputs: Union[str, List[str]]
     normalize: bool = True
@@ -48,11 +75,15 @@ class HealthResponse(BaseModel):
     model_name: str
 
 @app.on_event("startup")
-async def load_model():
+async def load_model() -> None:
     global model
-    logger.info("Loading BGE-M3 embedding model...")
+    model_name = os.environ.get("EMBEDDINGS_MODEL_NAME", DEFAULT_MODEL_NAME)
+    device = _resolve_device()
+    logger.info("Loading embedding model...")
+    logger.info(f"Model: {model_name}")
+    logger.info(f"Device: {device}")
     start = time.time()
-    model = SentenceTransformer("BAAI/bge-m3")
+    model = SentenceTransformer(model_name, device=device)
     elapsed = time.time() - start
     logger.info(f"Model loaded in {elapsed:.2f}s")
     logger.info(f"Embedding dimensions: {model.get_sentence_embedding_dimension()}")
@@ -62,7 +93,7 @@ async def health_check():
     return HealthResponse(
         status="ok" if model is not None else "loading",
         model_loaded=model is not None,
-        model_name="BAAI/bge-m3"
+        model_name=os.environ.get("EMBEDDINGS_MODEL_NAME", DEFAULT_MODEL_NAME)
     )
 
 @app.post("/embed", response_model=EmbedResponse)
@@ -84,7 +115,7 @@ async def embed(request: EmbedRequest):
     return EmbedResponse(
         embeddings=embeddings.tolist(),
         dimensions=model.get_sentence_embedding_dimension(),
-        model="BAAI/bge-m3",
+        model=os.environ.get("EMBEDDINGS_MODEL_NAME", DEFAULT_MODEL_NAME),
         inference_time_ms=round(elapsed_ms, 2)
     )
 
@@ -92,7 +123,7 @@ async def embed(request: EmbedRequest):
 async def root():
     return {
         "service": "BestBox Embeddings API",
-        "model": "BAAI/bge-m3",
+        "model": os.environ.get("EMBEDDINGS_MODEL_NAME", DEFAULT_MODEL_NAME),
         "endpoints": {
             "health": "/health",
             "embed": "/embed (POST)"

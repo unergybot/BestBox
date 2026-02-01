@@ -77,8 +77,8 @@
             }
         },
         "footer": {
-            "poweredBy": "Powered by Qwen2.5-14B-Instruct + llama.cpp + CopilotKit",
-            "specs": "AMD Ryzen AI Max+ 395 • ROCm 7.2.0 • 128GB RAM • Ubuntu 24.04"
+            "poweredBy": "Powered by Qwen3-4B-Instruct + vLLM + CopilotKit",
+            "specs": "NVIDIA RTX 3080 + Tesla P100 • CUDA 12.8 • Ubuntu 24.04"
         },
         "tip": "💡 Use the chat on the right to interact with the AI assistant",
         "sampleQueries": {

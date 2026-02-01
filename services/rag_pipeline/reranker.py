@@ -2,23 +2,25 @@
 BestBox Reranker Service
 Serves BGE-reranker-base for precision boosting in RAG pipeline
 """
+import asyncio
+import logging
+import os
+import time
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sentence_transformers import CrossEncoder
-from typing import List
-from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
-import time
-import logging
 import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Model configuration
-MODEL_NAME = "BAAI/bge-reranker-base"
+DEFAULT_MODEL_NAME = "BAAI/bge-reranker-base"
 
 # Global model instance
 model = None
@@ -26,14 +28,40 @@ model = None
 # Thread pool for CPU-bound operations
 executor = ThreadPoolExecutor(max_workers=4)
 
+
+def _cuda_available() -> bool:
+    """Return True if CUDA is available via PyTorch."""
+    try:
+        import torch
+
+        return torch.cuda.is_available()
+    except Exception:
+        return False
+
+
+def _resolve_device() -> str:
+    """Resolve device string from environment with safe fallbacks."""
+    requested = os.environ.get("RERANKER_DEVICE", "auto").strip().lower()
+    if requested in {"", "auto"}:
+        return "cuda" if _cuda_available() else "cpu"
+    if requested.startswith("cuda"):
+        if _cuda_available():
+            return requested
+        logger.warning("CUDA requested for reranker, but CUDA is unavailable. Falling back to CPU.")
+        return "cpu"
+    return requested
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     global model
-    logger.info(f"Loading {MODEL_NAME} model...")
+    model_name = os.environ.get("RERANKER_MODEL_NAME", DEFAULT_MODEL_NAME)
+    device = _resolve_device()
+    logger.info(f"Loading {model_name} model...")
+    logger.info(f"Device: {device}")
     start = time.time()
     try:
-        model = CrossEncoder(MODEL_NAME)
+        model = CrossEncoder(model_name, device=device)
         elapsed = time.time() - start
         logger.info(f"Model loaded in {elapsed:.2f}s")
     except Exception as e:
@@ -80,7 +108,7 @@ async def health_check():
     return HealthResponse(
         status="ok" if model is not None else "loading",
         model_loaded=model is not None,
-        model_name=MODEL_NAME
+        model_name=os.environ.get("RERANKER_MODEL_NAME", DEFAULT_MODEL_NAME)
     )
 
 @app.post("/rerank", response_model=RerankResponse)
@@ -122,7 +150,7 @@ async def rerank(request: RerankRequest):
 async def root():
     return {
         "service": "BestBox Reranker API",
-        "model": MODEL_NAME,
+        "model": os.environ.get("RERANKER_MODEL_NAME", DEFAULT_MODEL_NAME),
         "endpoints": {
             "health": "/health",
             "rerank": "/rerank (POST)"

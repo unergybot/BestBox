@@ -24,6 +24,21 @@ bestbox_agent = LangGraphAgent(
 )
 
 # Create additional actions
+def _detect_gpu_info():
+    """Detect GPU information dynamically."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_name = torch.cuda.get_device_name(0)
+            if 'AMD' in gpu_name or 'Radeon' in gpu_name:
+                return gpu_name, "llama.cpp (Vulkan)"
+            else:
+                return gpu_name, "llama.cpp (CUDA)"
+    except Exception:
+        pass
+    return "CPU", "llama.cpp (CPU)"
+
+
 get_system_info_action = Action(
     name="get_system_info",
     description="Get information about the BestBox system",
@@ -33,9 +48,9 @@ get_system_info_action = Action(
         "framework": "LangGraph (Python)",
         "agents": ["Router", "ERP", "CRM", "IT Ops", "OA"],
         "status": "connected",
-        "model": "Qwen2.5-14B-Instruct",
-        "backend": "llama.cpp (Vulkan)",
-        "gpu": "AMD Radeon 8060S",
+        "model": os.environ.get("LLM_MODEL_NAME", "Qwen2.5-14B-Instruct"),
+        "backend": _detect_gpu_info()[1],
+        "gpu": _detect_gpu_info()[0],
     }
 )
 

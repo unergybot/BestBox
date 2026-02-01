@@ -54,6 +54,11 @@ is_running() {
     pgrep -f "$1" > /dev/null 2>&1
 }
 
+# Helper to detect NVIDIA GPU
+has_nvidia_gpu() {
+    command -v nvidia-smi > /dev/null 2>&1 && nvidia-smi -L > /dev/null 2>&1
+}
+
 echo -e "${YELLOW}=== Tier 1: Docker Infrastructure ===${NC}"
 
 # Check if Docker is running
@@ -101,8 +106,12 @@ echo -e "${YELLOW}=== Tier 2: LLM Inference Services ===${NC}"
 if is_running "llama-server"; then
     echo -e "${YELLOW}LLM server already running${NC}"
 else
+    # Prefer CUDA when NVIDIA GPUs are present
+    if has_nvidia_gpu; then
+        echo "🚀 NVIDIA GPU detected! Starting CUDA LLM server..."
+        ./scripts/start-llm-cuda.sh &
     # Detect Strix Halo hardware (AMD Radeon 8060S / gfx1103)
-    if lspci | grep -qi "Radeon 8060"; then
+    elif lspci | grep -qi "Radeon 8060"; then
         echo "🚀 Strix Halo detected! Starting optimized LLM server..."
         ./scripts/start-llm-strix.sh &
     else
