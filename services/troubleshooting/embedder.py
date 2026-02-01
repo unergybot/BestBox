@@ -17,6 +17,7 @@ Usage:
     issue_embedding = embedder.create_issue_embedding(issue_data)
 """
 
+import os
 import requests
 from typing import List, Dict
 import logging
@@ -28,13 +29,18 @@ logger = logging.getLogger(__name__)
 class TroubleshootingEmbedder:
     """Generate embeddings for troubleshooting data"""
 
-    def __init__(self, embeddings_url: str = "http://localhost:8081"):
+    def __init__(self, embeddings_url: str = ""):
         """
         Initialize embedder.
 
         Args:
             embeddings_url: URL of BGE-M3 embeddings service
         """
+        if not embeddings_url:
+            embeddings_url = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8081"))
+        if embeddings_url.endswith("/v1"):
+            embeddings_url = embeddings_url[:-3]
+
         self.embeddings_url = embeddings_url
 
         # Check service health
@@ -78,7 +84,7 @@ class TroubleshootingEmbedder:
 
     def create_issue_embedding(self, issue_data: Dict) -> List[float]:
         """
-        Create issue-level embedding (problem + solution + VL descriptions).
+        Create issue-level embedding (problem + solution + VL descriptions + VLM metadata).
 
         This combines textual and visual information into a single semantic vector.
 
@@ -108,6 +114,18 @@ class TroubleshootingEmbedder:
             if img.get('text_in_image'):
                 parts.append(f"图像文字: {img['text_in_image']}")
 
+            # NEW: Add VLM-enriched fields from images
+            if img.get('severity'):
+                parts.append(f"严重程度: {img['severity']}")
+
+            if img.get('key_insights'):
+                for insight in img['key_insights'][:3]:  # Limit to top 3
+                    parts.append(f"洞察: {insight}")
+
+            if img.get('suggested_actions'):
+                for action in img['suggested_actions'][:3]:
+                    parts.append(f"建议措施: {action}")
+
         # Add structured metadata as searchable text
         if issue_data.get('trial_version'):
             parts.append(f"试模阶段: {issue_data['trial_version']}")
@@ -120,6 +138,16 @@ class TroubleshootingEmbedder:
 
         if issue_data.get('category'):
             parts.append(f"类别: {issue_data['category']}")
+
+        # NEW: Add VLM-enriched case-level fields (if propagated to issue)
+        if issue_data.get('key_insights'):
+            parts.append(f"关键洞察: {' '.join(issue_data['key_insights'][:5])}")
+
+        if issue_data.get('analysis', {}).get('topics'):
+            parts.append(f"主题: {' '.join(issue_data['analysis']['topics'][:5])}")
+
+        if issue_data.get('tags'):
+            parts.append(f"标签: {' '.join(issue_data['tags'][:5])}")
 
         # Combine all parts
         combined_text = " ".join(parts)

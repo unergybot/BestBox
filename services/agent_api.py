@@ -2,17 +2,28 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# OpenTelemetry imports - MUST be before other imports for auto-instrumentation
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
+# OpenTelemetry imports - MUST be before other imports for auto-instrumentation (when installed)
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import Resource
+    OPENTELEMETRY_CORE_AVAILABLE = True
+except ImportError:
+    OPENTELEMETRY_CORE_AVAILABLE = False
+
 try:
     from openinference.instrumentation.langchain import LangChainInstrumentor
-    OPENTELEMETRY_AVAILABLE = True
+    OPENINFERENCE_AVAILABLE = True
 except ImportError:
-    OPENTELEMETRY_AVAILABLE = False
+    OPENINFERENCE_AVAILABLE = False
+
+OPENTELEMETRY_AVAILABLE = OPENTELEMETRY_CORE_AVAILABLE and OPENINFERENCE_AVAILABLE
+
+if not OPENTELEMETRY_CORE_AVAILABLE:
+    print("⚠️  OpenTelemetry core not available. Install with: pip install opentelemetry-sdk opentelemetry-exporter-otlp")
+elif not OPENINFERENCE_AVAILABLE:
     print("⚠️  OpenTelemetry instrumentation not available. Install with: pip install openinference-instrumentation-langchain")
 
 # Initialize OpenTelemetry if available
@@ -55,7 +66,7 @@ try:
 except Exception as e:
     logger.error(f"⚠️  Plugin loading failed: {e}", exc_info=True)
 
-from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi import FastAPI, HTTPException, Request, Header, UploadFile, File, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
@@ -68,6 +79,9 @@ import json
 import time
 import uuid
 import asyncpg
+
+from pathlib import Path
+import re
 
 # Prometheus metrics
 try:
@@ -239,28 +253,477 @@ class ChatResponse(BaseModel):
 async def health():
     return {"status": "ok", "service": "langgraph-agent"}
 
+
+def _safe_filename(original_name: str) -> str:
+    """Normalize uploaded filenames to avoid path traversal and weird characters."""
+    name = Path(original_name).name
+    # Keep common characters only
+    name = re.sub(r"[^A-Za-z0-9._()\-\u4e00-\u9fff]", "_", name)
+    # Avoid empty or dotfiles
+    if not name or name in {".", ".."}:
+        name = f"upload_{uuid.uuid4().hex}.xlsx"
+    return name
+
+
+@app.post("/admin/troubleshooting/upload-xlsx")
+async def admin_upload_troubleshooting_xlsx(
+    file: UploadFile = File(...),
+    index: bool = Query(True, description="If true, index extracted case into Qdrant"),
+    output_dir: str = Query(
+        "data/troubleshooting/processed",
+        description="Where to write extracted JSON and images (relative to repo root)",
+    ),
+):
+    """Admin endpoint to ingest a single troubleshooting XLSX into the KB pipeline."""
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    safe_name = _safe_filename(file.filename)
+    if not safe_name.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
+
+    repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    uploads_dir = repo_root / "data" / "troubleshooting" / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_path = uploads_dir / f"{int(time.time())}_{uuid.uuid4().hex}_{safe_name}"
+
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty upload")
+        # Basic guardrail (~50MB)
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 50MB)")
+
+        saved_path.write_bytes(content)
+
+        from services.troubleshooting.excel_extractor import ExcelTroubleshootingExtractor
+        from services.troubleshooting.indexer import TroubleshootingIndexer
+
+        processed_output_dir = (repo_root / output_dir).resolve()
+        extractor = ExcelTroubleshootingExtractor(output_dir=processed_output_dir)
+        case_data = extractor.extract_case(saved_path)
+
+        indexing_stats = None
+        if index:
+            indexer = TroubleshootingIndexer(
+                qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
+                qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
+                embeddings_url=os.getenv("EMBEDDINGS_URL", "http://localhost:8081"),
+            )
+            indexing_stats = indexer.index_case(case_data)
+
+        return {
+            "status": "ok",
+            "uploaded_filename": safe_name,
+            "saved_path": str(saved_path),
+            "case_id": case_data.get("case_id"),
+            "total_issues": case_data.get("total_issues"),
+            "source_file": case_data.get("source_file"),
+            "indexed": bool(index),
+            "indexing": indexing_stats,
+            "output_dir": str(processed_output_dir),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin XLSX ingest failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ingest failed: {str(e)}")
+
+
+@app.post("/admin/troubleshooting/process-sample")
+async def admin_process_sample_troubleshooting_xlsx(
+    index: bool = Query(True, description="If true, index extracted case into Qdrant"),
+):
+    """Admin endpoint to process the built-in sample troubleshooting XLSX on the server."""
+
+    repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    sample_path = repo_root / "docs" / "1947688(ED736A0501)-case.xlsx"
+
+    if not sample_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Sample file not found: {sample_path.name}"
+        )
+
+    try:
+        from services.troubleshooting.excel_extractor import ExcelTroubleshootingExtractor
+        from services.troubleshooting.indexer import TroubleshootingIndexer
+
+        processed_output_dir = (repo_root / "data" / "troubleshooting" / "processed").resolve()
+        extractor = ExcelTroubleshootingExtractor(output_dir=processed_output_dir)
+        case_data = extractor.extract_case(sample_path)
+
+        indexing_stats = None
+        if index:
+            indexer = TroubleshootingIndexer(
+                qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
+                qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
+                embeddings_url=os.getenv("EMBEDDINGS_URL", "http://localhost:8081"),
+            )
+            indexing_stats = indexer.index_case(case_data)
+
+        return {
+            "status": "ok",
+            "sample_filename": sample_path.name,
+            "sample_path": str(sample_path),
+            "case_id": case_data.get("case_id"),
+            "total_issues": case_data.get("total_issues"),
+            "source_file": case_data.get("source_file"),
+            "indexed": bool(index),
+            "indexing": indexing_stats,
+            "output_dir": str(processed_output_dir),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Admin sample processing failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Sample processing failed: {str(e)}")
+
 @app.get("/api/troubleshooting/images/{image_id}")
 async def get_troubleshooting_image(image_id: str):
     """
     Serve troubleshooting case images.
     Images are stored in data/troubleshooting/processed/images/
+    
+    Handles both prefixed (with timestamp) and non-prefixed image IDs.
     """
     import os
+    from pathlib import Path
     from fastapi.responses import FileResponse
 
     # Sanitize image_id to prevent directory traversal
-    if '..' in image_id or '/' in image_id:
+    if ".." in image_id or "/" in image_id or "\\" in image_id:
         raise HTTPException(status_code=400, detail="Invalid image ID")
 
-    image_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "data", "troubleshooting", "processed", "images", image_id
+    images_dir = Path(
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data",
+            "troubleshooting",
+            "processed",
+            "images",
+        )
     )
 
-    if not os.path.exists(image_path):
-        raise HTTPException(status_code=404, detail="Image not found")
+    import re
 
-    return FileResponse(image_path, media_type="image/jpeg")
+    requested = Path(image_id).name
+    requested_stem = requested
+    for ext in (".jpg", ".jpeg", ".png", ".webp"):
+        if requested_stem.lower().endswith(ext):
+            requested_stem = requested_stem[: -len(ext)]
+            break
+
+    # Try 1: Exact file match (including extension if provided)
+    if "." in requested:
+        exact_path = (images_dir / requested).resolve()
+        if images_dir.resolve() in exact_path.parents or images_dir.resolve() == exact_path.parent:
+            if exact_path.exists() and exact_path.is_file():
+                suffix = exact_path.suffix.lower()
+                media_type = {
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".png": "image/png",
+                    ".webp": "image/webp",
+                }.get(suffix, "application/octet-stream")
+                return FileResponse(str(exact_path), media_type=media_type)
+
+    # Try 2: Glob search for prefixed/suffixed files
+    # This handles old Qdrant index entries that point to non-prefixed filenames
+    # when actual files have timestamp prefixes
+    # E.g., index says "1947688(ED736A0501)-case_img023.jpg"
+    #       but files are "*_1947688(ED736A0501)-case_img023.jpg"
+    patterns: list[str] = [
+        f"*{requested}",  # Match anything containing the requested name (with extension)
+        f"*{requested_stem}*",  # Also try without extension
+    ]
+
+    # Try 3: If request includes an internal number that doesn't exist on disk,
+    # fall back to ANY internal number for the same part/image index.
+    # Example request: 1947688(ED736A0502)-case_img018
+    # Existing files:   *_1947688(ED736A0501)-case_img018.jpg
+    m = re.search(r"(?P<part>\d+)\([^)]*\)-case_img(?P<imgnum>\d{3})$", requested_stem)
+    if m:
+        part = m.group("part")
+        imgnum = m.group("imgnum")
+        # The '(' is literal in filenames; use '*' to match any internal number inside parentheses.
+        patterns.extend(
+            [
+                f"*{part}(*-case_img{imgnum}.jpg",
+                f"*{part}(*-case_img{imgnum}.jpeg",
+                f"*{part}(*-case_img{imgnum}.png",
+                f"*{part}(*-case_img{imgnum}.webp",
+            ]
+        )
+    
+    for pattern in patterns:
+        matching_files = [p for p in images_dir.glob(pattern) if p.is_file()]
+
+        # Prefer newest file (multiple uploads can produce duplicates)
+        matching_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+        for img_file in matching_files:
+            if not img_file.is_file():
+                continue
+            
+            # Verify it doesn't traverse outside images_dir
+            if images_dir.resolve() not in img_file.resolve().parents and images_dir.resolve() != img_file.resolve().parent:
+                continue
+            
+            suffix = img_file.suffix.lower()
+            media_type = {
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
+                ".png": "image/png",
+                ".webp": "image/webp",
+            }.get(suffix, "application/octet-stream")
+            return FileResponse(str(img_file), media_type=media_type)
+
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+# ==========================================================
+# VLM Service Integration
+# ==========================================================
+
+# Import VLM components
+try:
+    from services.vlm import VLMJobStore, VLMResult
+    from services.vlm.models import VLMWebhookPayload, JobStatus
+    import hmac
+    import hashlib
+    VLM_AVAILABLE = True
+except ImportError:
+    VLM_AVAILABLE = False
+    logger.warning("⚠️  VLM service components not available")
+
+# VLM job store instance
+_vlm_job_store: Optional["VLMJobStore"] = None
+
+
+def get_vlm_job_store() -> "VLMJobStore":
+    """Get or create VLM job store instance"""
+    global _vlm_job_store
+    if _vlm_job_store is None and VLM_AVAILABLE:
+        _vlm_job_store = VLMJobStore()
+    return _vlm_job_store
+
+
+def verify_vlm_signature(body: bytes, signature: str) -> bool:
+    """
+    Verify VLM webhook signature using HMAC-SHA256.
+
+    Args:
+        body: Request body bytes
+        signature: X-VLM-Signature header value (format: sha256=<hex>)
+
+    Returns:
+        True if signature is valid
+    """
+    secret = os.getenv("VLM_WEBHOOK_SECRET", "")
+    if not secret:
+        logger.warning("VLM_WEBHOOK_SECRET not configured, skipping signature verification")
+        return True
+
+    if not signature.startswith("sha256="):
+        return False
+
+    expected_sig = signature[7:]  # Remove "sha256=" prefix
+    computed_sig = hmac.new(
+        secret.encode(),
+        body,
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(computed_sig, expected_sig)
+
+
+class VLMWebhookRequest(BaseModel):
+    """VLM webhook callback payload"""
+    event: str
+    job_id: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+@app.post("/api/v1/webhooks/vlm-results")
+async def vlm_webhook_receiver(
+    request: Request,
+    x_vlm_signature: Optional[str] = Header(None, alias="X-VLM-Signature"),
+    x_vlm_job_id: Optional[str] = Header(None, alias="X-VLM-Job-ID")
+):
+    """
+    Receive VLM job completion callbacks.
+
+    The VLM service calls this endpoint when a job completes.
+    Results are stored in Redis for retrieval by the VLM client.
+    """
+    if not VLM_AVAILABLE:
+        raise HTTPException(status_code=503, detail="VLM service not available")
+
+    # Get raw body for signature verification
+    body = await request.body()
+
+    # Verify signature if configured
+    if x_vlm_signature and not verify_vlm_signature(body, x_vlm_signature):
+        logger.warning(f"Invalid VLM webhook signature for job {x_vlm_job_id}")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    try:
+        payload = json.loads(body)
+        webhook_data = VLMWebhookRequest(**payload)
+    except Exception as e:
+        logger.error(f"Failed to parse VLM webhook payload: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+
+    job_store = get_vlm_job_store()
+    job_id = webhook_data.job_id
+
+    logger.info(f"Received VLM webhook for job {job_id}: {webhook_data.event}")
+
+    if webhook_data.status == "completed" and webhook_data.result:
+        # Store successful result
+        try:
+            result = VLMResult(**webhook_data.result)
+            await job_store.store_result(job_id, result)
+            logger.info(f"Stored VLM result for job {job_id}")
+        except Exception as e:
+            logger.error(f"Failed to store VLM result for {job_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to store result: {e}")
+
+    elif webhook_data.status == "failed":
+        # Store error
+        error_msg = webhook_data.error or "Unknown error"
+        await job_store.store_error(job_id, error_msg)
+        logger.warning(f"VLM job {job_id} failed: {error_msg}")
+
+    return {"status": "ok", "job_id": job_id}
+
+
+@app.post("/api/v1/upload")
+async def upload_file_for_analysis(
+    file: UploadFile = File(...),
+    analysis_type: str = Query("vlm", description="Type of analysis: 'vlm' for VLM processing")
+):
+    """
+    Upload a file for VLM analysis.
+
+    This endpoint saves uploaded files temporarily for processing by the VLM service.
+    Returns the file path that can be used with analysis tools.
+
+    Supported file types: jpg, jpeg, png, webp, pdf, xlsx
+    Max file size: 50MB
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    # Validate file type
+    allowed_extensions = {".jpg", ".jpeg", ".png", ".webp", ".pdf", ".xlsx"}
+    ext = Path(file.filename).suffix.lower()
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    # Read and validate size
+    content = await file.read()
+    max_size = 50 * 1024 * 1024  # 50MB
+    if len(content) > max_size:
+        raise HTTPException(status_code=413, detail=f"File too large. Max size: {max_size // (1024*1024)}MB")
+
+    # Create upload directory
+    repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    uploads_dir = repo_root / "data" / "vlm_uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate unique filename
+    safe_name = re.sub(r"[^A-Za-z0-9._()\-\u4e00-\u9fff]", "_", Path(file.filename).name)
+    unique_name = f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{safe_name}"
+    file_path = uploads_dir / unique_name
+
+    # Save file
+    file_path.write_bytes(content)
+
+    logger.info(f"Uploaded file for VLM analysis: {file_path}")
+
+    return {
+        "status": "ok",
+        "filename": safe_name,
+        "file_path": str(file_path),
+        "size_bytes": len(content),
+        "analysis_type": analysis_type
+    }
+
+
+@app.get("/api/v1/vlm/jobs/{job_id}")
+async def get_vlm_job_status(job_id: str):
+    """
+    Get status of a VLM analysis job.
+
+    Returns the job status and result if completed.
+    """
+    if not VLM_AVAILABLE:
+        raise HTTPException(status_code=503, detail="VLM service not available")
+
+    job_store = get_vlm_job_store()
+
+    # Check status
+    status = await job_store.get_status(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    response = {
+        "job_id": job_id,
+        "status": status.value
+    }
+
+    if status == JobStatus.COMPLETED:
+        result = await job_store.get_result(job_id)
+        if result:
+            response["result"] = result.model_dump()
+
+    elif status == JobStatus.FAILED:
+        error = await job_store.get_error(job_id)
+        if error:
+            response["error"] = error
+
+    return response
+
+
+@app.get("/health/vlm")
+async def health_check_vlm():
+    """
+    VLM service connectivity health check.
+    """
+    if not VLM_AVAILABLE:
+        return {"status": "unavailable", "error": "VLM components not installed"}
+
+    vlm_enabled = os.getenv("VLM_ENABLED", "false").lower() == "true"
+    if not vlm_enabled:
+        return {"status": "disabled", "message": "VLM_ENABLED=false"}
+
+    try:
+        from services.vlm import VLMServiceClient
+        client = VLMServiceClient()
+        health = await client.check_health()
+        await client.close()
+        return {
+            "status": "healthy",
+            "vlm_status": health.status,
+            "model": health.model,
+            "queue_depth": health.queue_depth
+        }
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
+
 
 @app.get("/health/db")
 async def health_check_database():
@@ -657,6 +1120,18 @@ def parse_message_content(content: Union[str, List[Dict[str, Any]]]) -> str:
         return " ".join(text_parts) if text_parts else str(content)
     else:
         return str(content)
+
+
+@app.post("/chat")
+async def chat_legacy_endpoint(
+    request: ChatRequest,
+    user_id: str = Header(default="anonymous", alias="x-user-id"),
+):
+    """Legacy compatibility endpoint.
+
+    Some clients post to `/chat`; route them to the OpenAI-compatible handler.
+    """
+    return await chat_completion_endpoint(request=request, user_id=user_id)
 
 @app.post("/v1/chat/completions")
 async def chat_completion_endpoint(

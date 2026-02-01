@@ -16,6 +16,7 @@ Usage:
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Add project root to path when running as script
@@ -43,13 +44,23 @@ class TroubleshootingSearcher:
 
     def __init__(
         self,
-        llm_url: str = "http://localhost:8080",
-        embeddings_url: str = "http://localhost:8081",
-        reranker_url: str = "http://localhost:8082",
+        llm_url: str = os.getenv("TROUBLESHOOTING_LLM_URL", ""),
+        embeddings_url: str = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8081")),
+        reranker_url: str = os.getenv("RERANKER_URL", "http://localhost:8082"),
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333
     ):
         """Initialize searcher with service URLs"""
+
+        # Normalize defaults from shared env vars
+        if not llm_url:
+            # LLM_BASE_URL often looks like http://host:port/v1
+            llm_base = os.getenv("LLM_BASE_URL", "http://localhost:8080/v1")
+            llm_url = llm_base[:-3] if llm_base.endswith("/v1") else llm_base
+
+        # embeddings service used here expects /health and /embed (no /v1)
+        if embeddings_url.endswith("/v1"):
+            embeddings_url = embeddings_url[:-3]
 
         self.llm_url = llm_url
         self.embeddings_url = embeddings_url
@@ -247,8 +258,10 @@ class TroubleshootingSearcher:
                 for c in candidates[:top_k]
             ]
 
-        # Stage 3: Metadata boosting
+        # Stage 3: Metadata boosting (including VLM-aware boosting)
         final_results = []
+        query_lower = query.lower()
+
         for item in reranked:
             score = item['score']
             payload = item['payload']
@@ -260,6 +273,25 @@ class TroubleshootingSearcher:
             # Boost if part number mentioned in query
             if payload.get('part_number') and str(payload['part_number']) in query:
                 score *= 1.3
+
+            # NEW: VLM-aware boosting
+            if payload.get('vlm_processed'):
+                # Boost by VLM confidence (max 20% boost at 1.0 confidence)
+                vlm_confidence = payload.get('vlm_confidence', 0.0)
+                if vlm_confidence > 0:
+                    score *= (1 + 0.2 * vlm_confidence)
+
+                # Boost if query matches VLM tags
+                for tag in payload.get('tags', []):
+                    if tag.lower() in query_lower:
+                        score *= 1.1
+                        break  # Only apply once
+
+                # Boost high severity issues when query suggests urgency
+                severity = payload.get('severity', '').lower()
+                urgency_keywords = ['紧急', '严重', 'urgent', 'critical', 'severe']
+                if severity == 'high' and any(kw in query_lower for kw in urgency_keywords):
+                    score *= 1.2
 
             final_results.append({
                 "type": "issue",
@@ -275,7 +307,14 @@ class TroubleshootingSearcher:
                 "result_t1": payload.get('result_t1'),
                 "result_t2": payload.get('result_t2'),
                 "images": payload.get('images', []),
-                "defect_types": payload.get('defect_types', [])
+                "defect_types": payload.get('defect_types', []),
+                # NEW: Include VLM metadata in results
+                "vlm_processed": payload.get('vlm_processed', False),
+                "vlm_confidence": payload.get('vlm_confidence', 0.0),
+                "severity": payload.get('severity'),
+                "tags": payload.get('tags', []),
+                "key_insights": payload.get('key_insights', []),
+                "suggested_actions": payload.get('suggested_actions', [])
             })
 
         # Re-sort by boosted scores

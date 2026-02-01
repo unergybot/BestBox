@@ -139,7 +139,16 @@ class TroubleshootingIndexer:
             "issue_ids": [issue['issue_number'] for issue in case_data['issues']],
             "source_file": case_data['source_file'],
             # Add searchable text summary
-            "text_summary": self._generate_case_summary(case_data)
+            "text_summary": self._generate_case_summary(case_data),
+            # NEW VLM-enriched fields
+            "vlm_processed": case_data.get('vlm_processed', False),
+            "vlm_summary": case_data.get('vlm_summary'),
+            "key_insights": case_data.get('key_insights', []),
+            "tags": case_data.get('tags', []),
+            "vlm_confidence": case_data.get('vlm_confidence', 0.0),
+            "vlm_job_id": case_data.get('vlm_job_id'),
+            "topics": case_data.get('analysis', {}).get('topics', []),
+            "entities": case_data.get('analysis', {}).get('entities', [])
         }
 
         # Create point
@@ -202,7 +211,15 @@ class TroubleshootingIndexer:
                     if img.get('defect_type')
                 ],
                 # Combine text for hybrid search fallback
-                "combined_text": f"{issue.get('problem', '')} {issue.get('solution', '')}"
+                "combined_text": f"{issue.get('problem', '')} {issue.get('solution', '')}",
+                # NEW VLM-enriched fields
+                "vlm_processed": case_data.get('vlm_processed', False),
+                "vlm_confidence": self._get_max_vlm_confidence(issue.get('images', [])),
+                "severity": self._get_max_severity(issue.get('images', [])),
+                # Aggregate tags and insights from all images
+                "tags": self._aggregate_image_tags(issue.get('images', [])),
+                "key_insights": self._aggregate_image_insights(issue.get('images', [])),
+                "suggested_actions": self._aggregate_suggested_actions(issue.get('images', []))
             }
 
             point = PointStruct(
@@ -233,7 +250,58 @@ class TroubleshootingIndexer:
         for issue in case_data['issues'][:3]:
             parts.append(issue.get('problem', ''))
 
+        # Add VLM insights if available
+        if case_data.get('key_insights'):
+            parts.extend(case_data['key_insights'][:2])
+
         return " ".join(parts)
+
+    def _get_max_vlm_confidence(self, images: List[Dict]) -> float:
+        """Get maximum VLM confidence score from images"""
+        if not images:
+            return 0.0
+        confidences = [img.get('vlm_confidence', 0.0) for img in images]
+        return max(confidences) if confidences else 0.0
+
+    def _get_max_severity(self, images: List[Dict]) -> str:
+        """Get highest severity from images (high > medium > low)"""
+        severity_order = {'high': 3, 'medium': 2, 'low': 1, '': 0}
+        severities = [img.get('severity', '') for img in images]
+        if not severities:
+            return ''
+        max_sev = max(severities, key=lambda s: severity_order.get(s.lower(), 0))
+        return max_sev
+
+    def _aggregate_image_tags(self, images: List[Dict]) -> List[str]:
+        """Aggregate unique tags from all images"""
+        tags = set()
+        for img in images:
+            for tag in img.get('tags', []):
+                if tag:
+                    tags.add(tag)
+        return list(tags)[:10]  # Limit to 10 tags
+
+    def _aggregate_image_insights(self, images: List[Dict]) -> List[str]:
+        """Aggregate key insights from all images"""
+        insights = []
+        for img in images:
+            for insight in img.get('key_insights', []):
+                if insight and insight not in insights:
+                    insights.append(insight)
+                    if len(insights) >= 5:
+                        return insights
+        return insights
+
+    def _aggregate_suggested_actions(self, images: List[Dict]) -> List[str]:
+        """Aggregate suggested actions from all images"""
+        actions = []
+        for img in images:
+            for action in img.get('suggested_actions', []):
+                if action and action not in actions:
+                    actions.append(action)
+                    if len(actions) >= 5:
+                        return actions
+        return actions
 
     def delete_case(self, case_id: str):
         """
