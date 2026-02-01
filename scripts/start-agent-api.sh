@@ -25,6 +25,10 @@ echo "🚀 Starting LangGraph Agent API"
 echo "   Port: 8000"
 echo ""
 
+# Set LLM Base URL (vLLM is on port 8001)
+export LLM_BASE_URL="${LLM_BASE_URL:-http://127.0.0.1:8001/v1}"
+export LLM_MODEL="Qwen/Qwen3-4B-Instruct-2507"
+
 cd "${PROJECT_DIR}"
 
 # Start the service

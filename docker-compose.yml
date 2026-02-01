@@ -166,7 +166,7 @@ services:
       - ./config/prometheus/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus-data:/prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"  # Host port 9091 to avoid Cockpit conflict (Cockpit uses 9090)
     restart: unless-stopped
 
   # Grafana - Unified dashboard

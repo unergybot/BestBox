@@ -368,14 +368,134 @@ async def list_models():
         ]
     }
 
+async def ag_ui_stream(request: ChatRequest):
+    """
+    Stream the response using AG-UI protocol (CopilotKit v1.51+).
+    Events: TEXT_MESSAGE_START -> TEXT_MESSAGE_CONTENT -> TEXT_MESSAGE_END -> RUN_FINISHED
+    """
+    async def generate():
+        try:
+            # Process the request
+            messages_to_process = []
+
+            if request.messages:
+                messages_to_process = request.messages
+            elif request.input:
+                for item in request.input:
+                    if isinstance(item, dict) and "role" in item:
+                        content = item.get("content", "")
+                        msg = ChatMessage(role=item["role"], content=content)
+                        if "tool_calls" in item:
+                            msg.tool_calls = item["tool_calls"]
+                        messages_to_process.append(msg)
+
+            if not messages_to_process:
+                error_event = {"type": "RUN_ERROR", "message": "No messages provided", "code": "invalid_request"}
+                yield f"data: {json.dumps(error_event)}\n\n"
+                return
+
+            # Convert to LangChain messages
+            lc_messages = []
+            for msg in messages_to_process:
+                content_text = parse_message_content(msg.content) if msg.content is not None else ""
+
+                if msg.role == "user":
+                    lc_messages.append(HumanMessage(content=content_text))
+                elif msg.role == "assistant":
+                    tool_calls = msg.tool_calls or []
+                    lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
+                elif msg.role == "system":
+                    lc_messages.append(SystemMessage(content=content_text))
+
+            inputs: AgentState = {
+                "messages": lc_messages,
+                "current_agent": "router",
+                "tool_calls": 0,
+                "confidence": 1.0,
+                "context": {},
+                "plan": [],
+                "step": 0
+            }
+
+            # Generate unique IDs for this response
+            message_id = f"msg_{uuid.uuid4().hex[:24]}"
+
+            # Get response from agent with recursion limit
+            result = await agent_app.ainvoke(
+                cast(AgentState, inputs),
+                config={"recursion_limit": 50}
+            )
+            last_msg = result["messages"][-1]
+            content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+            tool_calls_result = last_msg.tool_calls if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls else None
+
+            # Ensure content is never None
+            if content is None:
+                content = ""
+
+            # Always emit text content if it exists (even when there are also tool calls)
+            # This handles the case where tool call limit is reached but there's still content
+            if content.strip():
+                # TEXT_MESSAGE_START
+                yield f"data: {json.dumps({'type': 'TEXT_MESSAGE_START', 'messageId': message_id, 'role': 'assistant'})}\n\n"
+
+                # Stream content as TEXT_MESSAGE_CONTENT events
+                chunk_size = 50
+                for i in range(0, len(content), chunk_size):
+                    chunk_text = content[i:i + chunk_size]
+                    yield f"data: {json.dumps({'type': 'TEXT_MESSAGE_CONTENT', 'messageId': message_id, 'delta': chunk_text})}\n\n"
+
+                # TEXT_MESSAGE_END
+                yield f"data: {json.dumps({'type': 'TEXT_MESSAGE_END', 'messageId': message_id})}\n\n"
+
+            # Also emit tool calls if present (CopilotKit may need to handle them)
+            if tool_calls_result:
+                for tool_call in tool_calls_result:
+                    tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+                    tool_name = tool_call.get("name", "unknown") if isinstance(tool_call, dict) else getattr(tool_call, 'name', 'unknown')
+                    tool_args = tool_call.get("args", {}) if isinstance(tool_call, dict) else getattr(tool_call, 'args', {})
+
+                    # TOOL_CALL_START
+                    yield f"data: {json.dumps({'type': 'TOOL_CALL_START', 'toolCallId': tool_call_id, 'toolCallName': tool_name})}\n\n"
+
+                    # TOOL_CALL_ARGS
+                    yield f"data: {json.dumps({'type': 'TOOL_CALL_ARGS', 'toolCallId': tool_call_id, 'delta': json.dumps(tool_args)})}\n\n"
+
+                    # TOOL_CALL_END
+                    yield f"data: {json.dumps({'type': 'TOOL_CALL_END', 'toolCallId': tool_call_id})}\n\n"
+
+            # RUN_FINISHED - Terminal event (REQUIRED!)
+            yield f"data: {json.dumps({'type': 'RUN_FINISHED'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"AG-UI streaming error: {e}")
+            # RUN_ERROR - Terminal event for errors (REQUIRED!)
+            error_event = {"type": "RUN_ERROR", "message": str(e), "code": "internal_error"}
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.post("/responses")
+async def create_response_v0(request: ChatRequest):
+    """
+    CopilotKit AG-UI protocol endpoint (without /v1 prefix).
+    Uses AG-UI streaming format with TEXT_MESSAGE_* and RUN_FINISHED events.
+    """
+    if request.stream:
+        return await ag_ui_stream(request)
+    else:
+        return await chat_completion(request)
+
+
 @app.post("/v1/responses")
 async def create_response(request: ChatRequest):
     """
-    CopilotKit-specific streaming responses endpoint.
-    Supports both streaming and non-streaming responses.
+    CopilotKit AG-UI protocol endpoint.
+    Uses AG-UI streaming format with TEXT_MESSAGE_* and RUN_FINISHED events.
     """
     if request.stream:
-        return await chat_completion_stream(request)
+        return await ag_ui_stream(request)
     else:
         return await chat_completion(request)
 
@@ -424,53 +544,79 @@ async def chat_completion_stream(request: ChatRequest):
                 "step": 0
             }
             
-            # Get response from agent
-            result = await agent_app.ainvoke(cast(AgentState, inputs))
+            # Get response from agent with recursion limit to prevent infinite loops
+            # Primary protection is tool_calls counter (max 5), this is a safety net
+            result = await agent_app.ainvoke(
+                cast(AgentState, inputs),
+                config={"recursion_limit": 50}
+            )
             last_msg = result["messages"][-1]
             content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+            tool_calls = last_msg.tool_calls if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls else None
             
-            # Ensure content is never undefined - always a string
+            # Ensure content is never undefined - always a string (unless tool calls only)
             if content is None:
                 content = ""
             
-            # Stream the content as chunks
-            chunk_id = f"chatcmpl-{int(time.time())}"
-            
-            # Send the content in one chunk (can be split for true streaming)
-            chunk = {
-                "id": chunk_id,
+            response_id = f"chatcmpl-{int(time.time())}"
+            created_time = int(time.time())
+            model_name = request.model or "bestbox-agent"
+
+            # Always stream content first if it exists (even when there are also tool_calls)
+            # This handles the case where tool call limit is reached but there's still content
+            if content.strip():
+                chunk_size = 50
+                for i in range(0, len(content), chunk_size):
+                    chunk_text = content[i:i + chunk_size]
+                    chunk_data = {
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": model_name,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": chunk_text},
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+
+            # Then emit tool calls if present
+            if tool_calls:
+                chunk_data = {
+                    "id": response_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_time,
+                    "model": model_name,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": tool_calls
+                        },
+                        "finish_reason": None
+                    }]
+                }
+                yield f"data: {json.dumps(chunk_data)}\n\n"
+
+            # Final chunk with finish_reason
+            final_chunk = {
+                "id": response_id,
                 "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model or "bestbox-agent",
-                "choices": [{
-                    "index": 0,
-                    "delta": {
-                        "role": "assistant",
-                        "content": content  # Always a string now
-                    },
-                    "finish_reason": None
-                }]
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
-            
-            # Send finish chunk
-            finish_chunk = {
-                "id": chunk_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model or "bestbox-agent",
+                "created": created_time,
+                "model": model_name,
                 "choices": [{
                     "index": 0,
                     "delta": {},
-                    "finish_reason": "stop"
+                    "finish_reason": "tool_calls" if tool_calls else "stop"
                 }]
             }
-            yield f"data: {json.dumps(finish_chunk)}\n\n"
+            yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
             
         except Exception as e:
             logger.error(f"Streaming error: {e}")
-            # Return an error message as content so frontend doesn't crash
             error_chunk = {
                 "id": f"chatcmpl-{int(time.time())}",
                 "object": "chat.completion.chunk",
@@ -489,6 +635,94 @@ async def chat_completion_stream(request: ChatRequest):
             yield "data: [DONE]\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+async def chat_completion(request: ChatRequest) -> Dict[str, Any]:
+    """
+    Non-streaming chat completion handler.
+    Core logic shared by /responses and /v1/chat/completions endpoints.
+    """
+    messages_to_process = []
+
+    if request.messages:
+        messages_to_process = request.messages
+    elif request.input:
+        for item in request.input:
+            if isinstance(item, dict) and "role" in item:
+                content = item.get("content", "")
+                msg = ChatMessage(role=item["role"], content=content)
+                if "tool_calls" in item:
+                    msg.tool_calls = item["tool_calls"]
+                messages_to_process.append(msg)
+    else:
+        raise HTTPException(status_code=422, detail="Either 'messages' or 'input' field is required")
+
+    lc_messages = []
+    for msg in messages_to_process:
+        content_text = parse_message_content(msg.content) if msg.content is not None else ""
+
+        if msg.role == "user":
+            lc_messages.append(HumanMessage(content=content_text))
+        elif msg.role == "assistant":
+            tool_calls = msg.tool_calls or []
+            lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
+        elif msg.role == "system":
+            lc_messages.append(SystemMessage(content=content_text))
+
+    if not lc_messages:
+        raise HTTPException(status_code=422, detail="No valid messages to process")
+
+    inputs: AgentState = {
+        "messages": lc_messages,
+        "current_agent": "router",
+        "tool_calls": 0,
+        "confidence": 1.0,
+        "context": {},
+        "plan": [],
+        "step": 0
+    }
+
+    # Set recursion limit to prevent infinite loops (safety net for tool_calls counter)
+    result = await agent_app.ainvoke(
+        cast(AgentState, inputs),
+        config={"recursion_limit": 50}
+    )
+
+    last_msg = result["messages"][-1]
+    current_agent = result.get("current_agent", "unknown")
+
+    content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
+    tool_calls = last_msg.tool_calls if hasattr(last_msg, 'tool_calls') else None
+
+    message_dict = {
+        "role": "assistant",
+        "content": content or ""
+    }
+
+    if tool_calls:
+        message_dict["tool_calls"] = tool_calls
+        if not content:
+            message_dict["content"] = None
+
+    return {
+        "id": f"chatcmpl-{int(time.time())}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request.model or "bestbox-agent",
+        "choices": [
+            {
+                "index": 0,
+                "message": message_dict,
+                "finish_reason": "tool_calls" if tool_calls else "stop"
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        },
+        "agent": current_agent
+    }
 
 
 def parse_message_content(content: Union[str, List[Dict[str, Any]]]) -> str:
@@ -610,7 +844,11 @@ async def chat_completion_endpoint(
         # Agent Execution (with instrumentation)
         # ==========================================================
 
-        result = await agent_app.ainvoke(cast(AgentState, inputs))
+        # Set recursion limit to prevent infinite loops (safety net for tool_calls counter)
+        result = await agent_app.ainvoke(
+            cast(AgentState, inputs),
+            config={"recursion_limit": 50}
+        )
 
         last_msg = result["messages"][-1]
         current_agent = result.get("current_agent", "unknown")

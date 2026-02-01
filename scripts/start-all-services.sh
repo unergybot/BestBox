@@ -21,9 +21,19 @@ echo ""
 
 # Load environment variables from .env if present
 if [ -f .env ]; then
-    set -o allexport
-    source .env
-    set +o allexport
+    # Export only valid KEY=VALUE lines, ignoring comments and empty lines
+    while IFS='=' read -r key value; do
+        # Skip comments and empty lines
+        [[ -z "$key" || "$key" =~ ^# ]] && continue
+        # Remove inline comments and trim whitespace
+        value="${value%%#*}"
+        value="${value%"${value##*[![:space:]]}"}"
+        # Remove quotes if present
+        value="${value#\"}"
+        value="${value%\"}"
+        # Export the variable
+        export "$key=$value"
+    done < .env
 fi
 
 # Helper function to check if a service is healthy
@@ -74,13 +84,17 @@ if ! check_health "Qdrant" "http://localhost:6333/healthz" 30; then
 fi
 
 # Wait for PostgreSQL
-if ! check_health "PostgreSQL" "http://localhost:5432" 30; then
-    echo -e "${YELLOW}Warning: PostgreSQL health check failed (may still be working)${NC}"
+if ! docker compose exec postgres pg_isready -U postgres > /dev/null 2>&1; then
+    echo -e "${YELLOW}Warning: PostgreSQL health check failed (may still be starting)${NC}"
+else
+    echo "PostgreSQL is ready ${GREEN}✓${NC}"
 fi
 
 # Wait for Redis
-if ! check_health "Redis" "http://localhost:6379" 30; then
-    echo -e "${YELLOW}Warning: Redis health check failed (may still be working)${NC}"
+if ! docker compose exec redis redis-cli ping > /dev/null 2>&1; then
+    echo -e "${YELLOW}Warning: Redis health check failed (may still be starting)${NC}"
+else
+    echo "Redis is ready ${GREEN}✓${NC}"
 fi
 
 echo -e "${GREEN}✓ Tier 1 complete${NC}"
@@ -97,19 +111,36 @@ fi
 
 echo -e "${YELLOW}=== Tier 2: LLM Inference Services ===${NC}"
 
-# Start LLM server
-if is_running "llama-server"; then
-    echo -e "${YELLOW}LLM server already running${NC}"
+# Check for LLM server (vLLM on CUDA or llama-server on AMD)
+VLLM_AVAILABLE=false
+LLAMA_AVAILABLE=false
+
+# First check if vLLM is already running (CUDA)
+if curl -sf "http://localhost:8001/health" > /dev/null 2>&1; then
+    echo -e "${GREEN}✓ vLLM already running on port 8001 (CUDA)${NC}"
+    VLLM_AVAILABLE=true
+    export LLM_PORT=8001
+elif is_running "llama-server"; then
+    echo -e "${YELLOW}llama-server already running${NC}"
+    LLAMA_AVAILABLE=true
+    export LLM_PORT=8080
 else
-    # Detect Strix Halo hardware (AMD Radeon 8060S / gfx1103)
+    # Try to start llama-server for AMD, but don't fail if not available
     if lspci | grep -qi "Radeon 8060"; then
         echo "🚀 Strix Halo detected! Starting optimized LLM server..."
-        ./scripts/start-llm-strix.sh &
-    else
+        if [ -f "./scripts/start-llm-strix.sh" ]; then
+            ./scripts/start-llm-strix.sh &
+            sleep 2
+            export LLM_PORT=8080
+        fi
+    elif [ -f "./third_party/llama.cpp/build/bin/llama-server" ]; then
         echo "Starting standard LLM server..."
         ./scripts/start-llm.sh &
+        sleep 2
+        export LLM_PORT=8080
+    else
+        echo -e "${YELLOW}No local LLM server available, checking for external vLLM...${NC}"
     fi
-    sleep 2
 fi
 
 
@@ -122,23 +153,49 @@ fi
 echo "Checking ERPNext data..."
 # We use a simple python check or curl if possible, but docker exec is reliable for DB check
 if docker compose ps -q erpnext >/dev/null; then
-    # Only run if container is running
-    if ! docker compose exec erpnext bash -c 'mysql -h mariadb -u root -padmin erpnext -e "SELECT COUNT(*) FROM tabSupplier" 2>/dev/null | grep -v COUNT | grep -q [1-9]'; then
+    # Use venv python if available
+    PYTHON_CMD="python"
+    [ -f "./venv/bin/python" ] && PYTHON_CMD="./venv/bin/python"
+
+    # Check if data exists using API check
+    if ! $PYTHON_CMD scripts/check_erpnext_data.py > /dev/null 2>&1; then
         echo "Seeding ERPNext demo data..."
-        # Use venv python if available
-        PYTHON_CMD="python"
-        [ -f "./venv/bin/python" ] && PYTHON_CMD="./venv/bin/python"
         
         $PYTHON_CMD scripts/seed_erpnext_basic.py || echo "Warning: Basic seeding failed"
         $PYTHON_CMD scripts/seed_erpnext_fiscal_data.py || echo "Warning: Fiscal year seeding failed"
         $PYTHON_CMD scripts/seed_erpnext_transactions.py || echo "Warning: Transaction seeding failed"
+    else
+        echo -e "${GREEN}✓ ERPNext data already exists${NC}"
     fi
 fi
 
-if ! check_health "LLM Server" "http://localhost:8080/health" 60; then
-    echo -e "${RED}Error: LLM server failed to start${NC}"
-    echo "Check logs in the terminal where start-llm.sh is running"
-    exit 1
+# Check LLM health on the appropriate port
+if [ "$VLLM_AVAILABLE" = "true" ]; then
+    echo -e "${GREEN}✓ Using vLLM on port 8001${NC}"
+elif ! check_health "LLM Server" "http://localhost:${LLM_PORT:-8080}/health" 60; then
+    # Try vLLM as fallback
+    if curl -sf "http://localhost:8001/health" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Found vLLM on port 8001${NC}"
+        export LLM_PORT=8001
+    else
+        echo -e "${RED}Error: No LLM server available (checked ports 8080 and 8001)${NC}"
+        echo "Start vLLM or build llama-server first"
+        exit 1
+    fi
+fi
+
+# Export LLM_BASE_URL for other services (Agent API, RAG, etc.)
+export LLM_BASE_URL="http://localhost:${LLM_PORT:-8080}/v1"
+echo "LLM_BASE_URL exported as: $LLM_BASE_URL"
+
+# Detect LLM_MODEL from the running service
+echo "Detecting LLM model..."
+DETECTED_MODEL_ID=$(curl -s "$LLM_BASE_URL/models" | jq -r '.data[0].id // empty')
+if [ -n "$DETECTED_MODEL_ID" ]; then
+    export LLM_MODEL="$DETECTED_MODEL_ID"
+    echo "LLM_MODEL detected and exported as: $LLM_MODEL"
+else
+    echo -e "${YELLOW}Warning: Could not detect LLM model, using default${NC}"
 fi
 
 # Start Embeddings server
@@ -261,7 +318,7 @@ else
         sleep 2
     fi
 
-    if ! check_health "S2S Gateway" "http://localhost:8765/health" 30; then
+    if ! check_health "S2S Gateway" "http://localhost:${S2S_PORT:-8765}/health" 30; then
         echo -e "${YELLOW}Warning: S2S Gateway not responding${NC}"
     fi
 fi
@@ -272,7 +329,7 @@ echo ""
 echo -e "${GREEN}=== All Services Started ===${NC}"
 echo ""
 echo "Service Status:"
-echo "  LLM Server:     http://localhost:8080/health"
+echo "  LLM Server:     http://localhost:${LLM_PORT:-8001}/health"
 echo "  Embeddings:     http://localhost:8081/health"
 echo "  Reranker:       http://localhost:8082/health"
 echo "  Agent API:      http://localhost:8000/health"

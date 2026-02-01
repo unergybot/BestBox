@@ -1,0 +1,27 @@
+Sending request to http://localhost:8000/v1/chat/completions...
+Response stream:
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "I apologize for the repeated errors. It appears th"}, "finish_reason": null}]}
+  -> Content chunk: I apologize for the repeated errors. It appears th
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ere is a misunderstanding in the parameter definit"}, "finish_reason": null}]}
+  -> Content chunk: ere is a misunderstanding in the parameter definit
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "ion. The `limit` parameter should be an integer (e"}, "finish_reason": null}]}
+  -> Content chunk: ion. The `limit` parameter should be an integer (e
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": ".g., 5), not a string representing a period. The `"}, "finish_reason": null}]}
+  -> Content chunk: .g., 5), not a string representing a period. The `
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "period` parameter should contain the financial per"}, "finish_reason": null}]}
+  -> Content chunk: period` parameter should contain the financial per
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "iod (e.g., \"Q4-2025\").  \n\nLet me correct the tool "}, "finish_reason": null}]}
+  -> Content chunk: iod (e.g., "Q4-2025").  
+
+Let me correct the tool 
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "call by specifying a valid integer for `limit` and"}, "finish_reason": null}]}
+  -> Content chunk: call by specifying a valid integer for `limit` and
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": " the correct `period`:\n\n"}, "finish_reason": null}]}
+  -> Content chunk:  the correct `period`:
+
+
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "tool_calls": [{"name": "get_top_vendors", "args": {"limit": "Q4-2025"}, "id": "chatcmpl-tool-d053596e2a694b8fa66bf34859deb1fe", "type": "tool_call"}]}, "finish_reason": null}]}
+  -> Content chunk: None
+  -> Tool calls chunk: [{'name': 'get_top_vendors', 'args': {'limit': 'Q4-2025'}, 'id': 'chatcmpl-tool-d053596e2a694b8fa66bf34859deb1fe', 'type': 'tool_call'}]
+data: {"id": "chatcmpl-1769874349", "object": "chat.completion.chunk", "created": 1769874349, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}
+data: [DONE]

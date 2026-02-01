@@ -180,7 +180,7 @@ function QuickActions({ view }: { view: DashboardView }) {
   const actions: Record<DashboardView, Array<{ label: string; url?: string; action?: () => void }>> = {
     system: [
       { label: 'View Jaeger Traces', url: 'http://localhost:16686' },
-      { label: 'Prometheus Metrics', url: 'http://localhost:9090' },
+      { label: 'Prometheus Metrics', url: 'http://localhost:9091' },
       { label: 'Download System Report', action: () => alert('Report download feature coming soon') },
     ],
     users: [

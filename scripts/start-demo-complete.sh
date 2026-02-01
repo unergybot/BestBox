@@ -46,20 +46,27 @@ else
 fi
 
 
-# 4. Restart ClawdBot Gateway
-echo -e "\n${YELLOW}[4/4] Ensuring ClawdBot Gateway is active...${NC}"
-echo "Restarting clawdbot-gateway.service..."
-systemctl --user restart clawdbot-gateway
+# 4. Start ClawdBot/OpenClaw Gateway (optional)
+echo -e "\n${YELLOW}[4/4] Checking ClawdBot/OpenClaw Gateway...${NC}"
 
-# Wait a moment for it to stabilize
-sleep 3
+# Check if the service unit exists before trying to restart
+if systemctl --user list-unit-files clawdbot-gateway.service &>/dev/null && \
+   systemctl --user list-unit-files clawdbot-gateway.service | grep -q clawdbot-gateway; then
+    echo "Restarting clawdbot-gateway.service..."
+    systemctl --user restart clawdbot-gateway || true
 
-if systemctl --user is-active --quiet clawdbot-gateway; then
-    echo -e "${GREEN}✓ ClawdBot Gateway is RUNNING${NC}"
+    # Wait a moment for it to stabilize
+    sleep 3
+
+    if systemctl --user is-active --quiet clawdbot-gateway; then
+        echo -e "${GREEN}✓ ClawdBot Gateway is RUNNING${NC}"
+    else
+        echo -e "${RED}✗ ClawdBot Gateway failed to start${NC}"
+        echo "Check logs with: journalctl --user -u clawdbot-gateway -f"
+    fi
 else
-    echo -e "${RED}✗ ClawdBot Gateway failed to start${NC}"
-    echo "Check logs with: journalctl --user -u clawdbot-gateway -f"
-    # We don't exit here, as BestBox might still be usable
+    echo -e "${YELLOW}⚠ ClawdBot/OpenClaw Gateway not installed (optional)${NC}"
+    echo "  Install OpenClaw later to enable AI gateway features"
 fi
 
 # 5. Final Summary

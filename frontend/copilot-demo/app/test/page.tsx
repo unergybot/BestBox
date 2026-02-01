@@ -272,7 +272,7 @@ export default function ObservabilityTestPage() {
                   📊 Grafana (admin/bestbox)
                 </a>
                 <a
-                  href="http://localhost:9090"
+                  href="http://localhost:9091"
                   target="_blank"
                   className="block text-blue-600 hover:underline"
                 >

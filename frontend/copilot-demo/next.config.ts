@@ -22,7 +22,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/proxy/llm/:path*',
-        destination: 'http://127.0.0.1:8080/:path*',
+        destination: 'http://127.0.0.1:8001/:path*',  // vLLM on CUDA
       },
       {
         source: '/api/proxy/embeddings/:path*',
@@ -34,7 +34,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/api/proxy/s2s/:path*',
-        destination: 'http://127.0.0.1:8765/:path*',
+        destination: 'http://127.0.0.1:18765/:path*',  // S2S Gateway
       },
       {
         source: '/api/proxy/qdrant/:path*',

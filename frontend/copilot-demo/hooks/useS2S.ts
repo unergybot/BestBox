@@ -87,9 +87,9 @@ export interface S2SControls {
 const getDefaultServerUrl = () => {
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    return `ws://${hostname}:8765/ws/s2s`;
+    return `ws://${hostname}:18765/ws/s2s`;
   }
-  return 'ws://localhost:8765/ws/s2s';
+  return 'ws://localhost:18765/ws/s2s';
 };
 
 export function useS2S({

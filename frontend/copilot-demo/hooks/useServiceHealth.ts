@@ -3,10 +3,10 @@
  *
  * Polls health endpoints for all services and returns real-time status.
  * Services monitored:
- * - LLM (llama-server): :8080/health
+ * - LLM (vLLM): :8001/health
  * - Embeddings (BGE-M3): :8081/health
  * - Reranker (BGE-reranker): :8082/health
- * - S2S Gateway: :8765/health
+ * - S2S Gateway: :18765/health
  * - Qdrant: :6333/health
  */
 

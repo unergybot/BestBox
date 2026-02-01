@@ -118,7 +118,7 @@ echo "🔍 Step 7: Verifying service health..."
 services=(
   "http://localhost:4318|OpenTelemetry Collector"
   "http://localhost:16686|Jaeger UI"
-  "http://localhost:9090|Prometheus"
+  "http://localhost:9091|Prometheus"
   "http://localhost:3001|Grafana"
 )
 
@@ -149,7 +149,7 @@ if [ "$all_healthy" = true ]; then
     echo "    Password: ${GRAFANA_ADMIN_PASSWORD}"
     echo ""
     echo "  • Jaeger Traces:      http://localhost:16686"
-    echo "  • Prometheus:         http://localhost:9090"
+    echo "  • Prometheus:         http://localhost:9091"
     echo "  • Admin Panel:        http://localhost:3000/admin"
     echo ""
     echo "⚠️  IMPORTANT: Save your Grafana password securely!"

@@ -69,6 +69,9 @@ def tools_node_with_hooks(state: AgentState):
     if isinstance(result, dict):
         state.update(result)
 
+    # Increment tool_calls counter to track SLA (max 5)
+    state["tool_calls"] = state.get("tool_calls", 0) + 1
+
     # Run AFTER_TOOL_CALL hooks
     state = _hook_runner.run_sync(HookEvent.AFTER_TOOL_CALL, state)
 
@@ -82,11 +85,20 @@ def fallback_node(state: AgentState):
         "current_agent": "fallback"
     }
 
+MAX_TOOL_CALLS = 5  # SLA limit to prevent infinite loops
+
 def should_continue(state: AgentState):
     """
     Check if the last message has tool calls.
     If so, route to 'tools'. Otherwise END.
+    Enforces SLA limit of MAX_TOOL_CALLS to prevent recursion.
     """
+    # Check tool call SLA limit
+    current_tool_calls = state.get("tool_calls", 0)
+    if current_tool_calls >= MAX_TOOL_CALLS:
+        logger.warning(f"Tool call limit ({MAX_TOOL_CALLS}) reached, ending conversation")
+        return END
+
     last_message: BaseMessage = state["messages"][-1]
     if isinstance(last_message, AIMessage) and last_message.tool_calls:
         return "tools"
@@ -158,5 +170,7 @@ workflow.add_conditional_edges(
 
 workflow.add_edge("fallback", END)
 
-# Compile
+# Compile the graph
+# Note: recursion_limit is set at invoke time in agent_api.py
+# Primary protection against infinite loops is MAX_TOOL_CALLS (5)
 app = workflow.compile()

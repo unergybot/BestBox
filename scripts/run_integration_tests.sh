@@ -110,7 +110,7 @@ DB_AVAILABLE=false
 if [ "$RUN_MODE" = "full" ]; then
     check_service "LLM Server" "http://localhost:8080/health" "true" && LLM_AVAILABLE=true || true
     check_service "Agent API" "http://localhost:8000/health" "false" && API_AVAILABLE=true || true
-    check_service "Prometheus" "http://localhost:9090/-/healthy" "false" || true
+    check_service "Prometheus" "http://localhost:9091/-/healthy" "false" || true
     
     # Check database
     if python -c "import psycopg2; psycopg2.connect(host='localhost', port=5432, database='bestbox', user='bestbox', password='bestbox')" 2>/dev/null; then

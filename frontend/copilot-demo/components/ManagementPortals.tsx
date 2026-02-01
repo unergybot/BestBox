@@ -54,7 +54,7 @@ export function ManagementPortals() {
         {
             id: 'prometheus',
             name: t('prometheus'),
-            url: 'http://localhost:9090',
+            url: 'http://localhost:9091',
             icon: <Activity size={20} />,
             bg: 'bg-green-100',
             text: 'text-green-600',

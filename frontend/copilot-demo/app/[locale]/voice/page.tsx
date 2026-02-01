@@ -170,7 +170,7 @@ export default function VoicePage() {
               </>
             ) : (
               <div className="flex justify-center">
-                <VoicePanel serverUrl="ws://localhost:8765/ws/s2s" language="zh" title="BestBox 语音助手" showTextInput={true} />
+                <VoicePanel serverUrl="ws://localhost:18765/ws/s2s" language="zh" title="BestBox 语音助手" showTextInput={true} />
               </div>
             )}
           </div>

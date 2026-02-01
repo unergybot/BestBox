@@ -5,7 +5,7 @@ These tools connect to the ERPNext API or fall back to demo data.
 Demo data is loaded from data/demo/demo_data.json.
 """
 from langchain_core.tools import tool
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 import os
 import json
 import logging
@@ -555,11 +555,30 @@ def _get_procurement_summary_from_demo(period):
 
 
 @tool
-def get_top_vendors(limit: int = 5, period: str = "Q4-2025"):
+def get_top_vendors(limit: Union[int, str] = 5, period: str = "Q4-2025"):
     """
     Get the top vendors ranked by total spend.
     Fallback pattern.
     """
+    # Robust handling for Qwen-4B hallucinations
+    if isinstance(limit, str):
+        # If limit looks like a period (e.g. "Q4-2025"), swap it
+        if "-" in limit or limit.startswith("Q"):
+            # If period is default, use limit as period
+            if period == "Q4-2025":
+                period = limit
+            limit = 5
+        elif limit.isdigit():
+            limit = int(limit)
+        else:
+            limit = 5 # Fallback
+            
+    # Ensure limit is int
+    try:
+        limit = int(limit)
+    except:
+        limit = 5
+
     client = get_erpnext_client()
     
     if client.is_available():

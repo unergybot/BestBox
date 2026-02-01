@@ -1,0 +1,17 @@
+Sending request to http://localhost:8000/v1/chat/completions...
+Response stream:
+data: {"id": "chatcmpl-1769874479", "object": "chat.completion.chunk", "created": 1769874479, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "I understand the confusion. The `limit` parameter "}, "finish_reason": null}]}
+  -> Content chunk: I understand the confusion. The `limit` parameter 
+data: {"id": "chatcmpl-1769874479", "object": "chat.completion.chunk", "created": 1769874479, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "must be an integer, not a string. Let me correct t"}, "finish_reason": null}]}
+  -> Content chunk: must be an integer, not a string. Let me correct t
+data: {"id": "chatcmpl-1769874479", "object": "chat.completion.chunk", "created": 1769874479, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "he call by setting a valid integer value for `limi"}, "finish_reason": null}]}
+  -> Content chunk: he call by setting a valid integer value for `limi
+data: {"id": "chatcmpl-1769874479", "object": "chat.completion.chunk", "created": 1769874479, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "t` and specifying the period correctly.\n\n"}, "finish_reason": null}]}
+  -> Content chunk: t` and specifying the period correctly.
+
+
+data: {"id": "chatcmpl-1769874479", "object": "chat.completion.chunk", "created": 1769874479, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {"role": "assistant", "content": null, "tool_calls": [{"name": "get_top_vendors", "args": {"limit": "Q4-2025"}, "id": "chatcmpl-tool-e4fea248310945e181fc44401d8d1a16", "type": "tool_call"}]}, "finish_reason": null}]}
+  -> Content chunk: None
+  -> Tool calls chunk: [{'name': 'get_top_vendors', 'args': {'limit': 'Q4-2025'}, 'id': 'chatcmpl-tool-e4fea248310945e181fc44401d8d1a16', 'type': 'tool_call'}]
+data: {"id": "chatcmpl-1769874479", "object": "chat.completion.chunk", "created": 1769874479, "model": "bestbox-agent", "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}
+data: [DONE]

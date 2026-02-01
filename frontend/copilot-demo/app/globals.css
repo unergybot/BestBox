@@ -31,3 +31,15 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/* DEBUG: Ensure messages container is visible and scrollable */
+.copilotKitMessages {
+  flex: 1 1 auto;
+  min-height: 0; /* Important for flex scrolling */
+  overflow-y: auto !important;
+}
+
+/* DEBUG: Ensure messages container takes full available height */
+.copilotKitMessagesContainer {
+  flex: 1;
+}

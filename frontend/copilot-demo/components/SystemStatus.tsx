@@ -13,7 +13,7 @@ interface ServiceStatus {
 
 export function SystemStatus() {
   const [services, setServices] = useState<ServiceStatus[]>([
-    { name: 'LLM Server', url: 'http://localhost:8080/health', status: 'checking' },
+    { name: 'LLM Server', url: 'http://localhost:8001/health', status: 'checking' },
     { name: 'Embeddings', url: 'http://localhost:8081/health', status: 'checking' },
     { name: 'Agent API', url: 'http://localhost:8000/health', status: 'checking' },
     { name: 'Qdrant', url: 'http://localhost:6333/health', status: 'checking' },
