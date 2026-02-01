@@ -3,7 +3,7 @@ Pydantic models for VLM API requests and responses.
 """
 
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from enum import Enum
 from datetime import datetime
 
@@ -60,12 +60,25 @@ class ExtractedImage(BaseModel):
     confidence: float = 0.0
 
 
+class EntityInfo(BaseModel):
+    """Entity information from VLM analysis"""
+    name: str
+    type: Optional[str] = None
+    mentions: Optional[int] = None
+
+    class Config:
+        extra = "allow"
+
+
 class VLMAnalysis(BaseModel):
     """Analysis results from VLM"""
     sentiment: Optional[str] = None
     topics: List[str] = Field(default_factory=list)
-    entities: List[str] = Field(default_factory=list)
+    entities: List[Any] = Field(default_factory=list)  # Can be strings or EntityInfo objects
     complexity_score: float = 0.0
+
+    class Config:
+        extra = "allow"
 
 
 class VLMMetadata(BaseModel):
@@ -78,8 +91,11 @@ class VLMMetadata(BaseModel):
 
 class VLMResult(BaseModel):
     """Complete VLM analysis result"""
-    job_id: str
+    job_id: Optional[str] = None
     document_summary: str = ""
+
+    class Config:
+        extra = "allow"  # Allow extra fields from API response
     key_insights: List[str] = Field(default_factory=list)
     analysis: VLMAnalysis = Field(default_factory=VLMAnalysis)
     extracted_images: List[ExtractedImage] = Field(default_factory=list)
