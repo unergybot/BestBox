@@ -41,6 +41,8 @@
         },
         "portals": {
             "title": "管理入口",
+            "adminPortal": "管理后台（上传并处理）",
+            "agentApi": "Agent API",
             "erp": "ERPNext 系统",
             "clawdbot": "ClawdBot 管理",
             "grafana": "Grafana 面板",
@@ -123,6 +125,34 @@
             "ttsMuted": "语音静音",
             "clearChat": "清空对话",
             "connectionError": "连接失败，请刷新页面"
+        }
+    },
+    "Admin": {
+        "title": "管理后台",
+        "subtitle": "上传故障排查 XLSX，进行解析并（可选）写入 Qdrant",
+        "upload": {
+            "title": "上传 XLSX",
+            "hint": "示例文件：docs/1947688(ED736A0501)-case.xlsx",
+            "selected": "已选择",
+            "index": "解析后写入 Qdrant",
+            "submit": "上传并处理",
+            "processing": "处理中…",
+            "sampleTitle": "或处理内置示例",
+            "sampleHint": "处理服务器上的 docs/1947688(ED736A0501)-case.xlsx",
+            "processSample": "处理示例文件"
+        },
+        "links": {
+            "title": "快捷入口",
+            "home": "返回门户",
+            "agentApi": "Agent API"
+        },
+        "result": {
+            "title": "结果"
+        },
+        "errors": {
+            "noFile": "请选择一个 .xlsx 文件。",
+            "failed": "上传失败。",
+            "serviceDown": "后端服务未运行。请启动 agent-api 和 embeddings 服务。"
         }
     }
 }

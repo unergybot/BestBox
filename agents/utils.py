@@ -87,4 +87,5 @@ class BGE3Embeddings(Embeddings):
         return data["embeddings"][0]
 
 def get_embeddings():
-    return BGE3Embeddings()
+    base_url = os.environ.get("EMBEDDINGS_URL", "http://127.0.0.1:8081")
+    return BGE3Embeddings(base_url=base_url)

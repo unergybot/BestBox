@@ -37,12 +37,45 @@ echo -e "\n${YELLOW}[3/4] Starting Frontend...${NC}"
 if pgrep -f "next-server" > /dev/null || pgrep -f "next dev" > /dev/null; then
     echo -e "${GREEN}✓ Frontend (Next.js) is already running${NC}"
 else
+    # Check if port 3000 is already in use
+    if lsof -i :3000 > /dev/null 2>&1; then
+        echo -e "${RED}✗ Port 3000 is already in use${NC}"
+        lsof -i :3000
+        exit 1
+    fi
+    
+    # Check if node_modules exist in frontend directory
+    if [ ! -d "frontend/copilot-demo/node_modules" ]; then
+        echo -e "${YELLOW}npm modules not found, installing dependencies...${NC}"
+        (cd frontend/copilot-demo && npm install)
+    fi
+    
     echo "Starting Frontend on port 3000..."
-    cd frontend/copilot-demo
-    nohup npm run dev > ../../frontend.log 2>&1 &
-    cd ../..
-    echo -e "${GREEN}✓ Frontend started${NC}"
-    echo "Logs available in: frontend.log"
+    # Use absolute path to avoid cd issues
+    nohup bash -c "cd $(pwd)/frontend/copilot-demo && npm run dev" > frontend.log 2>&1 &
+    FRONTEND_PID=$!
+    echo "Frontend PID: $FRONTEND_PID"
+    
+    # Wait for frontend to start
+    sleep 3
+    
+    # Verify frontend is running
+    if ps -p $FRONTEND_PID > /dev/null; then
+        echo -e "${GREEN}✓ Frontend process started (PID: $FRONTEND_PID)${NC}"
+    else
+        echo -e "${RED}✗ Frontend process failed to start${NC}"
+        tail -20 frontend.log
+        exit 1
+    fi
+    
+    # Check if frontend is responding
+    if curl -s http://localhost:3000 > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Frontend is responding on http://localhost:3000${NC}"
+    else
+        echo -e "${YELLOW}⚠ Frontend process running but not yet responding (may still be starting)${NC}"
+        echo "   Logs available in: frontend.log"
+        echo "   Monitor with: tail -f frontend.log"
+    fi
 fi
 
 

@@ -8,16 +8,6 @@
 
 ## Quick Start
 
-### System Status
-
-| Component | Status | Details |
-|-----------|--------|---------|
-| **Hardware** | ✅ Ready | AMD Ryzen AI Max+ 395, 128GB RAM, 2TB NVMe |
-| **GPU** | ✅ Operational | AMD Radeon 8060S (gfx1151), 98GB memory |
-| **ROCm** | ✅ Verified | Version 7.2.0 installed and tested |
-| **Python Env** | ✅ Complete | Python 3.12.3, PyTorch 2.10.0+rocm7.1, GPU OK |
-| **AI Stack** | ⏳ Pending | vLLM + TEI deployment planned |
-| **Applications** | ⏳ Pending | 4 demo scenarios in development |
 
 ### Project Structure
 
@@ -181,12 +171,84 @@ User Query → Classifier Agent → Specialized Agent → Tool Gateway → Enter
 | **GPU Runtime** | ROCm 7.2.0 + HIP | AMD GPU acceleration |
 | **Inference** | vLLM + TEI | High-performance serving |
 
-### Demo Scenarios
+---
+
+## Admin Portal & Management
+
+### Admin Portal
+
+The BestBox admin portal provides tools for managing the knowledge base and system configuration:
+
+**Portal URL:** `http://localhost:3000/en/admin` (or `/zh/admin` for Chinese)
+
+#### Features
+
+- **Troubleshooting XLSX Upload**: Upload and process mold troubleshooting case files
+  - Extracts structured data (issues, solutions, trial results) from Excel files
+  - Automatically processes embedded images with VL analysis
+  - Optionally indexes extracted cases into Qdrant vector database
+  - Sample file: `docs/1947688(ED736A0501)-case.xlsx`
+
+- **Quick Links**: Direct access to all management interfaces
+  - Agent API documentation
+  - ERPNext system
+  - Grafana dashboards
+  - Jaeger tracing
+  - Prometheus metrics
+  - Qdrant vector database
+
+#### API Endpoints
+
+```bash
+# Upload troubleshooting XLSX (with indexing)
+curl -X POST http://localhost:8000/admin/troubleshooting/upload-xlsx?index=true \
+  -F "file=@docs/1947688(ED736A0501)-case.xlsx"
+
+# Upload without indexing (extract only)
+curl -X POST http://localhost:8000/admin/troubleshooting/upload-xlsx?index=false \
+  -F "file=@my-case.xlsx"
+```
+
+### Management Portals
+
+| Portal | URL | Purpose |
+|--------|-----|---------||
+| **Admin Portal** | http://localhost:3000/en/admin | Upload & process troubleshooting cases |
+| **Agent API** | http://localhost:8000 | FastAPI backend with LangGraph agents |
+| **Frontend** | http://localhost:3000 | CopilotKit chat interface |
+| **ERPNext** | http://localhost:8002 | Manufacturing ERP system |
+| **Grafana** | http://localhost:3001 | Unified observability dashboard |
+| **Jaeger** | http://localhost:16686 | Distributed tracing UI |
+| **Prometheus** | http://localhost:9090 | Metrics storage & queries |
+| **Qdrant** | http://localhost:6333 | Vector database UI |
+
+---
+
+## Demo Scenarios
+
+### Available Scenarios
 
 1. **ERP Copilot**: Invoice processing, inventory checks, financial reporting
 2. **CRM Sales Assistant**: Lead qualification, quotation generation, opportunity tracking
 3. **IT Operations Agent**: Ticket routing, knowledge base search, automated diagnostics
 4. **OA Workflow Agent**: Leave approvals, meeting scheduling, document workflows
+5. **Mold Service Agent** (NEW): Manufacturing defect troubleshooting with 1000+ real cases
+   - Product quality issues (flash/披锋, whitening/拉白, spark marks/火花纹)
+   - Mold problems (contamination, dimensional issues, polishing defects)
+   - Trial analysis (T0/T1/T2 results)
+   - Image-based defect detection
+
+### System Status
+
+| Component | Status | Details |
+|-----------|--------|---------||
+| **Hardware** | ✅ Ready | AMD Ryzen AI Max+ 395, 128GB RAM, 2TB NVMe |
+| **GPU** | ✅ Operational | AMD Radeon 8060S (gfx1151), 98GB memory |
+| **ROCm** | ✅ Verified | Version 7.2.0 installed and tested |
+| **Python Env** | ✅ Complete | Python 3.12.3, PyTorch 2.10.0+rocm7.1, GPU OK |
+| **AI Stack** | ⏳ Pending | vLLM + TEI deployment planned |
+| **Applications** | ✅ Active | 5 demo scenarios operational |
+| **Mold KB** | ✅ Ready | 1000+ troubleshooting cases indexed |
 
 ---
 

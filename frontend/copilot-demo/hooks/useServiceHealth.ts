@@ -154,6 +154,17 @@ export function useServiceHealth(options: UseServiceHealthOptions = {}): {
         };
       }
 
+      // S2S specific: treat explicit reachability signals as authoritative
+      if (key === 's2s' && (data.ok === false || data.reachable === false)) {
+        return {
+          name: endpoint.name,
+          status: 'offline',
+          details: data.message || 'Not reachable',
+          latency,
+          timestamp: Date.now(),
+        };
+      }
+
       // S2S specific: check TTS status
       if (key === 's2s' && data.tts_enabled === false) {
         return {

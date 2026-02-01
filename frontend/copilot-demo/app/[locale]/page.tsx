@@ -48,7 +48,7 @@ function TroubleshootingCodeBlock({ inline, className, children, ...props }: any
         console.log('[TroubleshootingCards] About to render', uniqueIssues.length, 'cards');
 
         // Debug: Log each card being rendered
-        uniqueIssues.forEach((issue, idx) => {
+        uniqueIssues.forEach((issue: TroubleshootingIssue, idx: number) => {
           console.log(`[TroubleshootingCards] Rendering card ${idx + 1}:`, {
             issue_number: issue.issue_number,
             problem: issue.problem.substring(0, 30),
@@ -182,6 +182,7 @@ const MemoizedDashboardContent = React.memo(DashboardContent);
 
 function DashboardContent() {
   const t = useTranslations("Home");
+  const locale = useLocale();
   const [demoScenario, setDemoScenario] = useState<string | null>(null);
 
   const scenarios = ["erp", "crm", "itops", "oa", "mold"] as const;
@@ -200,8 +201,78 @@ function DashboardContent() {
           </p>
         </div>
 
-        {/* Service Health Status */}
-        <ServiceStatusCard />
+        {/* Management Portals */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <h2 className="text-2xl font-semibold mb-4 text-gray-800">
+            {t("portals.title")}
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <a
+              href={`/${locale}/admin`}
+              className="px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+            >
+              <div className="font-medium text-gray-900">{t("portals.adminPortal")}</div>
+              <div className="text-sm text-gray-600">/{locale}/admin</div>
+            </a>
+
+            <a
+              href={process.env.NEXT_PUBLIC_AGENT_API_URL || "http://localhost:8000"}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+            >
+              <div className="font-medium text-gray-900">{t("portals.agentApi")}</div>
+              <div className="text-sm text-gray-600">{process.env.NEXT_PUBLIC_AGENT_API_URL || "http://localhost:8000"}</div>
+            </a>
+
+            <a
+              href={process.env.NEXT_PUBLIC_ERPNEXT_URL || "http://localhost:8002"}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+            >
+              <div className="font-medium text-gray-900">{t("portals.erp")}</div>
+              <div className="text-sm text-gray-600">{process.env.NEXT_PUBLIC_ERPNEXT_URL || "http://localhost:8002"}</div>
+            </a>
+
+            <a
+              href={process.env.NEXT_PUBLIC_GRAFANA_URL || "http://localhost:3001"}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+            >
+              <div className="font-medium text-gray-900">{t("portals.grafana")}</div>
+              <div className="text-sm text-gray-600">{process.env.NEXT_PUBLIC_GRAFANA_URL || "http://localhost:3001"}</div>
+            </a>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <a
+              href={process.env.NEXT_PUBLIC_JAEGER_URL || "http://localhost:16686"}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors text-sm"
+            >
+              {t("portals.jaeger")}
+            </a>
+            <a
+              href={process.env.NEXT_PUBLIC_PROMETHEUS_URL || "http://localhost:9090"}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors text-sm"
+            >
+              {t("portals.prometheus")}
+            </a>
+            <a
+              href={process.env.NEXT_PUBLIC_QDRANT_URL || "http://localhost:6333"}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors text-sm"
+            >
+              {t("portals.qdrant")}
+            </a>
+          </div>
+        </div>
 
         {/* Demo Scenarios */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
@@ -252,6 +323,11 @@ function DashboardContent() {
             </p>
           </div>
         )}
+
+        {/* System Status (moved under Scenarios) */}
+        <div className="mt-6">
+          <ServiceStatusCard />
+        </div>
 
         {/* Footer */}
         <div className="mt-8 text-center text-gray-500 text-sm">

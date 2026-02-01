@@ -10,14 +10,24 @@ const EMBEDDINGS_PORT = process.env.NEXT_PUBLIC_EMBEDDINGS_PORT || '8081';
 const RERANKER_PORT = process.env.NEXT_PUBLIC_RERANKER_PORT || '8082';
 const S2S_PORT = process.env.NEXT_PUBLIC_S2S_PORT || '8765';
 const QDRANT_PORT = process.env.NEXT_PUBLIC_QDRANT_PORT || '6333';
+const AGENT_API_PORT = process.env.NEXT_PUBLIC_AGENT_API_PORT || '8000';
+
+const EXTRA_ALLOWED_DEV_ORIGINS = (process.env.NEXT_PUBLIC_ALLOWED_DEV_ORIGINS || '')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
 const nextConfig: NextConfig = {
   /* config options here */
   allowedDevOrigins: [
     "http://192.168.1.107:3000",
+    "http://192.168.1.80:3000",
     "http://localhost:3000",
     "192.168.1.107:3000",
     "192.168.1.107",
+    "192.168.1.80:3000",
+    "192.168.1.80",
+    ...EXTRA_ALLOWED_DEV_ORIGINS,
   ],
 
   turbopack: {
@@ -27,6 +37,10 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      {
+        source: '/api/proxy/agent/:path*',
+        destination: `http://127.0.0.1:${AGENT_API_PORT}/:path*`,
+      },
       {
         source: '/api/proxy/llm/:path*',
         destination: `http://127.0.0.1:${LLM_PORT}/:path*`,

@@ -61,6 +61,38 @@ function isTroubleshootingSearchResults(data: any): data is TroubleshootingSearc
  * Normalize a result to TroubleshootingIssue format
  */
 function normalizeToTroubleshootingIssue(item: any): TroubleshootingIssue {
+  const buildImageUrl = (img: any, idx: number): string => {
+    if (typeof img?.image_url === "string" && img.image_url.length > 0) {
+      // If backend already provided a local path, normalize it through the Next.js proxy
+      // to ensure proper URL encoding and consistent extension handling.
+      const prefix = "/api/troubleshooting/images/";
+      if (img.image_url.startsWith(prefix)) {
+        const rawTail = img.image_url.slice(prefix.length);
+        let decodedTail = rawTail;
+        try {
+          decodedTail = decodeURIComponent(rawTail);
+        } catch {
+          // keep as-is
+        }
+
+        const hasExtension = /\.[a-zA-Z0-9]{2,5}$/.test(decodedTail);
+        const filename = hasExtension ? decodedTail : `${decodedTail}.jpg`;
+        return `${prefix}${encodeURIComponent(filename)}`;
+      }
+
+      // Absolute URLs (or other paths) are used as-is.
+      return img.image_url;
+    }
+    if (typeof img?.url === "string" && img.url.length > 0) return img.url;
+
+    const rawId = (img?.image_id ?? `img-${idx}`).toString();
+    const hasExtension = /\.[a-zA-Z0-9]{2,5}$/.test(rawId);
+    const filename = hasExtension ? rawId : `${rawId}.jpg`;
+
+    // Served by Next.js proxy route: /api/troubleshooting/images/[image_id]
+    return `/api/troubleshooting/images/${encodeURIComponent(filename)}`;
+  };
+
   // If already has result_type, return as-is
   if ("result_type" in item) {
     return item as TroubleshootingIssue;
@@ -84,7 +116,7 @@ function normalizeToTroubleshootingIssue(item: any): TroubleshootingIssue {
     image_count: Array.isArray(item.images) ? item.images.length : 0,
     images: Array.isArray(item.images) ? item.images.map((img: any, idx: number) => ({
       image_id: img.image_id || `img-${idx}`,
-      image_url: img.image_url || img.url || `/api/troubleshooting/images/img-${idx}.jpg`,
+      image_url: buildImageUrl(img, idx),
       description: img.description || img.vl_description || "Image",
       defect_type: img.defect_type || ""
     })) : []

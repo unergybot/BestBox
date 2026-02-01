@@ -106,10 +106,15 @@ echo -e "${YELLOW}=== Tier 2: LLM Inference Services ===${NC}"
 if is_running "llama-server"; then
     echo -e "${YELLOW}LLM server already running${NC}"
 else
-    # Prefer CUDA when NVIDIA GPUs are present
+    # Prefer vLLM with CUDA when NVIDIA GPUs are present
     if has_nvidia_gpu; then
-        echo "🚀 NVIDIA GPU detected! Starting CUDA LLM server..."
-        ./scripts/start-llm-cuda.sh &
+        if [ -f "./scripts/start-vllm-cuda.sh" ]; then
+            echo "🚀 NVIDIA GPU detected! Starting vLLM CUDA server..."
+            ./scripts/start-vllm-cuda.sh &
+        else
+            echo "🚀 NVIDIA GPU detected! vLLM script not found, falling back to llama-server..."
+            ./scripts/start-llm-cuda.sh &
+        fi
     # Detect Strix Halo hardware (AMD Radeon 8060S / gfx1103)
     elif lspci | grep -qi "Radeon 8060"; then
         echo "🚀 Strix Halo detected! Starting optimized LLM server..."
@@ -144,7 +149,7 @@ if docker compose ps -q erpnext >/dev/null; then
     fi
 fi
 
-if ! check_health "LLM Server" "http://localhost:8080/health" 60; then
+if ! check_health "LLM Server" "http://localhost:8001/health" 60; then
     echo -e "${RED}Error: LLM server failed to start${NC}"
     echo "Check logs in the terminal where start-llm.sh is running"
     exit 1
@@ -281,7 +286,7 @@ echo ""
 echo -e "${GREEN}=== All Services Started ===${NC}"
 echo ""
 echo "Service Status:"
-echo "  LLM Server:     http://localhost:8080/health"
+echo "  LLM Server:     http://localhost:8001/health"
 echo "  Embeddings:     http://localhost:8081/health"
 echo "  Reranker:       http://localhost:8082/health"
 echo "  Agent API:      http://localhost:8000/health"

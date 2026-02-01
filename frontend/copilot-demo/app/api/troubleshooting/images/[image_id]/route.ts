@@ -10,7 +10,10 @@ export async function GET(
 
   try {
     // Proxy request to backend
-    const backendUrl = `${AGENT_API_URL}/api/troubleshooting/images/${image_id}`;
+    const backendUrl = new URL(
+      `/api/troubleshooting/images/${encodeURIComponent(image_id)}`,
+      AGENT_API_URL
+    ).toString();
     const response = await fetch(backendUrl);
 
     if (!response.ok) {

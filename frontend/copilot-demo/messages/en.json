@@ -41,6 +41,8 @@
         },
         "portals": {
             "title": "Management Portals",
+            "adminPortal": "Admin Portal (Upload & Process)",
+            "agentApi": "Agent API",
             "erp": "ERPNext System",
             "clawdbot": "ClawdBot Admin",
             "grafana": "Grafana Dashboard",
@@ -123,6 +125,34 @@
             "ttsMuted": "Voice muted",
             "clearChat": "Clear conversation",
             "connectionError": "Connection failed. Please refresh."
+        }
+    },
+    "Admin": {
+        "title": "Admin Portal",
+        "subtitle": "Upload a troubleshooting XLSX to extract + (optionally) index into Qdrant",
+        "upload": {
+            "title": "Upload XLSX",
+            "hint": "Example file: docs/1947688(ED736A0501)-case.xlsx",
+            "selected": "Selected",
+            "index": "Index into Qdrant after extraction",
+            "submit": "Upload & Process",
+            "processing": "Processing…",
+            "sampleTitle": "Or Process Built-in Sample",
+            "sampleHint": "Process docs/1947688(ED736A0501)-case.xlsx on server",
+            "processSample": "Process Sample File"
+        },
+        "links": {
+            "title": "Quick Links",
+            "home": "Back to Portal",
+            "agentApi": "Agent API"
+        },
+        "result": {
+            "title": "Result"
+        },
+        "errors": {
+            "noFile": "Please choose an .xlsx file.",
+            "failed": "Upload failed.",
+            "serviceDown": "Backend services are not running. Please start agent-api and embeddings services."
         }
     }
 }
