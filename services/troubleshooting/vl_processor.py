@@ -56,14 +56,14 @@ class VLProcessor:
 
         Args:
             vl_service_url: URL of legacy local VL service
-            vlm_service_url: URL of external VLM service (192.168.1.196:8080)
+            vlm_service_url: URL of external VLM service (192.168.1.196:8081)
             max_workers: Max concurrent requests
             language: Output language ('zh' or 'en')
             enabled: Enable VL processing (disabled by default)
             use_vlm_service: Use external VLM service instead of local
         """
         self.vl_service_url = vl_service_url
-        self.vlm_service_url = vlm_service_url or os.getenv("VLM_SERVICE_URL", "http://192.168.1.196:8080")
+        self.vlm_service_url = vlm_service_url or os.getenv("VLM_SERVICE_URL", "http://192.168.1.196:8081")
         self.max_workers = max_workers
         self.language = language
         self.enabled = enabled or os.getenv("VLM_ENABLED", "false").lower() == "true"

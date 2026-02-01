@@ -72,7 +72,7 @@ class VLMServiceClient:
         if not HTTPX_AVAILABLE:
             raise RuntimeError("httpx package not installed. Install with: pip install httpx")
 
-        self.base_url = (base_url or os.getenv("VLM_SERVICE_URL", "http://192.168.1.196:8080")).rstrip("/")
+        self.base_url = (base_url or os.getenv("VLM_SERVICE_URL", "http://192.168.1.196:8081")).rstrip("/")
         self.webhook_url = webhook_url
         self.api_key = api_key or os.getenv("VLM_API_KEY")
         self.timeout = timeout

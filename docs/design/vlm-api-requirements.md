@@ -4,7 +4,7 @@
 **Date:** 2025-02-01
 **Status:** Specification for VLM Server Team
 
-This document specifies the API changes/additions required for the VLM Server at `192.168.1.196:8080` to support the BestBox mold troubleshooting system integration.
+This document specifies the API changes/additions required for the VLM Server at `192.168.1.196:8081` to support the BestBox mold troubleshooting system integration.
 
 ---
 
@@ -75,7 +75,7 @@ Content-Type: multipart/form-data
 ### Example Request
 
 ```bash
-curl -X POST http://192.168.1.196:8080/api/v1/jobs/upload \
+curl -X POST http://192.168.1.196:8081/api/v1/jobs/upload \
   -F "file=@document.pdf" \
   -F "webhook_url=http://192.168.1.100:8000/api/v1/webhooks/vlm-results" \
   -F "prompt_template=mold_defect_analysis" \
@@ -89,7 +89,7 @@ curl -X POST http://192.168.1.196:8080/api/v1/jobs/upload \
   "job_id": "vlm-20250201-abc123",
   "status": "pending",
   "estimated_duration": "45s",
-  "check_status_url": "http://192.168.1.196:8080/api/v1/jobs/vlm-20250201-abc123",
+  "check_status_url": "http://192.168.1.196:8081/api/v1/jobs/vlm-20250201-abc123",
   "submitted_at": "2025-02-01T10:30:00Z"
 }
 ```
@@ -253,7 +253,7 @@ Content-Type: multipart/form-data
 ### Example Request
 
 ```bash
-curl -X POST http://192.168.1.196:8080/api/v1/jobs/batch \
+curl -X POST http://192.168.1.196:8081/api/v1/jobs/batch \
   -F "files[]=@image1.jpg" \
   -F "files[]=@image2.jpg" \
   -F "files[]=@image3.jpg" \
@@ -269,7 +269,7 @@ curl -X POST http://192.168.1.196:8080/api/v1/jobs/batch \
   "status": "pending",
   "file_count": 3,
   "estimated_duration": "90s",
-  "check_status_url": "http://192.168.1.196:8080/api/v1/jobs/vlm-batch-20250201-xyz789"
+  "check_status_url": "http://192.168.1.196:8081/api/v1/jobs/vlm-batch-20250201-xyz789"
 }
 ```
 
@@ -334,7 +334,7 @@ Content-Type: multipart/form-data
 ### Example Request
 
 ```bash
-curl -X POST http://192.168.1.196:8080/api/v1/compare \
+curl -X POST http://192.168.1.196:8081/api/v1/compare \
   -F "reference_image=@new_defect.jpg" \
   -F "comparison_images[]=@historical1.jpg" \
   -F "comparison_images[]=@historical2.jpg" \
