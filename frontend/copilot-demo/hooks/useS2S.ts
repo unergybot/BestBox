@@ -83,11 +83,12 @@ export interface S2SControls {
   clear: () => void;
 }
 
-// Get default server URL (same as singleton default)
+// Get default server URL
 const getDefaultServerUrl = () => {
   if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    return `ws://${hostname}:8765/ws/s2s`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    return `${protocol}//${host}/api/proxy/s2s/ws/s2s`;
   }
   return 'ws://localhost:8765/ws/s2s';
 };

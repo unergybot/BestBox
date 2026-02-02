@@ -98,11 +98,12 @@ class FunASREngine:
             self._model = AutoModel(
                 model=self.config.model_id,
                 device=self.config.device,
-                # Paraformer includes VAD and punctuation
-                vad_model="fsmn-vad",
-                punc_model="ct-punc",
+                vad_model="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+                vad_kwargs={"max_single_segment_time": 60000},
+                punc_model="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+                spk_model=None,
+                disable_update=True,
             )
-
             logger.info(f"FunASR model loaded successfully on {self.config.device}")
 
         except ImportError as e:

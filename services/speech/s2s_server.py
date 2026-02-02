@@ -257,6 +257,12 @@ class SessionManager:
         if expired:
             logger.info(f"Cleaned up {len(expired)} expired sessions")
     
+    def warmup(self):
+        """Warm up the ASR model."""
+        logger.info("Warming up ASR model...")
+        self.asr_pool._ensure_model_loaded()
+        logger.info("ASR model warmup complete")
+
     async def start_cleanup_task(self):
         """Start background cleanup task."""
         async def cleanup_loop():
@@ -340,6 +346,9 @@ async def lifespan(app: FastAPI):
     
     # NOTE: TTS model is now lazy-loaded in get_tts_model()
     # to prevent blocking startup if it takes too long or hangs
+    
+    # Warmup ASR model (pre-load) to prevent blocking first request
+    await asyncio.to_thread(session_manager.warmup)
     
     # Start cleanup task
     await session_manager.start_cleanup_task()
@@ -526,19 +535,41 @@ async def handle_audio(ws: WebSocket, session: S2SSession, audio_bytes: bytes):
     # openai-whisper is synchronous and can block for seconds
     result = await asyncio.to_thread(session.asr.feed_audio, pcm)
     
-    # Send partial if available
-    if result and result["type"] == "partial":
-        await ws.send_text(json.dumps({
-            "type": "asr_partial",
-            "text": result["text"]
-        }))
+    if result:
+        logger.info(f"DEBUG: feed_audio returned result type: {result.get('type')}, text: '{result.get('text')}'")
+    
+    # Send results if available
+    if result:
+        if result["type"] == "partial":
+            await ws.send_text(json.dumps({
+                "type": "asr_partial",
+                "text": result["text"]
+            }))
+        elif result["type"] == "final":
+            text = result.get("text", "").strip()
+            if text:
+                logger.info(f"ASR final (VAD): '{text[:50]}...' ({len(text)} chars)")
+                await ws.send_text(json.dumps({
+                    "type": "asr_final",
+                    "text": text
+                }))
+                # Run agent in background
+                asyncio.create_task(
+                    run_agent_and_speak(ws, session, text)
+                )
+            else:
+                logger.info("ASR final (VAD): empty transcript")
+                await ws.send_text(json.dumps({
+                    "type": "asr_final",
+                    "text": ""
+                }))
 
 
 async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any]):
     """Handle control message."""
     msg_type = data.get("type")
     
-    if msg_type == "session_start":
+    if msg_type in ["session_start", "start_listening"]:
         # Initialize/reset session
         lang = data.get("lang", "zh")
         session.language = lang
@@ -554,35 +585,36 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
             "session_id": session.session_id
         }))
     
-    elif msg_type == "audio_end":
+    elif msg_type in ["audio_end", "stop_listening"]:
         # Finalize ASR and run agent
-        # Run finalize in thread to prevent blocking
-        final = await asyncio.to_thread(session.asr.finalize)
-        text = final["text"].strip()
-        
-        # Reset ASR for next recording immediately
-        session.asr.reset()
-        session._packets = 0  # Reset packet counter
-        
-        if text:
-            logger.info(f"ASR final: '{text[:50]}...' ({len(text)} chars)")
-            await ws.send_text(json.dumps({
-                "type": "asr_final",
-                "text": text
-            }))
+        # Check if there is enough audio to finalize
+        # This prevents overwriting a VAD-triggered finalization with an empty one
+        if len(session.asr.audio_buffer) > 16000 * 0.3:  # > 0.3s of audio
+            final = await asyncio.to_thread(session.asr.finalize)
+            text = final["text"].strip()
             
-            # Run agent in background
-            asyncio.create_task(
-                run_agent_and_speak(ws, session, text)
-            )
+            if text:
+                logger.info(f"ASR final (Stop): '{text[:50]}...'")
+                await ws.send_text(json.dumps({
+                    "type": "asr_final",
+                    "text": text
+                }))
+                
+                # Run agent in background
+                asyncio.create_task(
+                    run_agent_and_speak(ws, session, text)
+                )
         else:
-            logger.info("ASR final: empty transcript")
-            await ws.send_text(json.dumps({
-                "type": "asr_final",
-                "text": ""
-            }))
+            # Buffer empty or too short, likely already finalized by VAD
+            logger.info("Stop listening: Buffer empty, skipping finalization")
+            # Do NOT send empty asr_final here, as it might clear the user's view
+            pass
+            
+        # Reset ASR for next recording
+        session.asr.reset()
+        session._packets = 0
     
-    elif msg_type == "text_input":
+    elif msg_type in ["text_input", "send_text"]:
         # Direct text input (skip ASR)
         text = data.get("text", "").strip()
         if text:
@@ -606,7 +638,7 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
         session.touch()
         await ws.send_text(json.dumps({"type": "pong"}))
     
-    elif msg_type == "tts":
+    elif msg_type in ["tts", "speak"]:
         # Direct TTS request (from CopilotKit or other sources)
         text = data.get("text", "").strip()
         if text:
@@ -646,14 +678,21 @@ async def run_agent_and_speak(ws: WebSocket, session: S2SSession, user_text: str
     session.current_response = ""
     session.add_user_message(user_text)
     
+    logger.info(f"run_agent_and_speak CALLED. User text: '{user_text}'. Speaking lock acquired.")
+    
     try:
         # Ensure TTS is loaded (or loading)
         model = await get_tts_model()
         
+        logger.info(f"READY TO RUN AGENT. Text: '{user_text}', Model: {model is not None}")
+        
         if LANGGRAPH_AVAILABLE and agent_app is not None:
+            # For debugging: Force echo mode to verify audio path
+            logger.info("Branch: LangGraph Agent")
             await _run_langgraph_agent(ws, session, user_text, model)
         else:
             # Fallback: echo mode for testing
+            logger.info("Branch: Fallback Echo Mode")
             await _run_echo_mode(ws, session, user_text, model)
         
     except Exception as e:
@@ -756,7 +795,12 @@ async def _run_langgraph_agent(ws: WebSocket, session: S2SSession, user_text: st
 
 async def _run_echo_mode(ws: WebSocket, session: S2SSession, user_text: str, tts_model: Optional[StreamingTTS]):
     """Echo mode for testing without LangGraph."""
-    response = f"我收到了你的消息：{user_text}"
+    logger.info(f"_run_echo_mode STARTED. Input: '{user_text}'")
+    # Simple echo or default response
+    if session.language == "zh":
+        response = f"我收到了：{user_text}"
+    else:
+        response = f"I heard: {user_text}"
     
     # Stream tokens (simulate)
     for char in response:

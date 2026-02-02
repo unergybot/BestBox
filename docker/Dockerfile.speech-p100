@@ -27,14 +27,16 @@ RUN pip install --no-cache-dir \
     funasr>=1.0.0 \
     modelscope>=1.9.0
 
-# Install MeloTTS and dependencies
-RUN pip install --no-cache-dir \
-    melo-tts>=0.1.0
+# Install MeloTTS from GitHub (not available on PyPI)
+RUN pip install --no-cache-dir git+https://github.com/myshell-ai/MeloTTS.git
+
+# Download unidic for MeloTTS
+RUN python -m unidic download
 
 # Install service dependencies
 RUN pip install --no-cache-dir \
     fastapi \
-    uvicorn \
+    uvicorn[standard] \
     httpx \
     pydantic-settings \
     scipy \

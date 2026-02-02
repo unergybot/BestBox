@@ -1,6 +1,6 @@
 #!/bin/bash
-# Top-level demo script for BestBox + ClawdBot
-# Starts all BestBox backend services, LiveKit Voice Agent, Frontend, and ensures ClawdBot is running.
+# Top-level demo script for BestBox + OpenClaw
+# Starts all BestBox backend services, LiveKit Voice Agent, Frontend, and ensures OpenClaw is running.
 
 set -e
 
@@ -12,7 +12,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}==============================================${NC}"
-echo -e "${BLUE}   BestBox + ClawdBot Unified Demo Startup    ${NC}"
+echo -e "${BLUE}   BestBox + OpenClaw Unified Demo Startup    ${NC}"
 echo -e "${BLUE}==============================================${NC}"
 echo ""
 
@@ -81,19 +81,19 @@ else
 fi
 
 
-# 4. Restart ClawdBot Gateway
-echo -e "\n${YELLOW}[4/4] Ensuring ClawdBot Gateway is active...${NC}"
-echo "Restarting clawdbot-gateway.service..."
-systemctl --user restart clawdbot-gateway
+# 4. Restart OpenClaw Gateway
+echo -e "\n${YELLOW}[4/4] Ensuring OpenClaw Gateway is active...${NC}"
+echo "Restarting openclaw-gateway.service..."
+systemctl --user restart openclaw-gateway
 
 # Wait a moment for it to stabilize
 sleep 3
 
-if systemctl --user is-active --quiet clawdbot-gateway; then
-    echo -e "${GREEN}✓ ClawdBot Gateway is RUNNING${NC}"
+if systemctl --user is-active --quiet openclaw-gateway; then
+    echo -e "${GREEN}✓ OpenClaw Gateway is RUNNING${NC}"
 else
-    echo -e "${RED}✗ ClawdBot Gateway failed to start${NC}"
-    echo "Check logs with: journalctl --user -u clawdbot-gateway -f"
+    echo -e "${RED}✗ OpenClaw Gateway failed to start${NC}"
+    echo "Check logs with: journalctl --user -u openclaw-gateway -f"
     # We don't exit here, as BestBox might still be usable
 fi
 
@@ -102,7 +102,7 @@ echo -e "\n${YELLOW}[Final] Deployment Status${NC}"
 echo -e "${GREEN}=== System Ready ===${NC}"
 echo ""
 echo -e "📦 ${BLUE}BestBox Agent${NC}:      http://localhost:8000/health"
-echo -e "🤖 ${BLUE}ClawdBot${NC}:           Running (Systemd)"
+echo -e "🤖 ${BLUE}OpenClaw${NC}:           Running (Systemd)"
 echo -e "🎙️ ${BLUE}Voice Agent${NC}:        Running (LiveKit)"
 echo -e "🖥️ ${BLUE}Frontend${NC}:           http://localhost:3000"
 echo -e "🧠 ${BLUE}Reranker${NC}:           http://localhost:8082"
@@ -112,7 +112,7 @@ echo ""
 echo -e "Logs:"
 echo -e "  - Voice Agent:   ${YELLOW}tail -f livekit_agent.log${NC}"
 echo -e "  - Frontend:      ${YELLOW}tail -f frontend.log${NC}"
-echo -e "  - ClawdBot:      ${YELLOW}journalctl --user -u clawdbot-gateway -f${NC}"
+echo -e "  - OpenClaw:      ${YELLOW}journalctl --user -u openclaw-gateway -f${NC}"
 echo -e "  - Agent API:     ${YELLOW}tail -f agent_api.log${NC}"
 echo ""
 echo -e "To stop services: ${YELLOW}pkill -f 'agent_api|s2s_server|reranker|livekit_agent|next-server'${NC}"

@@ -111,7 +111,9 @@ DOCKER_CMD="${DOCKER_CMD} \
   --max-model-len 8192 \
   --max-num-batched-tokens 8192 \
   --trust-remote-code \
-  --disable-log-requests"
+  --disable-log-requests \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes"
 
 # Execute docker command with error output visible
 if eval "${DOCKER_CMD}"; then

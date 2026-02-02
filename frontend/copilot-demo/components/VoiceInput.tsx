@@ -40,13 +40,17 @@ export function VoiceInput(props: InputProps) {
     const handleTranscript = useCallback(async (transcript: string) => {
         if (!transcript) return;
 
-        // Put final transcript in textarea for user to edit before sending
-        setText(transcript);
+        // Automatically append user message to chat
+        await appendMessage(
+            new TextMessage({
+                role: MessageRole.User,
+                content: transcript,
+            })
+        );
+
+        setText('');
         setInterimTranscript('');
         setIsSpeaking(false);
-
-        // Focus textarea so user can immediately edit or press Enter to send
-        inputRef.current?.focus();
     }, []);
 
     const handleResponse = useCallback(async (response: string) => {

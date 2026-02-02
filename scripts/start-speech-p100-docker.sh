@@ -53,7 +53,10 @@ run() {
         --restart unless-stopped \
         -p ${PORT}:8765 \
         -v ${PROJECT_ROOT}/models:/app/models:rw \
-        -v bestbox-speech-cache:/root/.cache \
+        -v ${PROJECT_ROOT}/services:/app/services:rw \
+        -v ${PROJECT_ROOT}/models/modelscope:/root/.cache/modelscope:rw \
+        -v ${PROJECT_ROOT}/models/huggingface:/root/.cache/huggingface:rw \
+        -v ${PROJECT_ROOT}/models/nltk_data:/root/nltk_data:rw \
         -e ASR_ENGINE=funasr \
         -e TTS_ENGINE=melo \
         -e S2S_ENABLE_TTS=true \
