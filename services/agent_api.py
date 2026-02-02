@@ -311,7 +311,7 @@ async def admin_upload_troubleshooting_xlsx(
             indexer = TroubleshootingIndexer(
                 qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
                 qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
-                embeddings_url=os.getenv("EMBEDDINGS_URL", "http://localhost:8081"),
+                embeddings_url=os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004")),
             )
             indexing_stats = indexer.index_case(case_data)
 
@@ -362,7 +362,7 @@ async def admin_process_sample_troubleshooting_xlsx(
             indexer = TroubleshootingIndexer(
                 qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
                 qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
-                embeddings_url=os.getenv("EMBEDDINGS_URL", "http://localhost:8081"),
+                embeddings_url=os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004")),
             )
             indexing_stats = indexer.index_case(case_data)
 

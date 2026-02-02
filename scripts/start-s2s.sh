@@ -2,14 +2,14 @@
 # Start the BestBox Speech-to-Speech Gateway
 #
 # This script starts the S2S WebSocket server that provides:
-# - ASR (faster-whisper) for speech recognition
-# - TTS (XTTS v2) for speech synthesis
+# - ASR (FunASR or faster-whisper) for speech recognition
+# - TTS (MeloTTS or Piper) for speech synthesis
 # - WebSocket endpoint for real-time streaming
 #
 # Prerequisites:
 #   - Python 3.10+
-#   - CUDA/ROCm for GPU acceleration
-#   - faster-whisper, TTS, webrtcvad installed
+#   - CUDA for GPU acceleration
+#   - FunASR/MeloTTS or faster-whisper/Piper installed
 #
 # Usage:
 #   ./scripts/start-s2s.sh [--port PORT] [--host HOST]
@@ -17,12 +17,15 @@
 # Environment variables:
 #   S2S_HOST        - Bind address (default: 0.0.0.0)
 #   S2S_PORT        - Server port (default: 8765)
-#   ASR_MODEL       - Whisper model size (default: large-v3)
-#   ASR_DEVICE      - Device for ASR (default: cuda)
+#   ASR_ENGINE      - ASR engine: funasr or whisper (default: funasr)
+#   ASR_MODEL       - Whisper model size (default: large-v3, only for whisper engine)
+#   ASR_DEVICE      - Device for ASR (default: cuda:1 for P100)
 #   ASR_LANGUAGE    - Recognition language (default: zh)
-#   TTS_MODEL       - TTS model (default: xtts_v2)
+#   TTS_ENGINE      - TTS engine: melo or piper (default: melo)
+#   TTS_MODEL       - TTS model (default: piper, only for piper engine)
+#   TTS_DEVICE      - Device for TTS (default: cuda:1 for P100)
 #   TTS_GPU         - Use GPU for TTS (default: true)
-#   S2S_ENABLE_TTS  - Enable TTS synthesis (default: false, set to 'true' to enable)
+#   S2S_ENABLE_TTS  - Enable TTS synthesis (default: true)
 
 set -e
 
@@ -40,11 +43,20 @@ export S2S_HOST="${S2S_HOST:-0.0.0.0}"
 # The frontend defaults to ws://localhost:8765/ws/s2s.
 # Avoid accidental port drift from inherited shell env vars by using BESTBOX_S2S_PORT.
 export S2S_PORT="${BESTBOX_S2S_PORT:-8765}"
-export ASR_MODEL="${ASR_MODEL:-Systran/faster-distil-whisper-large-v3}"
-export ASR_DEVICE="cpu"
+
+# Engine selection (funasr/whisper for ASR, melo/piper for TTS)
+export ASR_ENGINE="${ASR_ENGINE:-funasr}"  # funasr (default) or whisper
+export TTS_ENGINE="${TTS_ENGINE:-melo}"    # melo (default) or piper
+
+# ASR configuration
+export ASR_MODEL="${ASR_MODEL:-Systran/faster-distil-whisper-large-v3}"  # Only for whisper engine
+export ASR_DEVICE="${ASR_DEVICE:-cuda:1}"  # P100 for speech
 export ASR_LANGUAGE="${ASR_LANGUAGE:-zh}"
-export TTS_MODEL="${TTS_MODEL:-piper}"
-export TTS_GPU="${TTS_GPU:-false}"
+
+# TTS configuration
+export TTS_MODEL="${TTS_MODEL:-piper}"     # Only for piper engine
+export TTS_DEVICE="${TTS_DEVICE:-cuda:1}"  # P100 for speech
+export TTS_GPU="${TTS_GPU:-true}"
 export TTS_LANGUAGE="${TTS_LANGUAGE:-zh-cn}"
 export S2S_ENABLE_TTS="${S2S_ENABLE_TTS:-true}"  # Enabled by default
 
@@ -131,12 +143,24 @@ PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.v
 echo -e "${GREEN}Python version: $PYTHON_VERSION${NC}"
 
 MISSING=""
-check_package "whisper" || MISSING="$MISSING openai-whisper"
-check_package "webrtcvad" || MISSING="$MISSING webrtcvad"
 
+# Core dependencies
 check_package "fastapi" || MISSING="$MISSING fastapi"
 check_package "uvicorn" || MISSING="$MISSING uvicorn"
 check_package "numpy" || MISSING="$MISSING numpy"
+check_package "webrtcvad" || MISSING="$MISSING webrtcvad"
+
+# ASR engine dependencies
+if [[ "$ASR_ENGINE" == "funasr" ]]; then
+    check_package "funasr" || MISSING="$MISSING funasr modelscope"
+else
+    check_package "whisper" || MISSING="$MISSING openai-whisper"
+fi
+
+# TTS engine dependencies
+if [[ "$TTS_ENGINE" == "melo" ]]; then
+    check_package "melo" || MISSING="$MISSING melo-tts"
+fi
 
 if [[ -n "$MISSING" ]]; then
     echo -e "${YELLOW}Missing packages:$MISSING${NC}"
@@ -149,12 +173,18 @@ echo ""
 echo -e "${GREEN}Configuration:${NC}"
 echo "  Host:         $S2S_HOST"
 echo "  Port:         $S2S_PORT"
-echo "  ASR Model:    $ASR_MODEL"
+echo "  ASR Engine:   $ASR_ENGINE"
 echo "  ASR Device:   $ASR_DEVICE"
 echo "  ASR Language: $ASR_LANGUAGE"
-echo "  TTS Model:    $TTS_MODEL"
-echo "  TTS GPU:      $TTS_GPU"
+if [[ "$ASR_ENGINE" == "whisper" ]]; then
+    echo "  ASR Model:    $ASR_MODEL"
+fi
+echo "  TTS Engine:   $TTS_ENGINE"
+echo "  TTS Device:   $TTS_DEVICE"
 echo "  TTS Enabled:  $S2S_ENABLE_TTS"
+if [[ "$TTS_ENGINE" == "piper" ]]; then
+    echo "  TTS Model:    $TTS_MODEL"
+fi
 echo ""
 
 # Check GPU availability and compatibility

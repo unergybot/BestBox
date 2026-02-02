@@ -1,0 +1,20 @@
+# Speech components for BestBox S2S
+# Optimized for P100 GPU (SM60, CUDA 11.x)
+
+# FunASR - Chinese ASR
+funasr>=1.0.0
+modelscope>=1.9.0
+
+# MeloTTS - Chinese TTS
+melo-tts>=0.1.0
+
+# Core dependencies (may already be installed)
+torch>=2.0.0,<2.8.0  # Stay below 2.8 for Pascal support
+torchaudio>=2.0.0
+
+# Audio processing
+numpy>=1.21.0
+scipy>=1.7.0  # For resampling
+
+# Optional: faster inference
+# onnxruntime-gpu>=1.15.0  # Uncomment for ONNX acceleration

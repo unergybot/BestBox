@@ -28,9 +28,13 @@ if pgrep -f "uvicorn.*8000" > /dev/null; then
     exit 1
 fi
 
+# Ensure embeddings URL is set (Docker P100 service on port 8004)
+export EMBEDDINGS_URL="${EMBEDDINGS_URL:-${EMBEDDINGS_BASE_URL:-http://localhost:8004}}"
+
 echo "🚀 Starting LangGraph Agent API"
 echo "   Port: 8000"
 echo "   LLM Backend: ${LLM_BASE_URL:-http://127.0.0.1:8080/v1}"
+echo "   Embeddings: ${EMBEDDINGS_URL}"
 echo ""
 
 cd "${PROJECT_DIR}"

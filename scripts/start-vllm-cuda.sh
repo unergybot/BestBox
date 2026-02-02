@@ -6,12 +6,12 @@
 set -e
 
 # Configuration (override via environment variables)
-MODEL="${LLM_MODEL:-Qwen/Qwen3-4B-Instruct}"
+MODEL="${LLM_MODEL:-Qwen/Qwen3-4B-Instruct-2507}"
 MODEL_PATH="${LLM_MODEL_PATH:-}"
 PORT="${LLM_PORT:-8001}"
-CUDA_DEVICE="${LLM_CUDA_DEVICE:-0}"
+CUDA_DEVICE="${LLM_CUDA_DEVICE:-1}"
 CONTAINER_NAME="vllm-server-cuda"
-IMAGE="vllm/vllm-openai:latest"
+IMAGE="vllm/vllm-openai:v0.11.0"
 LOG_FILE="vllm-cuda.log"
 
 # Colors for output
@@ -90,8 +90,9 @@ DOCKER_CMD="docker run -d \
   --runtime nvidia \
   --gpus \"device=${CUDA_DEVICE}\" \
   -p ${PORT}:8000 \
-  -e CUDA_VISIBLE_DEVICES=${CUDA_DEVICE} \
+  -e VLLM_USE_V1=1 \
   -v \$HOME/.cache/huggingface:/root/.cache/huggingface \
+  -e HF_HUB_OFFLINE=1 \
   ${IMAGE}"
 
 # Add model path if provided, otherwise use model name

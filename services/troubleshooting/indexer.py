@@ -44,7 +44,7 @@ class TroubleshootingIndexer:
         self,
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333,
-        embeddings_url: str = os.getenv("EMBEDDINGS_URL", "http://localhost:8081")
+        embeddings_url: str = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"))
     ):
         """
         Initialize indexer.
@@ -93,18 +93,24 @@ class TroubleshootingIndexer:
                 )
                 logger.info(f"✅ Created '{collection_name}'")
 
-    def index_case(self, case_data: Dict) -> Dict[str, int]:
+    def index_case(self, case_data: Dict, force_reindex: bool = True) -> Dict[str, int]:
         """
         Index a complete troubleshooting case (dual-level).
 
         Args:
             case_data: Case dictionary with metadata and issues
+            force_reindex: If True, delete existing case before re-indexing (default: True)
 
         Returns:
             dict with indexing statistics
         """
         case_id = case_data['case_id']
         logger.info(f"📊 Indexing case {case_id}")
+
+        # Delete existing case to prevent duplicates
+        if force_reindex:
+            logger.info(f"   Removing existing entries for {case_id}...")
+            self.delete_case(case_id)
 
         # Level 1: Case-level indexing
         case_point_id = self._index_case_level(case_data)

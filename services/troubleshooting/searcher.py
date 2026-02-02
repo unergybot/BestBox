@@ -45,7 +45,7 @@ class TroubleshootingSearcher:
     def __init__(
         self,
         llm_url: str = os.getenv("TROUBLESHOOTING_LLM_URL", ""),
-        embeddings_url: str = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8081")),
+        embeddings_url: str = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004")),
         reranker_url: str = os.getenv("RERANKER_URL", "http://localhost:8082"),
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333
@@ -320,7 +320,18 @@ class TroubleshootingSearcher:
         # Re-sort by boosted scores
         final_results.sort(key=lambda x: x['score'], reverse=True)
 
-        return final_results[:top_k]
+        # Deduplicate by issue_id, keeping highest scoring entry
+        seen_issue_ids = set()
+        deduped_results = []
+        for result in final_results:
+            issue_id = result.get('issue_id')
+            if issue_id and issue_id not in seen_issue_ids:
+                seen_issue_ids.add(issue_id)
+                deduped_results.append(result)
+            elif not issue_id:
+                deduped_results.append(result)
+
+        return deduped_results[:top_k]
 
     def _rerank(self, query: str, candidates: List, top_k: int) -> List:
         """Rerank candidates using BGE-reranker-v2-m3"""

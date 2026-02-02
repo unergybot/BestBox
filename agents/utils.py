@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration for local services - use environment variables with defaults
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
-EMBEDDINGS_BASE_URL = os.environ.get("EMBEDDINGS_BASE_URL", "http://127.0.0.1:8081/v1")
+EMBEDDINGS_BASE_URL = os.environ.get("EMBEDDINGS_BASE_URL", "http://127.0.0.1:8004/v1")
 
 SPEECH_FORMAT_INSTRUCTION = """
 RESPONSE FORMAT:
@@ -50,7 +50,7 @@ class LocalBGEEmbeddings(OpenAIEmbeddings):
     
     For now, let's assume we use a simple wrapper that calls our /embed endpoint.
     """
-    def __init__(self, base_url: str = "http://127.0.0.1:8081"):
+    def __init__(self, base_url: str = "http://127.0.0.1:8004"):
         super().__init__(
             base_url=base_url,
             api_key=None,
@@ -65,7 +65,7 @@ from typing import List
 from langchain_core.embeddings import Embeddings
 
 class BGE3Embeddings(Embeddings):
-    def __init__(self, base_url: str = "http://127.0.0.1:8081"):
+    def __init__(self, base_url: str = "http://127.0.0.1:8004"):
         self.base_url = base_url
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
@@ -87,5 +87,5 @@ class BGE3Embeddings(Embeddings):
         return data["embeddings"][0]
 
 def get_embeddings():
-    base_url = os.environ.get("EMBEDDINGS_URL", "http://127.0.0.1:8081")
+    base_url = os.environ.get("EMBEDDINGS_URL", "http://127.0.0.1:8004")
     return BGE3Embeddings(base_url=base_url)

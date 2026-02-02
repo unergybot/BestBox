@@ -2,9 +2,9 @@
 Speech-to-Speech WebSocket Gateway for BestBox
 
 Provides real-time S2S interaction by connecting:
-- ASR (faster-whisper) for speech recognition
+- ASR (FunASR or faster-whisper) for speech recognition
 - LangGraph agents for reasoning and tool use
-- TTS (XTTS v2) for speech synthesis
+- TTS (MeloTTS or Piper) for speech synthesis
 
 Protocol:
 - Client → Server: Binary (PCM16 audio) or JSON control messages
@@ -30,8 +30,39 @@ from pydantic import BaseModel
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from services.speech.asr import StreamingASR, ASRConfig, ASRPool
-from services.speech.tts import StreamingTTS, TTSConfig, SpeechBuffer
+# Setup logging early for import-time messages
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Engine selection from environment
+ASR_ENGINE = os.environ.get("ASR_ENGINE", "funasr")
+TTS_ENGINE = os.environ.get("TTS_ENGINE", "melo")
+
+# Import ASR engine based on selection
+if ASR_ENGINE == "funasr":
+    try:
+        from services.speech.asr_funasr import FunASREngine as StreamingASR, FunASRConfig as ASRConfig, FunASRPool as ASRPool
+        logger.info("Using FunASR engine")
+    except ImportError as e:
+        logger.warning(f"FunASR not available ({e}), falling back to whisper")
+        from services.speech.asr import StreamingASR, ASRConfig, ASRPool
+        ASR_ENGINE = "whisper"
+else:
+    from services.speech.asr import StreamingASR, ASRConfig, ASRPool
+    logger.info("Using Whisper engine")
+
+# Import TTS engine based on selection
+if TTS_ENGINE == "melo":
+    try:
+        from services.speech.tts_melo import MeloTTSEngine as StreamingTTS, MeloTTSConfig as TTSConfig, SpeechBuffer
+        logger.info("Using MeloTTS engine")
+    except ImportError as e:
+        logger.warning(f"MeloTTS not available ({e}), falling back to piper")
+        from services.speech.tts import StreamingTTS, TTSConfig, SpeechBuffer
+        TTS_ENGINE = "piper"
+else:
+    from services.speech.tts import StreamingTTS, TTSConfig, SpeechBuffer
+    logger.info("Using Piper/XTTS engine")
 
 # Conditional imports for LangGraph integration
 try:
@@ -43,9 +74,6 @@ except ImportError:
     LANGGRAPH_AVAILABLE = False
     agent_app = None
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 
 # ==============================================================================
 # Configuration
@@ -56,22 +84,27 @@ class S2SConfig:
     """Configuration for S2S gateway."""
     host: str = "0.0.0.0"
     port: int = 8765
-    
+
+    # Engine selection
+    asr_engine: str = "funasr"  # funasr or whisper
+    tts_engine: str = "melo"    # melo or piper
+
     # ASR config
-    asr_model: str = "large-v3"
-    asr_device: str = "cpu"
+    asr_model: str = "large-v3"  # Only for whisper engine
+    asr_device: str = "cuda:1"   # P100 for speech
     asr_language: str = "zh"
-    
+
     # TTS config
-    tts_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"
+    tts_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"  # Only for piper/xtts
+    tts_device: str = "cuda:1"   # P100 for speech
     tts_gpu: bool = True
     tts_language: str = "zh-cn"
-    
+
     # Session config
     max_sessions: int = 10
     session_timeout: int = 300  # seconds
     max_audio_buffer: int = 30 * 16000 * 2  # 30 seconds PCM16
-    
+
     # Speech buffer config
     min_phrase_chars: int = 30
     max_phrase_chars: int = 200
@@ -82,10 +115,13 @@ def load_config() -> S2SConfig:
     return S2SConfig(
         host=os.environ.get("S2S_HOST", "0.0.0.0"),
         port=int(os.environ.get("S2S_PORT", "8765")),
+        asr_engine=os.environ.get("ASR_ENGINE", "funasr"),
+        tts_engine=os.environ.get("TTS_ENGINE", "melo"),
         asr_model=os.environ.get("ASR_MODEL", "large-v3"),
-        asr_device=os.environ.get("ASR_DEVICE", "cpu"),
+        asr_device=os.environ.get("ASR_DEVICE", "cuda:1"),
         asr_language=os.environ.get("ASR_LANGUAGE", "zh"),
         tts_model=os.environ.get("TTS_MODEL", "tts_models/multilingual/multi-dataset/xtts_v2"),
+        tts_device=os.environ.get("TTS_DEVICE", "cuda:1"),
         tts_gpu=os.environ.get("TTS_GPU", "true").lower() == "true",
         tts_language=os.environ.get("TTS_LANGUAGE", "zh-cn"),
     )
@@ -156,18 +192,26 @@ class S2SSession:
 
 class SessionManager:
     """Manage S2S sessions with cleanup."""
-    
+
     def __init__(self, config: S2SConfig):
         self.config = config
         self.sessions: Dict[str, S2SSession] = {}
-        self.asr_pool = ASRPool(
-            ASRConfig(
+
+        # Create ASR pool based on engine type
+        if ASR_ENGINE == "funasr":
+            # FunASR config
+            asr_config = ASRConfig(
+                device=config.asr_device,
+            )
+        else:
+            # Whisper config
+            asr_config = ASRConfig(
                 model_size=config.asr_model,
                 device=config.asr_device,
                 language=config.asr_language
-            ),
-            max_sessions=config.max_sessions
-        )
+            )
+
+        self.asr_pool = ASRPool(asr_config, max_sessions=config.max_sessions)
         self._cleanup_task: Optional[asyncio.Task] = None
     
     def create_session(self) -> S2SSession:
@@ -243,7 +287,7 @@ tts_lock = asyncio.Lock()
 async def get_tts_model() -> Optional[StreamingTTS]:
     """Lazy-load TTS model on first request."""
     global tts_model, tts_loading
-    
+
     # Check if disabled
     if os.environ.get("S2S_ENABLE_TTS", "false").lower() != "true":
         return None
@@ -255,19 +299,32 @@ async def get_tts_model() -> Optional[StreamingTTS]:
         # Double-check pattern
         if tts_model is not None:
             return tts_model
-            
+
         try:
-            logger.info("Loading TTS model (lazy)...")
-            tts_model = StreamingTTS(TTSConfig(
-                model_name=config.tts_model,
-                gpu=config.tts_gpu,
-                default_language=config.tts_language
-            ))
-            logger.info("TTS model loaded successfully")
+            logger.info(f"Loading TTS model (lazy, engine={TTS_ENGINE})...")
+
+            if TTS_ENGINE == "melo":
+                # MeloTTS config
+                tts_config = TTSConfig(
+                    device=config.tts_device,
+                    language="ZH" if "zh" in config.tts_language.lower() else "EN",
+                )
+            else:
+                # Piper/XTTS config
+                tts_config = TTSConfig(
+                    model_name=config.tts_model,
+                    gpu=config.tts_gpu,
+                    default_language=config.tts_language
+                )
+
+            tts_model = StreamingTTS(tts_config)
+            logger.info(f"TTS model loaded successfully (engine={TTS_ENGINE})")
         except Exception as e:
             logger.error(f"Failed to load TTS model: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-            
+
     return tts_model
 
 
@@ -325,6 +382,8 @@ async def health():
         "status": "ok",
         "service": "s2s-gateway",
         "sessions": len(session_manager.sessions) if session_manager else 0,
+        "asr_engine": ASR_ENGINE,
+        "tts_engine": TTS_ENGINE,
         "langgraph_available": LANGGRAPH_AVAILABLE,
         "tts_enabled": os.environ.get("S2S_ENABLE_TTS", "false").lower() == "true",
         "tts_loaded": tts_model is not None
@@ -336,9 +395,11 @@ async def info():
     """Service information."""
     return {
         "service": "BestBox S2S Gateway",
-        "version": "1.0.0",
-        "asr_model": config.asr_model if config else "not loaded",
-        "tts_model": config.tts_model if config else "not loaded",
+        "version": "1.1.0",
+        "asr_engine": ASR_ENGINE,
+        "asr_device": config.asr_device if config else "not loaded",
+        "tts_engine": TTS_ENGINE,
+        "tts_device": config.tts_device if config else "not loaded",
         "max_sessions": config.max_sessions if config else 0,
         "langgraph_available": LANGGRAPH_AVAILABLE,
         "tts_status": "loaded" if tts_model else "lazy-waiting"
