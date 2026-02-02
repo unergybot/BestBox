@@ -5,6 +5,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useCopilotChat } from "@copilotkit/react-core";
 import { TextMessage, MessageRole } from "@copilotkit/runtime-client-gql";
 import { LiveKitVoiceButton } from './LiveKitVoiceButton';
+import { FileUploadButton } from './FileUploadButton';
 
 export function VoiceInput(props: InputProps) {
     const [text, setText] = useState('');
@@ -59,6 +60,13 @@ export function VoiceInput(props: InputProps) {
         );
     }, [appendMessage]);
 
+    const handleFileSelect = (filePath: string, fileName: string) => {
+        // Append file context to text
+        const fileContext = `\n[FILE_UPLOAD: ${filePath}]`;
+        setText(prev => prev + (prev ? '\n' : '') + `Analyzse this file: ${fileName}` + fileContext);
+        inputRef.current?.focus();
+    };
+
     const useLiveKit = process.env.NEXT_PUBLIC_USE_LIVEKIT === 'true';
 
     return (
@@ -85,6 +93,12 @@ export function VoiceInput(props: InputProps) {
                         />
                     )}
                 </div>
+
+                {/* File Upload Button */}
+                <FileUploadButton
+                    onFileSelect={handleFileSelect}
+                    disabled={props.inProgress}
+                />
 
                 {/* Text Area with Interim Transcript Overlay */}
                 <div className="relative flex-grow min-h-[44px] flex items-center">

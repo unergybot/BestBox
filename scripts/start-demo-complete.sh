@@ -51,8 +51,10 @@ else
     fi
     
     echo "Starting Frontend on port 3000..."
+    # Ensure frontend dev picks up the S2S port expected by the UI
+    export NEXT_PUBLIC_S2S_PORT="${BESTBOX_S2S_PORT:-8765}"
     # Use absolute path to avoid cd issues
-    nohup bash -c "cd $(pwd)/frontend/copilot-demo && npm run dev" > frontend.log 2>&1 &
+    nohup bash -c "cd $(pwd)/frontend/copilot-demo && NEXT_PUBLIC_S2S_PORT=${BESTBOX_S2S_PORT:-8765} npm run dev" > frontend.log 2>&1 &
     FRONTEND_PID=$!
     echo "Frontend PID: $FRONTEND_PID"
     
@@ -104,7 +106,8 @@ echo -e "🤖 ${BLUE}ClawdBot${NC}:           Running (Systemd)"
 echo -e "🎙️ ${BLUE}Voice Agent${NC}:        Running (LiveKit)"
 echo -e "🖥️ ${BLUE}Frontend${NC}:           http://localhost:3000"
 echo -e "🧠 ${BLUE}Reranker${NC}:           http://localhost:8082"
-echo -e "🗣️ ${BLUE}S2S/Speech${NC}:         http://localhost:8765"
+S2S_PORT_DISPLAY="${BESTBOX_S2S_PORT:-8765}"
+echo -e "🗣️ ${BLUE}S2S/Speech${NC}:         http://localhost:${S2S_PORT_DISPLAY}"
 echo ""
 echo -e "Logs:"
 echo -e "  - Voice Agent:   ${YELLOW}tail -f livekit_agent.log${NC}"

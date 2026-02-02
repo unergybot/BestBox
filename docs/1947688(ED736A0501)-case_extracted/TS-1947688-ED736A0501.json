@@ -1,0 +1,675 @@
+{
+  "case_id": "TS-1947688-ED736A0501",
+  "metadata": {
+    "part_number": "1947688",
+    "internal_number": "ED736A0501",
+    "mold_type": "A",
+    "material_t0": "HIPS 438 BK",
+    "material_t1": "HIPS 438 BK",
+    "material_t2": "HIPS 438 BK",
+    "color": "BLACK",
+    "molding_machine": "650-1",
+    "source_filename": "1947688(ED736A0501)-case.xlsx"
+  },
+  "issues": [
+    {
+      "issue_number": 1,
+      "trial_version": "T2",
+      "category": "C1",
+      "problem": "1.产品披锋",
+      "solution": "1、设计改图，将4021,4031工件底部加铁0.06mm，修正产品披锋。",
+      "result_t1": "NG",
+      "result_t2": "OK",
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img017",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img017.jpg",
+          "cell_location": "Row 25, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 2,
+      "trial_version": "T2",
+      "category": "C4",
+      "problem": "1.产品拉白，火花纹残留，骨位脏污。",
+      "solution": "1、钳工拆模，检查模具对拉白，火花纹残留，骨位脏污位置加强省模。 （附修模样板）",
+      "result_t1": "NG",
+      "result_t2": "OK",
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img010",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img010.jpg",
+          "cell_location": "Row 39, Col 3",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img017",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img017.jpg",
+          "cell_location": "Row 25, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img022",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img022.jpg",
+          "cell_location": "Row 39, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 3,
+      "trial_version": "T0",
+      "category": "C9",
+      "problem": "1.模具拖铁粉",
+      "solution": "1、模具拖铁粉，钳工检查模具，对模具加强省模。",
+      "result_t1": "OK ",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img004",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img004.jpg",
+          "cell_location": "Row 55, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img010",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img010.jpg",
+          "cell_location": "Row 39, Col 3",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img022",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img022.jpg",
+          "cell_location": "Row 39, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 4,
+      "trial_version": "T1",
+      "category": "C9",
+      "problem": "1.产品火花纹，凹点，骨位损工",
+      "solution": "1、钳工拆模，对产品火花纹，凹点，骨位损工位置加强省模。\n（附修模样板）",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img005",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img005.jpg",
+          "cell_location": "Row 81, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img006",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img006.jpg",
+          "cell_location": "Row 81, Col 8",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img011",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img011.jpg",
+          "cell_location": "Row 82, Col 11",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 5,
+      "trial_version": "T0",
+      "category": "C9",
+      "problem": "1.产品定位圈偏大",
+      "solution": "1、设计出图，将定位圈外径改成149.8mm",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img002",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img002.jpg",
+          "cell_location": "Row 98, Col 3",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img003",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img003.jpg",
+          "cell_location": "Row 97, Col 10",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img005",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img005.jpg",
+          "cell_location": "Row 81, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img006",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img006.jpg",
+          "cell_location": "Row 81, Col 8",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img011",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img011.jpg",
+          "cell_location": "Row 82, Col 11",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 6,
+      "trial_version": "T0",
+      "category": "C9",
+      "problem": "1.产品顶针铲白",
+      "solution": "1、钳工拆模，将顶针铲白位置的顶针抬高0.1mm",
+      "result_t1": "OK ",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img007",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img007.jpg",
+          "cell_location": "Row 115, Col 3",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img008",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img008.jpg",
+          "cell_location": "Row 115, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 7,
+      "trial_version": "T0",
+      "category": "C9",
+      "problem": "1.产品设变",
+      "solution": "1、设计出图，按客户给的工件图修改模具。4021,4013,4081工件。参照ED736A0301模具图档修模",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img007",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img007.jpg",
+          "cell_location": "Row 115, Col 3",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img008",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img008.jpg",
+          "cell_location": "Row 115, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img009",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img009.jpg",
+          "cell_location": "Row 133, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 8,
+      "trial_version": "T1",
+      "category": "C9",
+      "problem": "1.产品铲胶",
+      "solution": "1、钳工检查模具，对模具铲胶位置加强省模。\n（附修模样板）",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img012",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img012.jpg",
+          "cell_location": "Row 155, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 9,
+      "trial_version": "T1",
+      "category": "C9",
+      "problem": "1.产品缩水",
+      "solution": "1、钳工检查模具，对模具铲胶位置加强省模。\n（附修模样板）",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img012",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img012.jpg",
+          "cell_location": "Row 155, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img013",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img013.jpg",
+          "cell_location": "Row 170, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 10,
+      "trial_version": "T1",
+      "category": "C9",
+      "problem": "1.产品斜顶段差",
+      "solution": "1、钳工检查模具，烧焊修正图示位置的段差不能有反段差。\n（附修模样板）",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img014",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img014.jpg",
+          "cell_location": "Row 189, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img015",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img015.jpg",
+          "cell_location": "Row 191, Col 8",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 11,
+      "trial_version": "T1",
+      "category": "C9",
+      "problem": "1.模具5102工件插烧",
+      "solution": "1、钳工检查模具，检查5102工件，重新配顺此工件。",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img014",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img014.jpg",
+          "cell_location": "Row 189, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img015",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img015.jpg",
+          "cell_location": "Row 191, Col 8",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img016",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img016.jpg",
+          "cell_location": "Row 212, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 12,
+      "trial_version": "T1",
+      "category": "E1",
+      "problem": "1.产品尺寸NG",
+      "solution": "1、设计按邮件中的尺寸数据修正NG尺寸。",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img016",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img016.jpg",
+          "cell_location": "Row 212, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 12,
+      "trial_version": "T1",
+      "category": "E1",
+      "problem": "1.产品尺寸NG",
+      "solution": "1、设计按邮件中的尺寸数据修正NG尺寸。\n接12#项修正内容。附页",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img037",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img037.jpg",
+          "cell_location": "Row 233, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 13,
+      "trial_version": "T2",
+      "category": "C9",
+      "problem": "1.产品披锋",
+      "solution": "1、设计改图，将3014工件图示位置加铁0.06mm，修正产品披锋。",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img018",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img018.jpg",
+          "cell_location": "Row 308, Col 4",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img033",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img033.jpg",
+          "cell_location": "Row 306, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 14,
+      "trial_version": "T2",
+      "category": "C9",
+      "problem": "1.产品披锋",
+      "solution": "1、设计改图，将3016工件图示位置加铁0.03mm，修正产品披锋。",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img018",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img018.jpg",
+          "cell_location": "Row 308, Col 4",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img019",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img019.jpg",
+          "cell_location": "Row 322, Col 5",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img033",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img033.jpg",
+          "cell_location": "Row 306, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img034",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img034.jpg",
+          "cell_location": "Row 325, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 15,
+      "trial_version": "T2",
+      "category": "C9",
+      "problem": "1.产品披锋",
+      "solution": "1、钳工检查模具，重新配模后烧焊修正产品披锋。",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img020",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img020.jpg",
+          "cell_location": "Row 350, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img021",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img021.jpg",
+          "cell_location": "Row 350, Col 3",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 16,
+      "trial_version": "T2",
+      "category": "E1",
+      "problem": "1.产品J尺寸NG",
+      "solution": "1、设计出图，将产品图示圆弧位置，模数做到8.14mm",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img023",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img023.jpg",
+          "cell_location": "Row 380, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img024",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img024.jpg",
+          "cell_location": "Row 385, Col 4",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img025",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img025.jpg",
+          "cell_location": "Row 386, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 17,
+      "trial_version": "T2",
+      "category": "E1",
+      "problem": "1.产品QQ尺寸NG",
+      "solution": "1、设计出图，将产品图示圆弧位置，模数做到5.37mm",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img024",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img024.jpg",
+          "cell_location": "Row 385, Col 4",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img025",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img025.jpg",
+          "cell_location": "Row 386, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img026",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img026.jpg",
+          "cell_location": "Row 402, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img027",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img027.jpg",
+          "cell_location": "Row 405, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img028",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img028.jpg",
+          "cell_location": "Row 406, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 18,
+      "trial_version": "T2",
+      "category": "E1",
+      "problem": "1.产品JC尺寸NG",
+      "solution": "1、设计出图，将产品图示圆柱位置，单边加胶0.04mm",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img028",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img028.jpg",
+          "cell_location": "Row 406, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img029",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img029.jpg",
+          "cell_location": "Row 423, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img030",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img030.jpg",
+          "cell_location": "Row 427, Col 4",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img031",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img031.jpg",
+          "cell_location": "Row 428, Col 9",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    },
+    {
+      "issue_number": 18,
+      "trial_version": "T2",
+      "category": "E1",
+      "problem": "1.产品RB,RC,RD,RE,RF尺寸NG",
+      "solution": "1、设计出图，将产品图示位置，加胶0.1mm",
+      "result_t1": "OK",
+      "result_t2": null,
+      "cause_classification": null,
+      "images": [
+        {
+          "image_id": "1947688(ED736A0501)-case_img032",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img032.jpg",
+          "cell_location": "Row 449, Col 2",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        },
+        {
+          "image_id": "1947688(ED736A0501)-case_img035",
+          "file_path": "docs/1947688(ED736A0501)-case_extracted/images/1947688(ED736A0501)-case_img035.jpg",
+          "cell_location": "Row 462, Col 8",
+          "vl_description": null,
+          "defect_type": null,
+          "text_in_image": null
+        }
+      ]
+    }
+  ],
+  "total_issues": 20,
+  "source_file": "docs/1947688(ED736A0501)-case.xlsx",
+  "extraction_version": "1.0"
+}

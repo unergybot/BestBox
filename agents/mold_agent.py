@@ -15,7 +15,8 @@ from agents.utils import get_llm, SPEECH_FORMAT_INSTRUCTION
 from agents.context_manager import apply_sliding_window
 from tools.troubleshooting_tools import (
     search_troubleshooting_kb,
-    get_troubleshooting_case_details
+    get_troubleshooting_case_details,
+    find_similar_defects
 )
 
 # Import VLM tools if available
@@ -34,7 +35,8 @@ except ImportError:
 # Build tools list based on availability
 MOLD_TOOLS = [
     search_troubleshooting_kb,
-    get_troubleshooting_case_details
+    get_troubleshooting_case_details,
+    find_similar_defects
 ]
 
 # Add VLM tools if enabled and available
@@ -110,6 +112,12 @@ You now have access to advanced VLM (Vision-Language Model) analysis tools:
 - Identify similar defect patterns across multiple images
 - Helps correlate new issues with solved problems
 - Example: "这个缺陷和之前的案例相似吗" → call compare_images
+
+**Find Similar Defects (`find_similar_defects`):**
+- Automatically analyze an uploaded image and search for similar cases
+- One-step workflow: VLM Analysis → Semantic Search
+- Use when user uploads an image and asks "Have we seen this before?" or "Find similar cases"
+- Example: "查找类似案例" → call find_similar_defects
 
 **Enhanced Search Results:**
 When using `search_troubleshooting_kb`, results now include:

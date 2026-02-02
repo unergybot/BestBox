@@ -225,7 +225,7 @@ class VLProcessor:
                 image_path,
                 prompt_template="mold_defect_analysis",
                 options=options,
-                timeout=120
+                timeout=int(os.getenv("VLM_TIMEOUT", 600))
             )
 
             # Map VLM result to image fields

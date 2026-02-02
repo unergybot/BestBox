@@ -25,6 +25,10 @@ from langchain_core.tools import tool
 from typing import Optional, List
 import json
 import logging
+import tempfile
+from typing import Optional, List, Union
+from PIL import Image as PILImage
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,15 @@ try:
 except ImportError:
     VLM_AVAILABLE = False
     logger.warning("VLM service client not available")
+
+# Try importing PDF tools
+try:
+    from pdf2image import convert_from_path
+    PDF_TOOLS_AVAILABLE = True
+except ImportError:
+    PDF_TOOLS_AVAILABLE = False
+    logger.warning("pdf2image not available")
+
 
 
 def _get_vlm_client() -> "VLMServiceClient":
@@ -160,6 +173,71 @@ def analyze_image_realtime(
         }, ensure_ascii=False)
 
 
+
+def _convert_document_to_images(file_path: Path, max_pages: int = 3) -> List[Path]:
+    """Convert document (PDF/Excel) to list of image paths"""
+    images = []
+    suffix = file_path.suffix.lower()
+    
+    if suffix == '.pdf':
+        if not PDF_TOOLS_AVAILABLE:
+            raise RuntimeError("PDF tools not available (pip install pdf2image)")
+            
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Convert first few pages
+            pil_images = convert_from_path(str(file_path), first_page=1, last_page=max_pages)
+            
+            for i, img in enumerate(pil_images):
+                img_path = file_path.parent / f"{file_path.stem}_page{i+1}.jpg"
+                img.save(img_path, 'JPEG')
+                images.append(img_path)
+                
+    elif suffix in ['.xlsx', '.xls']:
+        # For Excel, we use the existing extractor logic to extract embedded images
+        # Or simplistic approach: just fail if no images?
+        # Better: Tell user we extracted images if any, otherwise VLM can't "read" the grid visually easily.
+        # However, we can try to extract images using openpyxl directly here or reuse Extractor.
+        # Reusing Extractor is safer but circular import risk if tools -> services -> tools.
+        # Let's import inside function.
+        try:
+            from services.troubleshooting.excel_extractor import ExcelTroubleshootingExtractor
+            # Create a temp dir for extraction
+            # But we want to return paths.
+            # Let's just use the extractor to get images to a temp folder adjacent to file
+            output_dir = file_path.parent / f"{file_path.stem}_extracted"
+            output_dir.mkdir(exist_ok=True)
+            
+            extractor = ExcelTroubleshootingExtractor(output_dir=output_dir)
+            # We don't want full case extraction, just images usually.
+            # But extract_case processes everything.
+            # Let's assume we extract images and pick the first few.
+            # This is heavy. Alternatively, just text analysis?
+            # VLM tool implies "Visual".
+            # Let's extract images from Excel as "visuals" to analyze.
+            case = extractor.extract_case(file_path)
+            
+            # Find extracted images
+            for issue in case.get('issues', []):
+                for img_data in issue.get('images', []):
+                    # These paths are relative or absolute? Extractor saves them.
+                    # issue['images'] usually has 'path' or similar if we modify extractor.
+                    # Looking at extractor code: it saves images to `output_dir / images`.
+                    pass
+            
+            # Extractor `_extract_images` saves to `self.images_dir`.
+            # `extract_case` sets `self.images_dir`.
+            # So looking into `output_dir / "images"`
+            img_dir = output_dir / "images"
+            if img_dir.exists():
+                images = list(img_dir.glob("*.jpg")) + list(img_dir.glob("*.png"))
+                images = sorted(images)[:max_pages] # Limit count
+            
+        except ImportError:
+            logger.warning("Excel extractor not available")
+    
+    return images
+
+
 @tool
 def analyze_document_realtime(
     file_path: str,
@@ -213,9 +291,41 @@ def analyze_document_realtime(
 
         logger.info(f"Analyzing document: {file_path}")
 
+        # Check if conversion is needed
+        suffix = file_path.suffix.lower()
+        converted_images = []
+        
         async def _analyze():
             client = _get_vlm_client()
             try:
+                # Handle Non-Image Files
+                target_file = file_path
+                analysis_mode = "document" # or "images"
+                
+                if suffix in ['.pdf', '.xlsx', '.xls']:
+                    try:
+                        # Convert to images
+                        images = await asyncio.to_thread(_convert_document_to_images, file_path)
+                        if not images:
+                            return {
+                                "status": "failed",
+                                "message": "无法从文档中提取图像或内容 (Could not extract images/content)"
+                            }
+                        
+                        # Analyze the first image as the "document" (e.g. first page of PDF)
+                        # OR submit multiple? VLM analyze_file takes one path.
+                        # We'll analyze the first converted image.
+                        target_file = images[0]
+                        converted_images.extend(images) # Keep track to clean up? Or keep?
+                        analysis_mode = "converted_document"
+                        
+                    except Exception as conv_err:
+                        return {
+                            "status": "failed",
+                            "error": str(conv_err),
+                            "message": f"文档转换失败: {conv_err}"
+                        }
+
                 options = VLMJobOptions(
                     analysis_depth=AnalysisDepth.DETAILED,
                     output_language="zh",
@@ -224,7 +334,7 @@ def analyze_document_realtime(
                 )
 
                 result = await client.analyze_file(
-                    file_path,
+                    target_file,
                     prompt_template="mold_defect_analysis",
                     options=options,
                     timeout=180  # Longer timeout for documents
@@ -244,6 +354,7 @@ def analyze_document_realtime(
                 return {
                     "status": "success",
                     "file_path": str(file_path),
+                    "original_type": suffix,
                     "analysis": {
                         "summary": result.document_summary,
                         "key_insights": result.key_insights,
@@ -257,6 +368,8 @@ def analyze_document_realtime(
                 }
             finally:
                 await client.close()
+                # Cleanup converted images? Maybe keep them for user inspection?
+                # For chat, we might want to keep the one we analyzed.
 
         result = _run_async(_analyze())
         return json.dumps(result, ensure_ascii=False, indent=2)

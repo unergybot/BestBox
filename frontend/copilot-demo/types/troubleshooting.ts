@@ -24,6 +24,12 @@ export interface TroubleshootingIssue {
   image_count: number;
   images: TroubleshootingImage[];
   category?: string;
+  // VLM Fields
+  vlm_confidence?: number;
+  severity?: string;
+  tags?: string[];
+  key_insights?: string[];
+  suggested_actions?: string[];
 }
 
 export interface TroubleshootingCase {

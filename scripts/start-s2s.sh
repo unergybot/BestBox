@@ -35,7 +35,11 @@ cd "$PROJECT_ROOT"
 
 # Default configuration
 export S2S_HOST="${S2S_HOST:-0.0.0.0}"
-export S2S_PORT="${S2S_PORT:-8765}"
+
+# IMPORTANT:
+# The frontend defaults to ws://localhost:8765/ws/s2s.
+# Avoid accidental port drift from inherited shell env vars by using BESTBOX_S2S_PORT.
+export S2S_PORT="${BESTBOX_S2S_PORT:-8765}"
 export ASR_MODEL="${ASR_MODEL:-Systran/faster-distil-whisper-large-v3}"
 export ASR_DEVICE="cpu"
 export ASR_LANGUAGE="${ASR_LANGUAGE:-zh}"

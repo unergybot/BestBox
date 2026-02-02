@@ -26,6 +26,16 @@ echo "   Device: ${EMBEDDINGS_DEVICE:-auto}"
 echo "   Port: 8081"
 echo ""
 
+# Prefer running embeddings on the P100 (GPU 0) on multi-GPU machines.
+# This prevents OOM when the RTX 3080 is already consumed by vLLM.
+if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_COUNT=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${GPU_COUNT:-0}" -ge 1 ]; then
+        export CUDA_VISIBLE_DEVICES="${EMBEDDINGS_CUDA_VISIBLE_DEVICES:-0}"
+        export EMBEDDINGS_DEVICE="${EMBEDDINGS_DEVICE:-cuda:0}"
+    fi
+fi
+
 cd "${PROJECT_DIR}/services/embeddings"
 
 # Install dependencies if needed

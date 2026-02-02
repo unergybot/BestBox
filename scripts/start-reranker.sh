@@ -22,6 +22,16 @@ echo "   Device: ${RERANKER_DEVICE:-auto}"
 echo "   Port: 8082"
 echo ""
 
+# Prefer running reranker on the P100 (GPU 0) on multi-GPU machines.
+# This prevents OOM when the RTX 3080 is already consumed by vLLM.
+if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_COUNT=$(nvidia-smi -L 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${GPU_COUNT:-0}" -ge 1 ]; then
+        export CUDA_VISIBLE_DEVICES="${RERANKER_CUDA_VISIBLE_DEVICES:-0}"
+        export RERANKER_DEVICE="${RERANKER_DEVICE:-cuda:0}"
+    fi
+fi
+
 cd "${PROJECT_DIR}/services/rag_pipeline"
 
 # Install dependencies if needed

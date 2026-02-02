@@ -204,3 +204,5 @@ third_party/
 bin/
 *.pcm
 *.wav
+
+*.jpg

@@ -28,17 +28,17 @@ function extractCodeBlocks(text: string, language?: string): string[] {
  */
 function isTroubleshootingResult(data: any): data is TroubleshootingResult {
   if (!data || typeof data !== "object") return false;
-  
+
   // Format 1: Has result_type field
   if ("result_type" in data) {
     return data.result_type === "specific_solution" || data.result_type === "full_case";
   }
-  
+
   // Format 2: Has case_id and problem/solution (legacy or transformed format)
   if ("case_id" in data && "problem" in data && "solution" in data) {
     return true;
   }
-  
+
   return false;
 }
 
@@ -47,12 +47,12 @@ function isTroubleshootingResult(data: any): data is TroubleshootingResult {
  */
 function isTroubleshootingSearchResults(data: any): data is TroubleshootingSearchResults {
   if (!data || typeof data !== "object") return false;
-  
+
   // Must have results array
   if (!("results" in data) || !Array.isArray(data.results)) return false;
-  
+
   if (data.results.length === 0) return false;
-  
+
   // Check if first item is a troubleshooting result
   return isTroubleshootingResult(data.results[0]);
 }
@@ -97,7 +97,7 @@ function normalizeToTroubleshootingIssue(item: any): TroubleshootingIssue {
   if ("result_type" in item) {
     return item as TroubleshootingIssue;
   }
-  
+
   // Normalize legacy/transformed format
   return {
     result_type: "specific_solution",
@@ -119,7 +119,13 @@ function normalizeToTroubleshootingIssue(item: any): TroubleshootingIssue {
       image_url: buildImageUrl(img, idx),
       description: img.description || img.vl_description || "Image",
       defect_type: img.defect_type || ""
-    })) : []
+    })) : [],
+    // VLM Fields
+    vlm_confidence: item.vlm_confidence,
+    severity: item.severity,
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    key_insights: Array.isArray(item.key_insights) ? item.key_insights : [],
+    suggested_actions: Array.isArray(item.suggested_actions) ? item.suggested_actions : []
   };
 }
 
@@ -132,11 +138,11 @@ export function detectTroubleshootingResults(content: string): TroubleshootingRe
 
   // Extract JSON from code blocks
   const jsonBlocks = extractCodeBlocks(content, "json");
-  
+
   for (const block of jsonBlocks) {
     try {
       const parsed = JSON.parse(block);
-      
+
       // Check if it's a search results wrapper with results array
       if (isTroubleshootingSearchResults(parsed)) {
         for (const result of parsed.results) {

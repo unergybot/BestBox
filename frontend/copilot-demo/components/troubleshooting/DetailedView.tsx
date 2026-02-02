@@ -57,6 +57,14 @@ export const DetailedView: React.FC<DetailedViewProps> = ({
             trialVersion={data.trial_version}
             status={data.result_t2 || data.result_t1 || null}
           />
+          {data.severity && (
+            <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${data.severity.toLowerCase() === 'critical' || data.severity.toLowerCase() === 'high' ? 'bg-red-100 text-red-700' :
+                data.severity.toLowerCase() === 'medium' ? 'bg-orange-100 text-orange-700' :
+                  'bg-blue-100 text-blue-700'
+              }`}>
+              {data.severity}
+            </span>
+          )}
           <RelevanceScore score={data.relevance_score} />
         </div>
       </div>
@@ -161,6 +169,36 @@ export const DetailedView: React.FC<DetailedViewProps> = ({
             )}
           </dl>
         </div>
+
+        {/* VLM Insights */}
+        {(data.key_insights || data.tags) && (
+          <div className="pt-3 sm:pt-4 border-t border-gray-200">
+            {data.tags && data.tags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {data.tags.map(tag => (
+                  <span key={tag} className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs border border-indigo-100">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {data.key_insights && data.key_insights.length > 0 && (
+              <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                <h4 className="text-xs sm:text-sm font-semibold text-amber-800 mb-2 flex items-center gap-1">
+                  <span aria-hidden="true">🤖</span> AI Insights
+                </h4>
+                <ul className="list-disc list-inside space-y-1">
+                  {data.key_insights.map((insight, i) => (
+                    <li key={i} className="text-xs sm:text-sm text-amber-900 leading-relaxed">
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Footer - Placeholder for Phase 4 social features */}

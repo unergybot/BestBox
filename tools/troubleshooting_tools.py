@@ -21,6 +21,9 @@ from services.troubleshooting.searcher import TroubleshootingSearcher
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
+from tools.document_tools import analyze_document_realtime
+
+
 logger = logging.getLogger(__name__)
 
 # Initialize searcher (singleton)
@@ -114,6 +117,11 @@ def search_troubleshooting_kb(
                     "defect_types": item.get('defect_types', []),
                     "has_images": len(item.get('images', [])) > 0,
                     "image_count": len(item.get('images', [])),
+                    "vlm_confidence": item.get('vlm_confidence'),
+                    "severity": item.get('severity'),
+                    "tags": item.get('tags', []),
+                    "key_insights": item.get('key_insights', []),
+                    "suggested_actions": item.get('suggested_actions', []),
                     "images": [
                         {
                             "image_id": img['image_id'],
@@ -264,10 +272,125 @@ def get_troubleshooting_case_details(case_id: str) -> str:
         }, ensure_ascii=False)
 
 
+
+@tool
+def find_similar_defects(file_path: str) -> str:
+    """
+    通过上传的图像查找相似的缺陷案例。
+    Find similar defect cases based on an uploaded image.
+
+    This tool:
+    1. Analyzes the visual content of the image (VLM).
+    2. Identifies defects, features, and anomalies.
+    3. Searches the knowledge base for cases with similar descriptions.
+
+    Args:
+        file_path: 图像文件路径 / Path to the image file (or document)
+
+    Returns:
+        JSON string with visual analysis and found similar cases.
+    """
+    try:
+        logger.info(f"Finding similar defects for: {file_path}")
+
+        # Step 1: Analyze Document/Image (VLM)
+        # We call the existing tool logic directly or via invoke if needed.
+        # Since we are inside python, we can just call the function wrapper if it wasn't a tool,
+        # but since it is a tool, let's look at how to call it.
+        # Ideally we refactor the logic out, but calling the tool function is fine if arguments match.
+        # Alternatively, use logic shared between them?
+        # Let's call analyze_document_realtime.
+        
+        # Note: analyze_document_realtime returns a JSON string.
+        vlm_json = analyze_document_realtime(file_path) # Call locally
+        vlm_result = json.loads(vlm_json)
+
+        if vlm_result.get("status") != "success":
+            return json.dumps({
+                "error": "Failed to analyze image for similarity search",
+                "details": vlm_result.get("message")
+            }, ensure_ascii=False)
+
+        analysis = vlm_result.get("analysis", {})
+        
+        # Step 2: Construct Search Query
+        # We combine defect type, summary, and tags to form a rich semantic query.
+        query_parts = []
+        
+        # Add defect types from extracted images
+        for img in analysis.get("extracted_images", []):
+            if img.get("defect_type"):
+                query_parts.append(img["defect_type"])
+            if img.get("description"):
+                query_parts.append(img["description"])
+
+        # Add key insights
+        if analysis.get("key_insights"):
+            query_parts.extend(analysis["key_insights"][:2]) # Top 2 insights
+
+        # Add tags
+        if analysis.get("tags"):
+            query_parts.extend(analysis["tags"][:3]) # Top 3 tags
+
+        # Add summary if short enough, otherwise rely on parts
+        if analysis.get("summary"):
+             query_parts.append(analysis["summary"][:200]) # Limit length
+
+        search_query = " ".join(query_parts)
+        logger.info(f"Generated search query: {search_query[:100]}...")
+
+        # Step 3: Search Knowledge Base
+        searcher = get_searcher()
+        # We focus on ISSUE level to find specific defects
+        search_results = searcher.search(
+            query=search_query,
+            top_k=5,
+            classify=False # Force vector search
+        )
+
+        # Step 4: Format Response
+        response = {
+            "query_generated": search_query,
+            "visual_analysis": {
+                "summary": analysis.get("summary"),
+                "defect_types": [img.get("defect_type") for img in analysis.get("extracted_images", []) if img.get("defect_type")],
+                "confidence": analysis.get("confidence")
+            },
+            "similar_cases": []
+        }
+
+        for item in search_results["results"]:
+            if item["type"] == "issue":
+                response["similar_cases"].append({
+                    "case_id": item["case_id"],
+                    "issue_number": item["issue_number"],
+                    "problem": item["problem"],
+                    "solution": item["solution"],
+                    "relevance_score": item["score"],
+                    "similarity_reason": "Visual & Semantic Match", # Placeholder
+                    "images": [
+                        {
+                            "image_url": f"/api/troubleshooting/images/{img['image_id']}",
+                            "description": img.get('vl_description', '')
+                        }
+                        for img in item.get('images', [])[:1]
+                    ]
+                })
+
+        return json.dumps(response, ensure_ascii=False, indent=2)
+
+    except Exception as e:
+        logger.error(f"Find similar defects failed: {e}")
+        return json.dumps({
+            "error": str(e)
+        }, ensure_ascii=False)
+
+
 # Export tools list for easy import
 troubleshooting_tools = [
     search_troubleshooting_kb,
-    get_troubleshooting_case_details
+    get_troubleshooting_case_details,
+    find_similar_defects
 ]
 
 

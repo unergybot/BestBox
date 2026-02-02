@@ -102,8 +102,19 @@ fi
 
 echo -e "${YELLOW}=== Tier 2: LLM Inference Services ===${NC}"
 
+# Auto-detect the optional combined Embedding/Reranker service (typically on P100)
+# if the user hasn't configured explicit URLs.
+if [ -z "${EMBEDDINGS_URL:-}" ] || [ -z "${RERANKER_URL:-}" ]; then
+    if curl -sf --max-time 1 "http://127.0.0.1:8004/health" > /dev/null 2>&1; then
+        export EMBEDDINGS_URL="${EMBEDDINGS_URL:-http://127.0.0.1:8004}"
+        export RERANKER_URL="${RERANKER_URL:-http://127.0.0.1:8004}"
+    fi
+fi
+
 # Start LLM server
-if is_running "llama-server"; then
+if curl -sf --max-time 1 "http://localhost:8001/health" > /dev/null 2>&1; then
+    echo -e "${YELLOW}LLM server already reachable on port 8001${NC}"
+elif is_running "llama-server"; then
     echo -e "${YELLOW}LLM server already running${NC}"
 else
     # Prefer vLLM with CUDA when NVIDIA GPUs are present
@@ -132,20 +143,46 @@ fi
 # We skip complex init script for now as the docker image should handle basic site creation
 # but we can check if it's responsive first.
 
-# Check if demo data seeded
+# ---------------------------------------------------------------------------
+# ERPNext demo seeding (opt-in)
+#
+# Transactions seeding is NOT idempotent (creates new POs), so we do not run it
+# automatically on every startup. To seed, run manually:
+#   SEED_ERPNEXT=true ./scripts/start-all-services.sh
+# Or run the individual scripts directly.
+# ---------------------------------------------------------------------------
 echo "Checking ERPNext data..."
-# We use a simple python check or curl if possible, but docker exec is reliable for DB check
-if docker compose ps -q erpnext >/dev/null; then
-    # Only run if container is running
-    if ! docker compose exec erpnext bash -c 'mysql -h mariadb -u root -padmin erpnext -e "SELECT COUNT(*) FROM tabSupplier" 2>/dev/null | grep -v COUNT | grep -q [1-9]'; then
-        echo "Seeding ERPNext demo data..."
+
+SEED_STATE_DIR="${SEED_STATE_DIR:-./data/.seed_state}"
+ERP_SEED_SENTINEL="${ERP_SEED_SENTINEL:-${SEED_STATE_DIR}/erpnext_seeded}"
+
+mkdir -p "${SEED_STATE_DIR}" 2>/dev/null || true
+
+if [ "${SEED_ERPNEXT:-false}" = "true" ]; then
+    if [ -f "${ERP_SEED_SENTINEL}" ] && [ "${FORCE_SEED_ERPNEXT:-false}" != "true" ]; then
+        echo -e "${YELLOW}Skipping ERPNext seeding (already seeded). Set FORCE_SEED_ERPNEXT=true to reseed.${NC}"
+    else
+        echo "Seeding ERPNext demo data (SEED_ERPNEXT=true)..."
         # Use venv python if available
         PYTHON_CMD="python"
         [ -f "./venv/bin/python" ] && PYTHON_CMD="./venv/bin/python"
-        
+
         $PYTHON_CMD scripts/seed_erpnext_basic.py || echo "Warning: Basic seeding failed"
         $PYTHON_CMD scripts/seed_erpnext_fiscal_data.py || echo "Warning: Fiscal year seeding failed"
         $PYTHON_CMD scripts/seed_erpnext_transactions.py || echo "Warning: Transaction seeding failed"
+
+        date -Iseconds > "${ERP_SEED_SENTINEL}" 2>/dev/null || true
+    fi
+else
+    # Do a lightweight check just for operator visibility (no side effects)
+    if docker compose ps -q erpnext >/dev/null 2>&1; then
+        # -T avoids TTY allocation issues in non-interactive shells
+        if docker compose exec -T erpnext bash -lc 'mysql -h mariadb -u root -padmin erpnext -e "SELECT COUNT(*) AS c FROM tabSupplier" 2>/dev/null | tail -n +2 | tr -d "[:space:]" | grep -Eq "^[0-9]+$"'; then
+            SUPPLIER_COUNT=$(docker compose exec -T erpnext bash -lc 'mysql -h mariadb -u root -padmin erpnext -e "SELECT COUNT(*) AS c FROM tabSupplier" 2>/dev/null | tail -n +2 | tr -d "[:space:]"' 2>/dev/null || echo "")
+            if [ -n "${SUPPLIER_COUNT}" ]; then
+                echo "ERPNext Suppliers count: ${SUPPLIER_COUNT} (seeding disabled by default)"
+            fi
+        fi
     fi
 fi
 
@@ -155,34 +192,58 @@ if ! check_health "LLM Server" "http://localhost:8001/health" 60; then
     exit 1
 fi
 
-# Start Embeddings server
-if is_running "services.embeddings.main"; then
-    echo -e "${YELLOW}Embeddings server already running${NC}"
+# Start / verify Embeddings service
+# If EMBEDDINGS_URL is set (e.g. http://127.0.0.1:8004), prefer that instead of
+# launching the local (8081) python service.
+EMBEDDINGS_URL_EFFECTIVE="${EMBEDDINGS_URL:-http://localhost:8081}"
+EMBEDDINGS_URL_BASE="${EMBEDDINGS_URL_EFFECTIVE%/v1}"
+EMBEDDINGS_HEALTH_URL="${EMBEDDINGS_URL_BASE%/}/health"
+
+if [[ "${EMBEDDINGS_URL_EFFECTIVE}" != "http://localhost:8081" && "${EMBEDDINGS_URL_EFFECTIVE}" != "http://127.0.0.1:8081" ]]; then
+    echo -e "${YELLOW}Using external Embeddings service: ${EMBEDDINGS_URL_EFFECTIVE}${NC}"
+    if ! check_health "Embeddings" "${EMBEDDINGS_HEALTH_URL}" 60; then
+        echo -e "${YELLOW}Warning: Embeddings service not responding at ${EMBEDDINGS_HEALTH_URL}${NC}"
+    fi
 else
-    echo "Starting Embeddings server..."
-    ./scripts/start-embeddings.sh &
-    sleep 2
-fi
-
-if ! check_health "Embeddings" "http://localhost:8081/health" 30; then
-    echo -e "${YELLOW}Warning: Embeddings server not responding (may still be loading)${NC}"
-fi
-
-# Start Reranker server (if script exists)
-if [ -f "./scripts/start-reranker.sh" ]; then
-    if is_running "services.reranker.main"; then
-        echo -e "${YELLOW}Reranker server already running${NC}"
+    if is_running "services.embeddings.main"; then
+        echo -e "${YELLOW}Embeddings server already running${NC}"
     else
-        echo "Starting Reranker server..."
-        ./scripts/start-reranker.sh &
+        echo "Starting Embeddings server..."
+        ./scripts/start-embeddings.sh &
         sleep 2
     fi
 
-    if ! check_health "Reranker" "http://localhost:8082/health" 30; then
-        echo -e "${YELLOW}Warning: Reranker not responding (optional service)${NC}"
+    if ! check_health "Embeddings" "http://localhost:8081/health" 60; then
+        echo -e "${YELLOW}Warning: Embeddings server not responding (may still be loading)${NC}"
+    fi
+fi
+
+# Start / verify Reranker service
+RERANKER_URL_EFFECTIVE="${RERANKER_URL:-http://localhost:8082}"
+RERANKER_URL_BASE="${RERANKER_URL_EFFECTIVE%/v1}"
+RERANKER_HEALTH_URL="${RERANKER_URL_BASE%/}/health"
+
+if [[ "${RERANKER_URL_EFFECTIVE}" != "http://localhost:8082" && "${RERANKER_URL_EFFECTIVE}" != "http://127.0.0.1:8082" ]]; then
+    echo -e "${YELLOW}Using external Reranker service: ${RERANKER_URL_EFFECTIVE}${NC}"
+    if ! check_health "Reranker" "${RERANKER_HEALTH_URL}" 60; then
+        echo -e "${YELLOW}Warning: Reranker service not responding at ${RERANKER_HEALTH_URL}${NC}"
     fi
 else
-    echo -e "${YELLOW}Reranker script not found (optional)${NC}"
+    if [ -f "./scripts/start-reranker.sh" ]; then
+        if is_running "services.reranker.main"; then
+            echo -e "${YELLOW}Reranker server already running${NC}"
+        else
+            echo "Starting Reranker server..."
+            ./scripts/start-reranker.sh &
+            sleep 2
+        fi
+
+        if ! check_health "Reranker" "http://localhost:8082/health" 60; then
+            echo -e "${YELLOW}Warning: Reranker not responding (optional service)${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Reranker script not found (optional)${NC}"
+    fi
 fi
 
 # Start Agent API
@@ -267,15 +328,27 @@ fi
 if [ "${SKIP_S2S:-false}" = "true" ]; then
     echo -e "${YELLOW}Skipping S2S Gateway (SKIP_S2S=true)${NC}"
 else
+    # Ensure S2S binds to the port the frontend expects by default.
+    # Override with BESTBOX_S2S_PORT if you need a non-default port.
+    export S2S_PORT="${BESTBOX_S2S_PORT:-8765}"
+    export S2S_HOST="${S2S_HOST:-0.0.0.0}"
+
     if is_running "services.speech.s2s_server"; then
-        echo -e "${YELLOW}S2S Gateway already running${NC}"
+        # If it is running but not healthy on the expected port, restart it.
+        if ! curl -sf --max-time 1 "http://localhost:${S2S_PORT}/health" > /dev/null 2>&1; then
+            echo -e "${YELLOW}S2S Gateway running but not reachable on port ${S2S_PORT}; restarting...${NC}"
+            pkill -f "services.speech.s2s_server" || true
+            sleep 2
+        else
+            echo -e "${YELLOW}S2S Gateway already running${NC}"
+        fi
     else
         echo "Starting S2S Gateway..."
         ./scripts/start-s2s.sh &
         sleep 2
     fi
 
-    if ! check_health "S2S Gateway" "http://localhost:8765/health" 30; then
+    if ! check_health "S2S Gateway" "http://localhost:${S2S_PORT}/health" 30; then
         echo -e "${YELLOW}Warning: S2S Gateway not responding${NC}"
     fi
 fi
@@ -287,8 +360,8 @@ echo -e "${GREEN}=== All Services Started ===${NC}"
 echo ""
 echo "Service Status:"
 echo "  LLM Server:     http://localhost:8001/health"
-echo "  Embeddings:     http://localhost:8081/health"
-echo "  Reranker:       http://localhost:8082/health"
+echo "  Embeddings:     ${EMBEDDINGS_HEALTH_URL}"
+echo "  Reranker:       ${RERANKER_HEALTH_URL}"
 echo "  Agent API:      http://localhost:8000/health"
 if [ "${USE_LIVEKIT:-false}" = "true" ]; then
     echo "  LiveKit:        http://localhost:7880 (Voice - Recommended)"

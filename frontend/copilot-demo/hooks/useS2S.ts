@@ -181,8 +181,8 @@ export function useS2S({
       callbacksRef.current.onConnectionChange?.(false);
     };
 
-    const onSessionReady = (data: { session_id: string }) => {
-      console.log('useS2S: Session ready:', data.session_id);
+    const onSessionReady = (data: { sessionId: string }) => {
+      console.log('useS2S: Session ready:', data.sessionId);
     };
 
     const onAsrPartialEvent = (data: { text: string }) => {

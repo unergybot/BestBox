@@ -79,11 +79,42 @@ async def load_model() -> None:
     global model
     model_name = os.environ.get("EMBEDDINGS_MODEL_NAME", DEFAULT_MODEL_NAME)
     device = _resolve_device()
+    dtype_env = os.environ.get("EMBEDDINGS_DTYPE", "auto").strip().lower()
     logger.info("Loading embedding model...")
     logger.info(f"Model: {model_name}")
     logger.info(f"Device: {device}")
     start = time.time()
-    model = SentenceTransformer(model_name, device=device)
+
+    model_kwargs = None
+    if device.startswith("cuda"):
+        # Default to fp16 on CUDA to reduce VRAM usage and avoid OOM.
+        # SentenceTransformer forwards model_kwargs to transformers AutoModel.
+        try:
+            import torch
+
+            if dtype_env in {"", "auto"}:
+                torch_dtype = torch.float16
+            elif dtype_env in {"fp16", "float16"}:
+                torch_dtype = torch.float16
+            elif dtype_env in {"bf16", "bfloat16"}:
+                torch_dtype = torch.bfloat16
+            elif dtype_env in {"fp32", "float32"}:
+                torch_dtype = torch.float32
+            else:
+                logger.warning("Unknown EMBEDDINGS_DTYPE=%s; falling back to fp16", dtype_env)
+                torch_dtype = torch.float16
+            model_kwargs = {"torch_dtype": torch_dtype}
+        except Exception as e:
+            logger.warning("Failed to configure embeddings dtype; proceeding with defaults: %s", e)
+
+    try:
+        if model_kwargs is not None:
+            model = SentenceTransformer(model_name, device=device, model_kwargs=model_kwargs)
+        else:
+            model = SentenceTransformer(model_name, device=device)
+    except TypeError:
+        # Backward compatibility with older sentence-transformers versions.
+        model = SentenceTransformer(model_name, device=device)
     elapsed = time.time() - start
     logger.info(f"Model loaded in {elapsed:.2f}s")
     logger.info(f"Embedding dimensions: {model.get_sentence_embedding_dimension()}")

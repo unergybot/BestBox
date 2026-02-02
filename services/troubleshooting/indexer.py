@@ -13,6 +13,7 @@ Usage:
     indexer.index_case(case_data)
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -43,7 +44,7 @@ class TroubleshootingIndexer:
         self,
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333,
-        embeddings_url: str = "http://localhost:8081"
+        embeddings_url: str = os.getenv("EMBEDDINGS_URL", "http://localhost:8081")
     ):
         """
         Initialize indexer.
