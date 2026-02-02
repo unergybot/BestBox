@@ -16,6 +16,7 @@ from langchain_core.tools import tool
 from typing import Optional
 import json
 import logging
+import re
 
 from services.troubleshooting.searcher import TroubleshootingSearcher
 from qdrant_client import QdrantClient
@@ -36,6 +37,41 @@ def get_searcher():
     if _searcher is None:
         _searcher = TroubleshootingSearcher()
     return _searcher
+
+
+def _normalize_troubleshooting_query(raw_query: str) -> str:
+    q = (raw_query or "").strip()
+    if not q:
+        return q
+
+    # Extract core subject from common wrappers/prefixes (keep the defect term).
+    m = re.match(r"^(我|我们)?(遇到了|遇到|碰到|发现)(.*?)(问题|异常|不良|缺陷)[:：]?\s*(.*)$", q)
+    if m:
+        core = (m.group(3) or "").strip()
+        tail = (m.group(5) or "").strip()
+        q = core if core else tail
+
+    q = re.sub(r"^(请|帮我|帮忙|麻烦)?(查找|搜索|看看|分析|解决|处理)\s*", "", q)
+
+    # Remove common suffixes for Chinese question phrasing.
+    q = re.sub(r"(怎么解决|如何解决|怎么处理|如何处理|怎么办|如何|怎么|解决方法|解决方案|有什么解决方案|有什么解决办法|原因是什么|是什么原因|是什么|有哪些|有啥)\??$", "", q)
+    q = q.strip(" \t\n\r\u3000?？!！。．，,、:：;；")
+    q = q.lstrip("，,、:：;；")
+    q = q.rstrip("的")
+
+    # If the query contains a known defect keyword, prefer the canonical term.
+    keyword_map = {
+        "披锋": "产品披锋",
+        "拉白": "拉白",
+        "火花纹": "火花纹残留",
+        "脏污": "模具表面污染",
+        "污染": "模具表面污染",
+    }
+    for needle, canonical in keyword_map.items():
+        if needle in q:
+            return canonical
+
+    return q
 
 
 @tool
@@ -74,6 +110,10 @@ def search_troubleshooting_kb(
     try:
         logger.info(f"Searching troubleshooting KB: query='{query}', top_k={top_k}")
 
+        normalized_query = _normalize_troubleshooting_query(query)
+        if normalized_query and normalized_query != query:
+            logger.info(f"Normalized troubleshooting query: '{query}' -> '{normalized_query}'")
+
         # Build filters
         filters = {}
         if part_number:
@@ -86,7 +126,7 @@ def search_troubleshooting_kb(
         # Search
         searcher = get_searcher()
         results = searcher.search(
-            query=query,
+            query=normalized_query or query,
             top_k=top_k,
             filters=filters if filters else None,
             classify=True  # Enable LLM-based query classification
@@ -95,6 +135,7 @@ def search_troubleshooting_kb(
         # Format for agent consumption
         formatted_results = {
             "query": query,
+            **({"normalized_query": normalized_query} if normalized_query and normalized_query != query else {}),
             "search_mode": results['mode'],
             "total_found": results['total_found'],
             "results": []

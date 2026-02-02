@@ -186,7 +186,7 @@ else
     fi
 fi
 
-if ! check_health "LLM Server" "http://localhost:8001/health" 60; then
+if ! check_health "LLM Server" "http://localhost:8001/health" 300; then
     echo -e "${RED}Error: LLM server failed to start${NC}"
     echo "Check logs in the terminal where start-llm.sh is running"
     exit 1

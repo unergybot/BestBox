@@ -37,7 +37,10 @@ class TroubleshootingEmbedder:
             embeddings_url: URL of BGE-M3 embeddings service
         """
         if not embeddings_url:
-            embeddings_url = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"))
+            embeddings_url = os.getenv(
+                "EMBEDDINGS_URL",
+                os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
+            )
         if embeddings_url.endswith("/v1"):
             embeddings_url = embeddings_url[:-3]
 

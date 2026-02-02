@@ -56,10 +56,19 @@ export function VoiceInput(props: InputProps) {
     const handleResponse = useCallback(async (response: string) => {
         if (!response) return;
 
+        // Strip [SPEECH] tags and content for display
+        // Handle both correct [/SPEECH] and malformed [SPEECH] closing tags
+        const displayContent = response
+            .replace(/\[SPEECH\][\s\S]*?\[\/SPEECH\]/g, '')  // Correct format
+            .replace(/\[SPEECH\][\s\S]*?\[SPEECH\]/g, '')    // Malformed format
+            .trim();
+
+        if (!displayContent) return;
+
         await appendMessage(
             new TextMessage({
                 role: MessageRole.Assistant,
-                content: response,
+                content: displayContent,
             })
         );
     }, [appendMessage]);

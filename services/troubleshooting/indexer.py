@@ -25,7 +25,7 @@ if __name__ == "__main__":
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance, VectorParams, PointStruct,
-    Filter, FieldCondition, MatchValue
+    Filter, FilterSelector, FieldCondition, MatchValue
 )
 import uuid
 from typing import Dict, List
@@ -44,7 +44,10 @@ class TroubleshootingIndexer:
         self,
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333,
-        embeddings_url: str = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"))
+        embeddings_url: str = os.getenv(
+            "EMBEDDINGS_URL",
+            os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
+        ),
     ):
         """
         Initialize indexer.
@@ -319,30 +322,27 @@ class TroubleshootingIndexer:
         """
         logger.info(f"🗑️  Deleting case {case_id}")
 
-        # Delete from case-level collection
-        self.client.delete(
-            collection_name="troubleshooting_cases",
-            points_selector=Filter(
+        selector = FilterSelector(
+            filter=Filter(
                 must=[
                     FieldCondition(
                         key="case_id",
-                        match=MatchValue(value=case_id)
+                        match=MatchValue(value=case_id),
                     )
                 ]
             )
         )
 
+        # Delete from case-level collection
+        self.client.delete(
+            collection_name="troubleshooting_cases",
+            points_selector=selector,
+        )
+
         # Delete from issue-level collection
         self.client.delete(
             collection_name="troubleshooting_issues",
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="case_id",
-                        match=MatchValue(value=case_id)
-                    )
-                ]
-            )
+            points_selector=selector,
         )
 
         logger.info(f"   ✅ Deleted case {case_id}")

@@ -3,7 +3,7 @@
 import React from "react";
 
 interface RelevanceScoreProps {
-  score: number;
+  score?: number;
   className?: string;
 }
 
@@ -11,6 +11,10 @@ export const RelevanceScore: React.FC<RelevanceScoreProps> = ({
   score,
   className = "",
 }) => {
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return null;
+  }
+
   // Color based on score: >0.7 green, 0.5-0.7 yellow, <0.5 gray
   const getColor = (score: number) => {
     if (score >= 0.7) return "text-green-600 bg-green-50";

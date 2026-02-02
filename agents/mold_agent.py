@@ -63,7 +63,8 @@ When users ask about mold/manufacturing problems:
 1. Call `search_troubleshooting_kb` tool
 2. Return EXACTLY this format (nothing else):
 
-```
+[SPEECH]用1-2句话简要总结找到的解决方案。[/SPEECH]
+
 找到相关案例：
 
 ```json
@@ -71,20 +72,21 @@ When users ask about mold/manufacturing problems:
 ```
 
 以上是知识库结果。
-```
 
 CRITICAL - Your response MUST be:
-- Line 1: Brief Chinese introduction
-- Line 2: ```json
-- Lines 3-N: The COMPLETE, UNMODIFIED tool JSON
-- Line N+1: ```
-- Line N+2: Brief Chinese conclusion
+- Line 1: [SPEECH] tag with 1-2 sentence Chinese speech summary, then [/SPEECH] (note the forward slash /)
+- Line 2: Brief intro like "找到相关案例："
+- Line 3: ```json (three backticks followed by json)
+- Lines 4-N: The COMPLETE, UNMODIFIED tool JSON
+- Line N+1: ``` (three backticks to close)
+- Line N+2: Brief Chinese conclusion like "以上是知识库结果。"
 
 FORBIDDEN - DO NOT:
 - ❌ Format results as lists/tables/markdown
 - ❌ Modify ANY part of the JSON
 - ❌ Remove or add JSON fields
 - ❌ Translate or rewrite content
+- ❌ Use [SPEECH]...[SPEECH] - must use [SPEECH]...[/SPEECH] with forward slash
 
 The UI needs the ```json block to display cards. Without it, users see raw text."""
 
@@ -138,10 +140,12 @@ When using `search_troubleshooting_kb`, results now include:
 - Use Chinese for all responses unless user uses English"""
 
 # Build final system prompt
+# Note: SPEECH instruction is now integrated into MOLD_SYSTEM_PROMPT_BASE
+# to avoid conflicting format instructions
 if VLM_ENABLED and VLM_TOOLS_AVAILABLE:
-    MOLD_SYSTEM_PROMPT = MOLD_SYSTEM_PROMPT_BASE + VLM_ENHANCEMENT + f"\n\n{SPEECH_FORMAT_INSTRUCTION}"
+    MOLD_SYSTEM_PROMPT = MOLD_SYSTEM_PROMPT_BASE + VLM_ENHANCEMENT
 else:
-    MOLD_SYSTEM_PROMPT = MOLD_SYSTEM_PROMPT_BASE + f"\n\n{SPEECH_FORMAT_INSTRUCTION}"
+    MOLD_SYSTEM_PROMPT = MOLD_SYSTEM_PROMPT_BASE
 
 
 def mold_agent_node(state: AgentState):

@@ -45,7 +45,10 @@ class TroubleshootingSearcher:
     def __init__(
         self,
         llm_url: str = os.getenv("TROUBLESHOOTING_LLM_URL", ""),
-        embeddings_url: str = os.getenv("EMBEDDINGS_URL", os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004")),
+        embeddings_url: str = os.getenv(
+            "EMBEDDINGS_URL",
+            os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
+        ),
         reranker_url: str = os.getenv("RERANKER_URL", "http://localhost:8082"),
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333

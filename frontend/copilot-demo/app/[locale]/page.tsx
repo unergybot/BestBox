@@ -1,7 +1,7 @@
 "use client";
 
 import { CopilotKit, useCopilotChat } from "@copilotkit/react-core";
-import { CopilotChat } from "@copilotkit/react-ui";
+import { CopilotChat, AssistantMessage as CopilotKitAssistantMessage } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
 import { detectTroubleshootingResults } from "@/lib/troubleshooting-detector";
@@ -14,68 +14,77 @@ import LanguageSwitcher from "../../components/LanguageSwitcher";
 
 import { TroubleshootingIssue } from "@/types/troubleshooting";
 
+function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKitAssistantMessage>) {
+  const raw = (props as any)?.message?.content;
+  const content = typeof raw === "string" ? raw : "";
+
+  // Hide speech-control blocks from the visible chat bubble.
+  // (We do not mutate CopilotKit's underlying message state, so TTS can still read the tags.)
+  // Handle both correct [/SPEECH] and malformed [SPEECH] closing tags (LLM sometimes omits the /)
+  const sanitizedContent = content
+    .replace(/\[SPEECH\][\s\S]*?\[\/SPEECH\]/g, "")  // Correct format: [SPEECH]...[/SPEECH]
+    .replace(/\[SPEECH\][\s\S]*?\[SPEECH\]/g, "")    // Malformed format: [SPEECH]...[SPEECH]
+    .trim();
+
+  const message = (props as any)?.message
+    ? ({ ...(props as any).message, content: sanitizedContent } as any)
+    : (props as any).message;
+
+  return <CopilotKitAssistantMessage {...(props as any)} message={message} />;
+}
+
 // Custom code block renderer that detects and renders troubleshooting cards
 function TroubleshootingCodeBlock({ inline, className, children, ...props }: any) {
   const match = /language-(\w+)/.exec(className || '');
   const language = match ? match[1] : '';
 
-  // Only process JSON code blocks
-  if (!inline && language === 'json') {
-    const code = String(children).replace(/\n$/, '');
+  // Only process JSON-like code blocks (not inline code).
+  if (!inline && (language === 'json' || language === 'jsonc' || language === '')) {
+    const code = Array.isArray(children) ? children.join('') : String(children);
+    const normalized = code.replace(/\n$/, '').trim();
 
+    // Try to parse as JSON directly (since we already have the code block content)
     try {
-      const parsed = JSON.parse(code);
+      const parsed = JSON.parse(normalized);
 
-      // Check if this is troubleshooting data
+      // Check if it's a troubleshooting search results wrapper
       if (parsed && parsed.results && Array.isArray(parsed.results)) {
-        const issues = parsed.results.filter((r: any) => r.result_type === 'specific_solution');
+        const issues = parsed.results.filter(
+          (r: any) => r.result_type === 'specific_solution'
+        ) as TroubleshootingIssue[];
 
-        console.log('[TroubleshootingCards] Total issues:', issues.length);
-
-        // Deduplicate by case_id + issue_number + problem + solution (multiple solutions for same problem)
-        const seenKeys = new Set<string>();
-        const uniqueIssues = issues.filter((issue: TroubleshootingIssue) => {
-          const key = `${issue.case_id}-${issue.issue_number}-${issue.problem}-${issue.solution}`;
-          console.log('[TroubleshootingCards] Checking:', key.substring(0, 80), 'Seen:', seenKeys.has(key));
-          if (seenKeys.has(key)) {
-            return false;
-          }
-          seenKeys.add(key);
-          return true;
-        });
-
-        console.log('[TroubleshootingCards] Unique issues:', uniqueIssues.length);
-        console.log('[TroubleshootingCards] About to render', uniqueIssues.length, 'cards');
-
-        // Debug: Log each card being rendered
-        uniqueIssues.forEach((issue: TroubleshootingIssue, idx: number) => {
-          console.log(`[TroubleshootingCards] Rendering card ${idx + 1}:`, {
-            issue_number: issue.issue_number,
-            problem: issue.problem.substring(0, 30),
-            solution: issue.solution.substring(0, 50)
+        if (issues.length > 0) {
+          // Deduplicate by case_id + issue_number + problem + solution
+          const seenKeys = new Set<string>();
+          const uniqueIssues = issues.filter((issue) => {
+            const key = `${issue.case_id}-${issue.issue_number}-${issue.problem}-${issue.solution}`;
+            if (seenKeys.has(key)) return false;
+            seenKeys.add(key);
+            return true;
           });
-        });
 
-        if (uniqueIssues.length > 0) {
           return (
-            <div className="space-y-4 my-4 p-4 border-2 border-blue-500 rounded-lg bg-blue-50">
-              <div className="text-lg font-bold text-blue-900 mb-3 p-2 bg-white rounded">
-                🔍 Found {uniqueIssues.length} troubleshooting solution{uniqueIssues.length > 1 ? 's' : ''}
-              </div>
-              {uniqueIssues.map((issue: TroubleshootingIssue, index: number) => (
-                <div key={`card-${index}-${issue.issue_number}`}>
-                  <div className="text-xs text-gray-500 mb-1">Card {index + 1} of {uniqueIssues.length}</div>
-                  <TroubleshootingCard
-                    data={issue}
-                  />
-                </div>
+            <div className="space-y-4 my-4">
+              {uniqueIssues.map((issue, index) => (
+                <TroubleshootingCard
+                  key={`${issue.case_id}-${issue.issue_number}-${index}`}
+                  data={issue}
+                />
               ))}
             </div>
           );
         }
       }
-    } catch (e) {
-      // Not troubleshooting JSON, fallback to default
+      // Check if it's a single troubleshooting result
+      else if (parsed && parsed.result_type === 'specific_solution') {
+        return (
+          <div className="space-y-4 my-4">
+            <TroubleshootingCard data={parsed as TroubleshootingIssue} />
+          </div>
+        );
+      }
+    } catch {
+      // Not valid JSON or not troubleshooting data - fall through to default rendering
     }
   }
 
@@ -166,6 +175,7 @@ export default function Home() {
               <CopilotChat
                 labels={labels}
                 Input={VoiceInput}
+                AssistantMessage={SanitizedAssistantMessage}
                 markdownTagRenderers={markdownTagRenderers}
                 className="h-full"
               />
