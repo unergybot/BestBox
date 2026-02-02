@@ -1,0 +1,82 @@
+# P100-compatible Speech Service Container
+# FunASR (Chinese ASR) + MeloTTS (Chinese TTS)
+# Uses PyTorch 2.1.2 + CUDA 11.8 for P100 (SM60) compatibility
+FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    TRANSFORMERS_NO_ADVISORY_WARNINGS=1 \
+    # Use float16 instead of bfloat16 for P100
+    TORCH_DTYPE=float16
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    libsndfile1 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --upgrade pip wheel setuptools
+
+# Install FunASR and dependencies
+RUN pip install --no-cache-dir \
+    funasr>=1.0.0 \
+    modelscope>=1.9.0
+
+# Install MeloTTS and dependencies
+RUN pip install --no-cache-dir \
+    melo-tts>=0.1.0
+
+# Install service dependencies
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    httpx \
+    pydantic-settings \
+    scipy \
+    webrtcvad \
+    numpy
+
+# Copy speech service code
+COPY services/speech/ /app/services/speech/
+COPY agents/ /app/agents/
+
+# Create model cache directories
+RUN mkdir -p /app/models /root/.cache/modelscope /root/.cache/melo
+
+# Pre-download models (optional, can be done at runtime)
+# RUN python -c "from funasr import AutoModel; AutoModel(model='iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch', device='cpu')"
+# RUN python -c "from melo.api import TTS; TTS(language='ZH', device='cpu')"
+
+EXPOSE 8765
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=300s \
+    CMD curl -f http://localhost:8765/health || exit 1
+
+# Start script
+COPY <<'EOF' /app/start-speech.sh
+#!/bin/bash
+set -e
+echo "Starting P100 Speech Service (FunASR + MeloTTS)..."
+echo "  ASR: FunASR Paraformer-large"
+echo "  TTS: MeloTTS Chinese"
+echo "  Port: 8765"
+
+export ASR_ENGINE=funasr
+export TTS_ENGINE=melo
+export ASR_DEVICE=cuda:0
+export TTS_DEVICE=cuda:0
+export S2S_ENABLE_TTS=true
+export PYTHONPATH=/app:$PYTHONPATH
+
+python -m services.speech.s2s_server
+EOF
+
+RUN chmod +x /app/start-speech.sh
+
+CMD ["/app/start-speech.sh"]
