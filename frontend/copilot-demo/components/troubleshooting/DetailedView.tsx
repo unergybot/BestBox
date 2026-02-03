@@ -6,16 +6,19 @@ import { TroubleshootingIssue } from "@/types/troubleshooting";
 import { SuccessBadge } from "./SuccessBadge";
 import { RelevanceScore } from "./RelevanceScore";
 import { TrialTimeline } from "./TrialTimeline";
+import { ImageGallery } from "./ImageGallery";
 
 interface DetailedViewProps {
   data: TroubleshootingIssue;
   onCollapse: () => void;
+  onImageClick: (index: number) => void;
   className?: string;
 }
 
 export const DetailedView: React.FC<DetailedViewProps> = ({
   data,
   onCollapse,
+  onImageClick,
   className = "",
 }) => {
   return (
@@ -106,36 +109,17 @@ export const DetailedView: React.FC<DetailedViewProps> = ({
           />
         </div>
 
-        {/* Images */}
-        {data.images.length > 0 && (
+        {/* Images - click any to open lightbox */}
+        {data.images && data.images.length > 0 && (
           <div>
             <h4 className="text-xs sm:text-sm font-semibold text-gray-700 mb-3">
-              Visual Evidence ({data.image_count} images)
+              Visual Evidence ({data.images.length} images) - Click to enlarge
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-              {data.images.map((img) => (
-                <div
-                  key={img.image_id}
-                  className="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200 hover:border-teal-400 transition-colors"
-                >
-                  <img
-                    src={img.image_url}
-                    alt={img.description || `Image ${img.image_id}`}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = "/placeholder-image.png";
-                      target.alt = "Image failed to load";
-                    }}
-                  />
-                  {img.description && (
-                    <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-70 text-white text-xs p-1 sm:p-2 opacity-0 group-hover:opacity-100 transition-opacity break-words">
-                      {img.description}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+            <ImageGallery
+              images={data.images}
+              onImageClick={onImageClick}
+              variant="grid"
+            />
           </div>
         )}
 

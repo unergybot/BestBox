@@ -132,9 +132,12 @@ echo -e "${BLUE}📊 Monitoring startup (this may take a while if model needs to
 sleep 2
 echo ""
 
-# Wait for server to be ready (max 180 seconds for large model downloads)
-MAX_ATTEMPTS=180
+# Wait for server to be ready (max 900 seconds for model loading + torch.compile + CUDA graph capture)
+MAX_ATTEMPTS=900
 ATTEMPT=0
+
+# Track startup phases for better progress messages
+PHASE_MSG=""
 
 while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
     if curl -s "http://localhost:${PORT}/health" > /dev/null 2>&1; then
@@ -153,12 +156,27 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
         exit 0
     fi
     ATTEMPT=$((ATTEMPT + 1))
-    
+
     # Show progress every 15 attempts (every 15 seconds)
     if [ $((ATTEMPT % 15)) -eq 0 ]; then
         ELAPSED=$((ATTEMPT))
-        echo "⏳ Waiting for model to load... ($ELAPSED/180 seconds)"
-        
+
+        # Detect current phase from logs for more informative messages
+        RECENT_LOG=$(docker logs --tail=5 ${CONTAINER_NAME} 2>&1 || echo "")
+        if echo "$RECENT_LOG" | grep -qi "torch.compile"; then
+            PHASE_MSG=" (torch.compile in progress - can take a long time)"
+        elif echo "$RECENT_LOG" | grep -qi "cuda graph"; then
+            PHASE_MSG=" (CUDA graph capture in progress)"
+        elif echo "$RECENT_LOG" | grep -qi "loading model\|Loading"; then
+            PHASE_MSG=" (loading model weights)"
+        elif echo "$RECENT_LOG" | grep -qi "Downloading.*%"; then
+            PHASE_MSG=" (downloading model)"
+        else
+            PHASE_MSG=""
+        fi
+
+        echo "⏳ Waiting for model to load... ($ELAPSED/${MAX_ATTEMPTS} seconds)${PHASE_MSG}"
+
         # Show container status for debugging
         CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' ${CONTAINER_NAME} 2>/dev/null || echo "unknown")
         if [ "$CONTAINER_STATUS" != "running" ]; then
@@ -166,11 +184,11 @@ while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             echo "   Check logs: docker logs ${CONTAINER_NAME}"
         fi
     fi
-    
+
     sleep 1
 done
 
-echo -e "${RED}❌ Server failed to start within timeout (180s)${NC}"
+echo -e "${RED}❌ Server failed to start within timeout (${MAX_ATTEMPTS}s)${NC}"
 echo ""
 echo -e "${BLUE}📋 Troubleshooting:${NC}"
 echo "   1. Check container is still running: docker ps | grep ${CONTAINER_NAME}"

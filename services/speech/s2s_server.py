@@ -553,10 +553,10 @@ async def handle_audio(ws: WebSocket, session: S2SSession, audio_bytes: bytes):
                     "type": "asr_final",
                     "text": text
                 }))
-                # Run agent in background
-                asyncio.create_task(
-                    run_agent_and_speak(ws, session, text)
-                )
+                # Agent call removed - CopilotKit handles agent routing
+                # asyncio.create_task(
+                #     run_agent_and_speak(ws, session, text)
+                # )
             else:
                 logger.info("ASR final (VAD): empty transcript")
                 await ws.send_text(json.dumps({
@@ -599,11 +599,11 @@ async def handle_control(ws: WebSocket, session: S2SSession, data: Dict[str, Any
                     "type": "asr_final",
                     "text": text
                 }))
-                
-                # Run agent in background
-                asyncio.create_task(
-                    run_agent_and_speak(ws, session, text)
-                )
+
+                # Agent call removed - CopilotKit handles agent routing
+                # asyncio.create_task(
+                #     run_agent_and_speak(ws, session, text)
+                # )
         else:
             # Buffer empty or too short, likely already finalized by VAD
             logger.info("Stop listening: Buffer empty, skipping finalization")

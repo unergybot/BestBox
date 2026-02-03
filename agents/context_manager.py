@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 MAX_CONTEXT_TOKENS = 3500  # Leave headroom for response (4096 - 600)
 MAX_MESSAGES = 10  # Maximum messages in context (excluding system)
-MAX_TOOL_RESULT_CHARS = 1500  # Truncate long tool results
+MAX_TOOL_RESULT_CHARS = 6000  # Truncate long tool results (increased for troubleshooting KB)
 CHARS_PER_TOKEN_ESTIMATE = 4  # Rough estimate for non-tiktoken
 
 

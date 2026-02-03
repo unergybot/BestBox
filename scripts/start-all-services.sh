@@ -26,7 +26,7 @@ if [ -f .env ]; then
     set +o allexport
 fi
 
-# Helper function to check if a service is healthy
+# Helper function to check if a service is healthy via HTTP
 check_health() {
     local name=$1
     local url=$2
@@ -37,6 +37,48 @@ check_health() {
 
     while [ $attempt -le $max_attempts ]; do
         if curl -sf "$url" > /dev/null 2>&1; then
+            echo -e " ${GREEN}✓${NC}"
+            return 0
+        fi
+        echo -n "."
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+
+    echo -e " ${RED}✗ (timeout)${NC}"
+    return 1
+}
+
+# Helper function to check PostgreSQL health via pg_isready
+check_postgres() {
+    local max_attempts=${1:-30}
+    local attempt=1
+
+    echo -n "Waiting for PostgreSQL to be ready"
+
+    while [ $attempt -le $max_attempts ]; do
+        if docker exec bestbox-postgres pg_isready -U postgres > /dev/null 2>&1; then
+            echo -e " ${GREEN}✓${NC}"
+            return 0
+        fi
+        echo -n "."
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+
+    echo -e " ${RED}✗ (timeout)${NC}"
+    return 1
+}
+
+# Helper function to check Redis health via redis-cli
+check_redis() {
+    local max_attempts=${1:-30}
+    local attempt=1
+
+    echo -n "Waiting for Redis to be ready"
+
+    while [ $attempt -le $max_attempts ]; do
+        if docker exec bestbox-redis redis-cli ping 2>/dev/null | grep -q "PONG"; then
             echo -e " ${GREEN}✓${NC}"
             return 0
         fi
@@ -71,21 +113,21 @@ fi
 echo "Starting Docker services..."
 docker compose up -d
 
-# Wait for Qdrant
-if ! check_health "Qdrant" "http://localhost:6333/healthz" 30; then
+# Wait for Qdrant (can take 60-120s to recover collections on restart)
+if ! check_health "Qdrant" "http://localhost:6333/healthz" 120; then
     echo -e "${RED}Error: Qdrant failed to start${NC}"
     echo "Check logs: docker logs bestbox-qdrant"
     exit 1
 fi
 
-# Wait for PostgreSQL
-if ! check_health "PostgreSQL" "http://localhost:5432" 30; then
-    echo -e "${YELLOW}Warning: PostgreSQL health check failed (may still be working)${NC}"
+# Wait for PostgreSQL (uses pg_isready, not HTTP)
+if ! check_postgres 30; then
+    echo -e "${YELLOW}Warning: PostgreSQL health check failed (may still be initializing)${NC}"
 fi
 
-# Wait for Redis
-if ! check_health "Redis" "http://localhost:6379" 30; then
-    echo -e "${YELLOW}Warning: Redis health check failed (may still be working)${NC}"
+# Wait for Redis (uses redis-cli ping, not HTTP)
+if ! check_redis 30; then
+    echo -e "${YELLOW}Warning: Redis health check failed (may still be initializing)${NC}"
 fi
 
 echo -e "${GREEN}✓ Tier 1 complete${NC}"
@@ -112,6 +154,9 @@ if [ -z "${EMBEDDINGS_URL:-}" ] || [ -z "${RERANKER_URL:-}" ]; then
 fi
 
 # Start LLM server
+# Track if vLLM was started (it verifies health internally, so we skip the later check)
+VLLM_STARTED=false
+
 if curl -sf --max-time 1 "http://localhost:8001/health" > /dev/null 2>&1; then
     echo -e "${YELLOW}LLM server already reachable on port 8001${NC}"
 elif is_running "llama-server"; then
@@ -121,7 +166,13 @@ else
     if has_nvidia_gpu; then
         if [ -f "./scripts/start-vllm-cuda.sh" ]; then
             echo "🚀 NVIDIA GPU detected! Starting vLLM CUDA server..."
-            ./scripts/start-vllm-cuda.sh &
+            # Run in foreground - the vLLM script has its own health check loop
+            # and will exit 0 on success or exit 1 on failure
+            if ! ./scripts/start-vllm-cuda.sh; then
+                echo -e "${RED}Error: vLLM server failed to start${NC}"
+                exit 1
+            fi
+            VLLM_STARTED=true
         else
             echo "🚀 NVIDIA GPU detected! vLLM script not found, falling back to llama-server..."
             ./scripts/start-llm-cuda.sh &
@@ -186,10 +237,15 @@ else
     fi
 fi
 
-if ! check_health "LLM Server" "http://localhost:8001/health" 300; then
-    echo -e "${RED}Error: LLM server failed to start${NC}"
-    echo "Check logs in the terminal where start-llm.sh is running"
-    exit 1
+# Skip LLM health check if vLLM was started (it already verified health internally)
+if [ "$VLLM_STARTED" = "true" ]; then
+    echo -e "${GREEN}✓ LLM Server (vLLM) already verified${NC}"
+else
+    if ! check_health "LLM Server" "http://localhost:8001/health" 300; then
+        echo -e "${RED}Error: LLM server failed to start${NC}"
+        echo "Check logs in the terminal where start-llm.sh is running"
+        exit 1
+    fi
 fi
 
 # Start / verify Embeddings service

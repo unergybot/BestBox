@@ -170,7 +170,7 @@ def search_troubleshooting_kb(
                             "description": img.get('vl_description', 'Image available'),
                             "defect_type": img.get('defect_type', '')
                         }
-                        for img in item.get('images', [])[:3]  # Limit to 3 images per result
+                        for img in item.get('images', [])  # Return all images
                     ]
                 }
 

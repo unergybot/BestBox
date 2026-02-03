@@ -23,6 +23,7 @@ project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from services.troubleshooting.excel_extractor import ExcelTroubleshootingExtractor
+from services.troubleshooting.validation_pipeline import ValidationPipeline
 from services.troubleshooting.vl_processor import VLProcessor
 from services.troubleshooting.indexer import TroubleshootingIndexer
 
@@ -33,7 +34,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("EnrichPipeline")
 
-async def process_case_pipeline(excel_path: Path, output_dir: Path, limit: int = 0):
+async def process_case_pipeline(
+    excel_path: Path,
+    output_dir: Path,
+    limit: int = 0,
+    validate_mappings: bool = False
+):
     """
     Run the full extraction -> enrichment -> indexing pipeline.
     """
@@ -71,6 +77,14 @@ async def process_case_pipeline(excel_path: Path, output_dir: Path, limit: int =
     except Exception as e:
         logger.error(f"❌ Extraction failed: {e}")
         return
+
+    # 1.5 Mapping validation (optional)
+    if validate_mappings:
+        try:
+            validation_pipeline = ValidationPipeline(output_dir=output_dir)
+            case_data = await validation_pipeline.validate_case(excel_path, case_data)
+        except Exception as e:
+            logger.warning(f"⚠️  Mapping validation failed: {e}")
 
     # 2. VLM Enrichment
     logger.info("--- Step 2: VLM Enrichment ---")
@@ -113,6 +127,7 @@ def main():
     parser.add_argument("excel_path", type=str, help="Path to the Excel file")
     parser.add_argument("--output", type=str, default="data/troubleshooting/processed", help="Output directory for processed files")
     parser.add_argument("--limit", type=int, default=0, help="Limit number of images to process (0 for all)")
+    parser.add_argument("--validate-mappings", action="store_true", help="Run VLM mapping validation")
     
     args = parser.parse_args()
     
@@ -120,7 +135,14 @@ def main():
     output_dir = Path(args.output)
     
     # Run async pipeline
-    asyncio.run(process_case_pipeline(excel_file, output_dir, limit=args.limit))
+    asyncio.run(
+        process_case_pipeline(
+            excel_file,
+            output_dir,
+            limit=args.limit,
+            validate_mappings=args.validate_mappings
+        )
+    )
 
 if __name__ == "__main__":
     main()

@@ -58,7 +58,7 @@ export TTS_MODEL="${TTS_MODEL:-piper}"     # Only for piper engine
 export TTS_DEVICE="${TTS_DEVICE:-cuda:1}"  # P100 for speech
 export TTS_GPU="${TTS_GPU:-true}"
 export TTS_LANGUAGE="${TTS_LANGUAGE:-zh-cn}"
-export S2S_ENABLE_TTS="${S2S_ENABLE_TTS:-true}"  # Enabled by default
+export S2S_ENABLE_TTS="${S2S_ENABLE_TTS:-false}"  # Disabled by default (CopilotKit handles responses)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -157,9 +157,11 @@ else
     check_package "whisper" || MISSING="$MISSING openai-whisper"
 fi
 
-# TTS engine dependencies
-if [[ "$TTS_ENGINE" == "melo" ]]; then
-    check_package "melo" || MISSING="$MISSING melo-tts"
+# TTS engine dependencies (only check if TTS is enabled)
+if [[ "$S2S_ENABLE_TTS" == "true" ]]; then
+    if [[ "$TTS_ENGINE" == "melo" ]]; then
+        check_package "melo" || MISSING="$MISSING melo-tts"
+    fi
 fi
 
 if [[ -n "$MISSING" ]]; then

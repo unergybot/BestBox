@@ -1,0 +1,60 @@
+# P100-compatible Reranker Service Container
+# BGE-reranker-base for RAG pipeline
+# Uses PyTorch 2.1.2 + CUDA 11.8 for P100 (SM60) compatibility
+FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    TRANSFORMERS_NO_ADVISORY_WARNINGS=1 \
+    RERANKER_DEVICE=cuda:0 \
+    RERANKER_MODEL_NAME=BAAI/bge-reranker-base
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --upgrade pip wheel setuptools
+
+# Install sentence-transformers and dependencies
+RUN pip install --no-cache-dir \
+    sentence-transformers>=2.3.0 \
+    fastapi \
+    uvicorn[standard] \
+    numpy \
+    pydantic
+
+# Pre-download reranker model
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('BAAI/bge-reranker-base', device='cpu')"
+
+# Copy reranker service code
+COPY services/rag_pipeline/reranker.py /app/reranker.py
+
+EXPOSE 8082
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost:8082/health || exit 1
+
+# Start script
+COPY <<'EOF' /app/start-reranker.sh
+#!/bin/bash
+set -e
+echo "Starting P100 Reranker Service (BGE-reranker-base)..."
+echo "  Model: BAAI/bge-reranker-base"
+echo "  Device: cuda:0"
+echo "  Port: 8082"
+
+export RERANKER_DEVICE=cuda:0
+export RERANKER_MODEL_NAME=BAAI/bge-reranker-base
+
+python /app/reranker.py
+EOF
+
+RUN chmod +x /app/start-reranker.sh
+
+CMD ["/app/start-reranker.sh"]

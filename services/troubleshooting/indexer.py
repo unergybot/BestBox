@@ -197,12 +197,18 @@ class TroubleshootingIndexer:
             point_ids.append(point_id)
 
             # Build payload with issue details
+            # Create unique issue_id using case_id + issue_number + excel_row
+            # This handles cases where the same issue_number appears multiple times
+            # in different rows of the same Excel file
+            issue_id = f"{case_data['case_id']}-{issue['issue_number']}-{issue['excel_row']}"
+
             payload = {
-                "issue_id": f"{case_data['case_id']}-{issue['issue_number']}",
+                "issue_id": issue_id,
                 "case_id": case_data['case_id'],
                 "part_number": case_data['metadata'].get('part_number'),
                 "internal_number": case_data['metadata'].get('internal_number'),
                 "issue_number": issue['issue_number'],
+                "excel_row": issue.get('excel_row'),
                 "trial_version": issue.get('trial_version'),
                 "category": issue.get('category'),
                 "problem": issue.get('problem', ''),

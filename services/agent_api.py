@@ -83,6 +83,14 @@ import asyncpg
 from pathlib import Path
 import re
 
+# Troubleshooting response validator - filters hallucinated case_ids
+try:
+    from services.troubleshooting.validator import validate_and_filter_results
+    VALIDATOR_AVAILABLE = True
+except ImportError:
+    VALIDATOR_AVAILABLE = False
+    logger.warning("Troubleshooting validator not available")
+
 # Prometheus metrics
 try:
     from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -927,11 +935,19 @@ async def responses_api_stream(request: ChatRequest):
             result = await agent_app.ainvoke(cast(AgentState, inputs))
             last_msg = result["messages"][-1]
             content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
-            
+            current_agent = result.get("current_agent", "unknown")
+
             # Ensure content is never undefined - always a string
             if content is None:
                 content = ""
-            
+
+            # Validate response - filter hallucinated case_ids
+            if VALIDATOR_AVAILABLE and content and current_agent == "mold_agent":
+                try:
+                    content = validate_and_filter_results(content)
+                except Exception as e:
+                    logger.warning(f"Response validation failed in stream: {e}")
+
             # 3. Stream the content using response.output_text.delta events
             # Split content into chunks for a more natural streaming effect
             chunk_size = 20  # characters per chunk
@@ -1047,11 +1063,19 @@ async def chat_completion_stream(request: ChatRequest):
             result = await agent_app.ainvoke(cast(AgentState, inputs))
             last_msg = result["messages"][-1]
             content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
-            
+            current_agent = result.get("current_agent", "unknown")
+
             # Ensure content is never undefined - always a string
             if content is None:
                 content = ""
-            
+
+            # Validate response - filter hallucinated case_ids
+            if VALIDATOR_AVAILABLE and content and current_agent == "mold_agent":
+                try:
+                    content = validate_and_filter_results(content)
+                except Exception as e:
+                    logger.warning(f"Response validation failed in SSE stream: {e}")
+
             # Stream the content as chunks
             chunk_id = f"chatcmpl-{int(time.time())}"
             
@@ -1249,6 +1273,18 @@ async def chat_completion_endpoint(
 
         content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
         tool_calls = last_msg.tool_calls if hasattr(last_msg, 'tool_calls') else None
+
+        # ==========================================================
+        # Validate response - filter hallucinated case_ids
+        # ==========================================================
+        if VALIDATOR_AVAILABLE and content and current_agent == "mold_agent":
+            try:
+                original_content = content
+                content = validate_and_filter_results(content)
+                if content != original_content:
+                    logger.info("Filtered hallucinated case_ids from mold_agent response")
+            except Exception as e:
+                logger.warning(f"Response validation failed: {e}")
 
         # ==========================================================
         # Observability Tracking

@@ -51,7 +51,7 @@ export function VoiceInput(props: InputProps) {
         setText('');
         setInterimTranscript('');
         setIsSpeaking(false);
-    }, []);
+    }, [appendMessage]);
 
     const handleResponse = useCallback(async (response: string) => {
         if (!response) return;
@@ -102,7 +102,7 @@ export function VoiceInput(props: InputProps) {
                             size="sm"
                             showText={false}
                             onTranscript={handleTranscript}
-                            onResponse={handleResponse}
+                            // onResponse removed - CopilotKit handles agent responses
                         />
                     )}
                 </div>

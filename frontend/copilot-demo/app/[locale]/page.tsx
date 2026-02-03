@@ -146,6 +146,7 @@ function TroubleshootingCardsOverlay() {
 }
 
 import { CopilotChatRecorder } from "@/components/CopilotChatRecorder";
+import { CopilotTTS } from "@/components/CopilotTTS";
 
 export default function Home() {
   const tCopilot = useTranslations("Copilot");
@@ -162,6 +163,8 @@ export default function Home() {
   return (
     <ChatMessagesProvider>
       <CopilotKit runtimeUrl="/api/copilotkit">
+        {/* TTS component watches CopilotKit messages and speaks [SPEECH] content */}
+        <CopilotTTS />
         <div className="flex flex-col lg:flex-row h-screen">
 
           {/* Dashboard Column - 40% on desktop, hidden on mobile */}

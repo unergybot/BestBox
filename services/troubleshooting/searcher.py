@@ -49,7 +49,7 @@ class TroubleshootingSearcher:
             "EMBEDDINGS_URL",
             os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
         ),
-        reranker_url: str = os.getenv("RERANKER_URL", "http://localhost:8082"),
+        reranker_url: str = os.getenv("RERANKER_URL", "http://172.23.0.3:8003"),
         qdrant_host: str = "localhost",
         qdrant_port: int = 6333
     ):
@@ -357,21 +357,19 @@ class TroubleshootingSearcher:
             f"{self.reranker_url}/rerank",
             json={
                 "query": query,
-                "documents": documents,
-                "top_k": top_k
+                "passages": documents
             },
             timeout=30
         )
 
         response.raise_for_status()
-        rerank_results = response.json()['results']
+        data = response.json()
 
-        # Map back to candidates
+        # Map back to candidates using correct reranker response format
         reranked = []
-        for item in rerank_results:
-            idx = item['index']
+        for idx, score in zip(data['ranked_indices'], data['scores']):
             reranked.append({
-                "score": item['score'],
+                "score": score,
                 "payload": candidates[idx].payload
             })
 

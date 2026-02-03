@@ -5,16 +5,19 @@ import React from "react";
 import { TroubleshootingIssue } from "@/types/troubleshooting";
 import { SuccessBadge } from "./SuccessBadge";
 import { RelevanceScore } from "./RelevanceScore";
+import { ImageGallery } from "./ImageGallery";
 
 interface SummaryViewProps {
   data: TroubleshootingIssue;
   onExpand: () => void;
+  onImageClick: (index: number) => void;
   className?: string;
 }
 
 export const SummaryView: React.FC<SummaryViewProps> = ({
   data,
   onExpand,
+  onImageClick,
   className = "",
 }) => {
   // Truncate text helper
@@ -62,32 +65,13 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
           </p>
         </div>
 
-        {/* Image preview */}
-        {data.image_count > 0 && data.images?.length > 0 && (
-          <div className="flex items-center gap-1 pt-2 overflow-x-auto">
-            <div className="flex gap-1 flex-shrink-0">
-              {data.images.slice(0, 3).map((img) => (
-                <div
-                  key={img.image_id}
-                  className="w-12 h-12 sm:w-16 sm:h-16 bg-gray-100 rounded border border-gray-200 overflow-hidden flex-shrink-0"
-                >
-                  <img
-                    src={img.image_url}
-                    alt={img.description || "Defect image"}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            {data.image_count > 3 && (
-              <span className="text-xs text-gray-500 ml-1 flex-shrink-0">
-                +{data.image_count - 3} more
-              </span>
-            )}
-          </div>
+        {/* Image preview - shows all images in compact horizontal scroll */}
+        {data.images && data.images.length > 0 && (
+          <ImageGallery
+            images={data.images}
+            onImageClick={onImageClick}
+            variant="compact"
+          />
         )}
 
         {/* Metadata row */}

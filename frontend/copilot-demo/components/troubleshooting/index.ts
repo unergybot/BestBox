@@ -7,3 +7,5 @@ export { DetailedView } from "./DetailedView";
 export { SuccessBadge } from "./SuccessBadge";
 export { RelevanceScore } from "./RelevanceScore";
 export { TrialTimeline } from "./TrialTimeline";
+export { ImageLightbox } from "./ImageLightbox";
+export { ImageGallery } from "./ImageGallery";

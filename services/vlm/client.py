@@ -488,6 +488,95 @@ class VLMServiceClient:
             submitted_at=datetime.now()
         )
 
+    async def validate_mappings(
+        self,
+        page_image_path: Union[str, Path],
+        extracted_image_paths: List[Union[str, Path]],
+        mapping_context: Dict[str, Any],
+        options: Optional[Dict[str, Any]] = None,
+        webhook_url: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Submit a mapping validation job for a single page.
+
+        Args:
+            page_image_path: Path to page render image
+            extracted_image_paths: Paths to extracted images for this page
+            mapping_context: Mapping context JSON payload
+            options: Optional processing options
+            webhook_url: Optional webhook URL
+
+        Returns:
+            Response JSON with job_id and status
+        """
+        page_image_path = Path(page_image_path)
+        if not page_image_path.exists():
+            raise FileNotFoundError(f"Page image not found: {page_image_path}")
+
+        file_handles = []
+        try:
+            files = []
+            page_file = open(page_image_path, "rb")
+            file_handles.append(page_file)
+            files.append(
+                ("page_image", (page_image_path.name, page_file, self._guess_content_type(page_image_path)))
+            )
+
+            for img_path in extracted_image_paths:
+                img_path = Path(img_path)
+                if not img_path.exists():
+                    raise FileNotFoundError(f"Extracted image not found: {img_path}")
+                img_file = open(img_path, "rb")
+                file_handles.append(img_file)
+                files.append(
+                    ("extracted_images[]", (img_path.name, img_file, self._guess_content_type(img_path)))
+                )
+
+            data: Dict[str, Any] = {
+                "mapping_context": json.dumps(mapping_context, ensure_ascii=False)
+            }
+            if options:
+                data["options"] = json.dumps(options, ensure_ascii=False)
+            if webhook_url:
+                data["webhook_url"] = webhook_url
+
+            response = await self._request_with_retry(
+                "POST",
+                "/api/v1/validate-mappings",
+                files=files,
+                data=data
+            )
+
+            return response
+        finally:
+            for handle in file_handles:
+                try:
+                    handle.close()
+                except Exception:
+                    pass
+
+    async def get_validation_status(self, job_id: str) -> Dict[str, Any]:
+        """Get validation job status."""
+        client = await self._get_client()
+        response = await client.get(f"/api/v1/validate-mappings/{job_id}")
+        response.raise_for_status()
+        return response.json()
+
+    async def wait_for_validation(
+        self,
+        job_id: str,
+        timeout: int = DEFAULT_JOB_TIMEOUT,
+        poll_interval: float = 2.0
+    ) -> Dict[str, Any]:
+        """Poll validation job until completion or timeout."""
+        start_time = datetime.now()
+        while (datetime.now() - start_time).total_seconds() < timeout:
+            status = await self.get_validation_status(job_id)
+            if status.get("status") in {"completed", "failed"}:
+                return status
+            await asyncio.sleep(poll_interval)
+        raise TimeoutError(f"Validation job {job_id} timed out after {timeout}s")
+
     async def _request_with_retry(
         self,
         method: str,

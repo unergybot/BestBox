@@ -1,0 +1,113 @@
+apexai@apexai:~/BestBox$ ./scripts/start-demo-complete.sh 
+==============================================
+   BestBox + OpenClaw Unified Demo Startup    
+==============================================
+
+[1/4] Starting BestBox Backend Services...
+=== BestBox Service Orchestrator ===
+
+=== Tier 1: Docker Infrastructure ===
+Starting Docker services...
+WARN[0001] volume "bestbox-mariadb-data" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume 
+WARN[0001] volume "bestbox-postgres-data" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume 
+WARN[0001] volume "bestbox-redis-data" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume 
+WARN[0001] volume "bestbox-qdrant-data" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume 
+WARN[0001] volume "bestbox-erpnext-sites" already exists but was not created by Docker Compose. Use `external: true` to use an existing volume 
+[+] up 2/2
+ ✔ Container bestbox-redis   Healthy                                               21.5s
+ ✔ Container bestbox-mariadb Healthy                                               60.5s
+Waiting for Qdrant to be ready....................................... ✓
+Waiting for PostgreSQL to be ready ✓
+Waiting for Redis to be ready ✓
+✓ Tier 1 complete
+
+Waiting for ERPNext...✓ Ready
+=== Tier 2: LLM Inference Services ===
+LLM server already reachable on port 8001
+Checking ERPNext data...
+Waiting for LLM Server to be ready ✓
+Using external Embeddings service: http://127.0.0.1:8004
+Waiting for Embeddings to be ready ✓
+Using external Reranker service: http://127.0.0.1:8004
+Waiting for Reranker to be ready ✓
+Starting Agent API...
+🚀 Starting LangGraph Agent API
+   Port: 8000
+   LLM Backend: http://127.0.0.1:8001/v1
+   Embeddings: http://127.0.0.1:8004
+
+⏳ Waiting for API to confirm startup...
+Waiting for Agent API to be ready ✓
+Starting Telegram Gateway...
+✓ Telegram Gateway started
+✓ Tier 2 complete
+
+=== Tier 3: Optional Services ===
+Checking LiveKit stack...
+Waiting for LiveKit Server to be ready ✓
+✅ LiveKit server is running on port 7880
+Starting LiveKit Agent...
+✅ LiveKit Agent started in background
+S2S Gateway already running
+Waiting for S2S Gateway to be ready ✓
+✓ Tier 3 complete
+
+=== All Services Started ===
+
+Service Status:
+  LLM Server:     http://localhost:8001/health
+  Embeddings:     http://127.0.0.1:8004/health
+  Reranker:       http://127.0.0.1:8004/health
+  Agent API:      http://localhost:8000/health
+  LiveKit:        http://localhost:7880 (Voice - Recommended)
+                  To start agent: python services/livekit_agent.py dev
+  Qdrant:         http://localhost:6333/healthz
+  Frontend:       http://localhost:3000 (start separately with 'cd frontend/copilot-demo && npm run dev')
+
+Environment Variables:
+  USE_LIVEKIT=true    - Use LiveKit for voice (low latency, recommended)
+  SKIP_S2S=true       - Skip both LiveKit and S2S
+
+To stop services:
+  - Docker services: docker compose down
+  - LiveKit server: docker stop livekit-server
+  - Python services: pkill -f 'llama-server|embeddings|agent_api|s2s_server'
+
+Note: Services are running in background. Check individual terminals for logs.
+
+[2/4] Waiting for services to stabilize...
+✅ Agent API ready!
+🔗 Endpoint: http://127.0.0.1:8000/v1/chat/completions
+✓ Backend services ready
+
+[3/4] Starting Frontend...
+Starting Frontend on port 3000...
+Frontend PID: 42562
+✓ Frontend process started (PID: 42562)
+✓ Frontend is responding on http://localhost:3000
+
+[4/4] Ensuring OpenClaw Gateway is active...
+Restarting openclaw-gateway.service...
+✓ OpenClaw Gateway is RUNNING
+
+[Final] Deployment Status
+=== System Ready ===
+
+📦 BestBox Agent:      http://localhost:8000/health
+🤖 OpenClaw:           Running (Systemd)
+🎙️ Voice Agent:        Running (LiveKit)
+🖥️ Frontend:           http://localhost:3000
+🧠 Reranker:           http://localhost:8082
+🗣️ S2S/Speech:         http://localhost:8765
+
+Logs:
+  - Voice Agent:   tail -f livekit_agent.log
+  - Frontend:      tail -f frontend.log
+  - OpenClaw:      journalctl --user -u openclaw-gateway -f
+  - Agent API:     tail -f agent_api.log
+
+To stop services: pkill -f 'agent_api|s2s_server|reranker|livekit_agent|next-server'
+
+Demo is ready! Open http://localhost:3000 to begin.
+apexai@apexai:~/BestBox$ 
+

@@ -64,7 +64,7 @@ class VLProcessor:
         """
         self.vl_service_url = vl_service_url
         self.vlm_service_url = vlm_service_url or os.getenv("VLM_SERVICE_URL", "http://192.168.1.196:8081")
-        self.max_workers = max_workers
+        self.max_workers = int(os.getenv("VLM_MAX_WORKERS", str(max_workers)))
         self.language = language
         self.enabled = enabled or os.getenv("VLM_ENABLED", "false").lower() == "true"
         self.use_vlm_service = use_vlm_service and VLM_CLIENT_AVAILABLE
