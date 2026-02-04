@@ -1,0 +1,88 @@
+{
+  "metrics": [
+    {
+      "name": "成功率",
+      "definition": "问题解决成功的比例",
+      "table": "troubleshooting_issues",
+      "calculation": "COUNT(CASE WHEN result_t1 = 'OK' OR result_t2 = 'OK' THEN 1 END) * 100.0 / COUNT(*)"
+    },
+    {
+      "name": "T1成功率",
+      "definition": "第二次试模成功的比例（不需要T2）",
+      "table": "troubleshooting_issues",
+      "calculation": "COUNT(CASE WHEN result_t1 = 'OK' THEN 1 END) * 100.0 / NULLIF(COUNT(result_t1), 0)"
+    },
+    {
+      "name": "高严重度问题占比",
+      "definition": "严重程度为high的问题占比",
+      "table": "troubleshooting_issues",
+      "calculation": "COUNT(CASE WHEN severity = 'high' THEN 1 END) * 100.0 / COUNT(*)"
+    }
+  ],
+  "business_rules": [
+    "试模阶段顺序: T0 → T1 → T2，T0是首次试模",
+    "OK 表示问题已解决，NG 表示问题未解决",
+    "一个案例可能有多个问题，每个问题有独立的解决状态",
+    "defect_types 是从图像VLM分析中提取的缺陷类型列表",
+    "VLM处理过的问题有更丰富的元数据（tags, key_insights, suggested_actions）"
+  ],
+  "common_gotchas": [
+    {
+      "issue": "defect_types 数组查询",
+      "tables_affected": ["troubleshooting_issues"],
+      "solution": "使用 @> 操作符而非 IN，例如: defect_types @> ARRAY['披锋']"
+    },
+    {
+      "issue": "同义词查询",
+      "tables_affected": ["troubleshooting_issues", "troubleshooting_synonyms"],
+      "solution": "先查询 troubleshooting_synonyms 获取 canonical_term，再用标准术语查询 issues"
+    },
+    {
+      "issue": "结果状态判断",
+      "tables_affected": ["troubleshooting_issues"],
+      "solution": "成功判断使用 result_t1 = 'OK' OR result_t2 = 'OK'，不要只检查一个字段"
+    },
+    {
+      "issue": "中文文本搜索",
+      "tables_affected": ["troubleshooting_issues"],
+      "solution": "使用 ILIKE '%关键词%' 或 PostgreSQL 全文搜索，注意中文分词"
+    },
+    {
+      "issue": "空值处理",
+      "tables_affected": ["troubleshooting_cases", "troubleshooting_issues"],
+      "solution": "material、severity、result_t1、result_t2 等字段可能为NULL，使用 COALESCE 或 IS NOT NULL 过滤"
+    }
+  ],
+  "defect_definitions": {
+    "披锋": {
+      "description": "产品边缘多余的塑料材料",
+      "synonyms": ["毛边", "毛刺", "飞边", "溢料"],
+      "common_causes": ["模具配合不良", "锁模力不足", "注射压力过大"]
+    },
+    "拉白": {
+      "description": "产品表面出现白色应力痕迹",
+      "synonyms": ["白化", "发白", "应力白"],
+      "common_causes": ["脱模不良", "顶出力过大", "冷却不均"]
+    },
+    "火花纹残留": {
+      "description": "模具加工时EDM火花纹转印到产品表面",
+      "synonyms": ["火花纹", "电火花纹", "EDM纹"],
+      "common_causes": ["模具表面处理不足", "抛光不到位"]
+    },
+    "模具表面污染": {
+      "description": "模具表面脏污导致产品外观不良",
+      "synonyms": ["脏污", "污染", "油污"],
+      "common_causes": ["清洁不彻底", "脱模剂残留", "材料分解物"]
+    },
+    "缩水": {
+      "description": "产品表面凹陷",
+      "synonyms": ["缩痕", "凹陷"],
+      "common_causes": ["冷却不足", "壁厚不均", "保压不足"]
+    },
+    "顶白": {
+      "description": "顶针位置出现白色痕迹",
+      "synonyms": ["顶针印", "顶出印"],
+      "common_causes": ["顶出力过大", "冷却不足", "顶针位置不当"]
+    }
+  }
+}

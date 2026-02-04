@@ -58,7 +58,7 @@ class TroubleshootingSearcher:
         # Normalize defaults from shared env vars
         if not llm_url:
             # LLM_BASE_URL often looks like http://host:port/v1
-            llm_base = os.getenv("LLM_BASE_URL", "http://localhost:8080/v1")
+            llm_base = os.getenv("LLM_BASE_URL", "http://localhost:8001/v1")
             llm_url = llm_base[:-3] if llm_base.endswith("/v1") else llm_base
 
         # embeddings service used here expects /health and /embed (no /v1)
@@ -79,21 +79,27 @@ class TroubleshootingSearcher:
         query: str,
         top_k: int = 5,
         filters: Optional[Dict] = None,
-        classify: bool = True
+        classify: bool = True,
+        adaptive: bool = False,
+        min_score: float = 0.65,
+        gap_threshold: float = 0.10
     ) -> Dict:
         """
         Main search entry point with adaptive routing.
 
         Args:
             query: Search query
-            top_k: Number of results to return
+            top_k: Number of results to return (used as max when adaptive=True)
             filters: Optional metadata filters
             classify: Whether to use LLM classification (disable for testing)
+            adaptive: Whether to use adaptive cutoff (score threshold + gap detection)
+            min_score: Minimum score threshold for adaptive mode (default 0.65)
+            gap_threshold: Score gap threshold for adaptive mode (default 0.10)
 
         Returns:
             dict with query, mode, results, total_found
         """
-        logger.info(f"🔍 Searching: \"{query}\"")
+        logger.info(f"🔍 Searching: \"{query}\" (adaptive={adaptive})")
 
         # Step 1: Classify query intent (if enabled)
         if classify:
@@ -104,22 +110,38 @@ class TroubleshootingSearcher:
         logger.info(f"   Mode: {mode}")
 
         # Step 2: Route to appropriate search strategy
+        # When adaptive, retrieve more candidates for better cutoff detection
+        retrieve_k = top_k * 2 if adaptive else top_k
+
         if mode == "CASE_LEVEL":
-            results = self._search_cases(query, top_k, filters)
+            results = self._search_cases(query, retrieve_k, filters)
 
         elif mode == "ISSUE_LEVEL":
-            results = self._search_issues(query, top_k, filters)
+            results = self._search_issues(query, retrieve_k, filters)
 
         else:  # HYBRID
-            case_results = self._search_cases(query, max(1, top_k // 2), filters)
-            issue_results = self._search_issues(query, top_k, filters)
-            results = self._merge_results(case_results, issue_results, top_k)
+            case_results = self._search_cases(query, max(1, retrieve_k // 2), filters)
+            issue_results = self._search_issues(query, retrieve_k, filters)
+            results = self._merge_results(case_results, issue_results, retrieve_k)
+
+        # Step 3: Apply adaptive cutoff if enabled
+        if adaptive and results:
+            results = self._apply_adaptive_cutoff(
+                results,
+                min_score=min_score,
+                gap_threshold=gap_threshold,
+                max_results=top_k * 2  # Allow up to 2x top_k when adaptive
+            )
+            logger.info(f"   After adaptive cutoff: {len(results)} results")
+        else:
+            results = results[:top_k]
 
         logger.info(f"   Found: {len(results)} results")
 
         return {
             "query": query,
             "mode": mode,
+            "adaptive": adaptive,
             "results": results,
             "total_found": len(results)
         }
@@ -335,6 +357,54 @@ class TroubleshootingSearcher:
                 deduped_results.append(result)
 
         return deduped_results[:top_k]
+
+    def _apply_adaptive_cutoff(
+        self,
+        results: List[Dict],
+        min_score: float = 0.65,
+        gap_threshold: float = 0.10,
+        max_results: int = 10
+    ) -> List[Dict]:
+        """
+        Apply adaptive cutoff based on score threshold and gap detection.
+
+        Strategy:
+        1. Filter by minimum score threshold
+        2. Detect significant score gaps (natural cluster boundaries)
+        3. Return results up to the natural boundary or max_results
+
+        Args:
+            results: Sorted list of results (highest score first)
+            min_score: Minimum relevance score threshold (default 0.65)
+            gap_threshold: Score gap that indicates cluster boundary (default 0.10)
+            max_results: Maximum results to return (default 10)
+
+        Returns:
+            Adaptively filtered results
+        """
+        if not results:
+            return []
+
+        # Step 1: Filter by minimum score
+        filtered = [r for r in results if r['score'] >= min_score]
+
+        if not filtered:
+            # If no results meet threshold, return top result if reasonably relevant
+            if results and results[0]['score'] >= 0.5:
+                return results[:1]
+            return []
+
+        # Step 2: Detect natural cutoff via gap detection
+        cutoff_idx = len(filtered)
+        for i in range(len(filtered) - 1):
+            gap = filtered[i]['score'] - filtered[i + 1]['score']
+            if gap >= gap_threshold:
+                cutoff_idx = i + 1
+                logger.debug(f"Gap cutoff at index {cutoff_idx}, gap={gap:.3f}")
+                break
+
+        # Step 3: Apply cutoff with max_results cap
+        return filtered[:min(cutoff_idx, max_results)]
 
     def _rerank(self, query: str, candidates: List, top_k: int) -> List:
         """Rerank candidates using BGE-reranker-v2-m3"""

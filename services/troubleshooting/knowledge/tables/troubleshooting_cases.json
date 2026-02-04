@@ -1,0 +1,45 @@
+{
+  "table_name": "troubleshooting_cases",
+  "table_description": "案例表 - 每个Excel文件对应一条记录，包含零件信息和问题统计",
+  "use_cases": [
+    "按零件号查找案例",
+    "按材料类型筛选",
+    "统计案例数量",
+    "查找VLM处理过的案例"
+  ],
+  "columns": [
+    {"name": "id", "type": "SERIAL", "description": "自增主键"},
+    {"name": "case_id", "type": "VARCHAR(100)", "description": "案例ID，格式: TS-{part_number}-{hash}", "example": "TS-1947688-ED736A0501"},
+    {"name": "part_number", "type": "VARCHAR(50)", "description": "零件号", "example": "1947688"},
+    {"name": "internal_number", "type": "VARCHAR(50)", "description": "内部编号"},
+    {"name": "mold_type", "type": "VARCHAR(100)", "description": "模具类型"},
+    {"name": "material", "type": "VARCHAR(100)", "description": "材料类型", "example": "HIPS, ABS, PP"},
+    {"name": "color", "type": "VARCHAR(50)", "description": "颜色"},
+    {"name": "total_issues", "type": "INTEGER", "description": "问题总数"},
+    {"name": "source_file", "type": "TEXT", "description": "源Excel文件路径"},
+    {"name": "vlm_processed", "type": "BOOLEAN", "description": "是否经过VLM处理"},
+    {"name": "vlm_summary", "type": "TEXT", "description": "VLM生成的案例摘要"},
+    {"name": "vlm_confidence", "type": "FLOAT", "description": "VLM置信度 0.0-1.0"},
+    {"name": "key_insights", "type": "TEXT[]", "description": "关键洞察列表"},
+    {"name": "tags", "type": "TEXT[]", "description": "标签列表"},
+    {"name": "created_at", "type": "TIMESTAMP", "description": "创建时间"},
+    {"name": "updated_at", "type": "TIMESTAMP", "description": "更新时间"}
+  ],
+  "primary_key": "case_id",
+  "indexes": ["part_number", "material", "created_at"],
+  "data_quality_notes": [
+    "case_id 是唯一的，由零件号和文件哈希组成",
+    "material 字段可能为空，需要使用 COALESCE 处理",
+    "total_issues 可能与实际 troubleshooting_issues 表中的计数不一致，以 issues 表为准"
+  ],
+  "common_queries": [
+    {
+      "description": "按材料统计案例数",
+      "sql": "SELECT material, COUNT(*) as count FROM troubleshooting_cases WHERE material IS NOT NULL GROUP BY material ORDER BY count DESC"
+    },
+    {
+      "description": "查找特定零件的案例",
+      "sql": "SELECT * FROM troubleshooting_cases WHERE part_number = '{part_number}'"
+    }
+  ]
+}

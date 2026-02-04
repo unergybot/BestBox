@@ -1,0 +1,65 @@
+{
+  "table_name": "troubleshooting_issues",
+  "table_description": "问题表 - 每个问题/解决方案对应一条记录，包含缺陷类型、解决方案和试模结果",
+  "use_cases": [
+    "搜索特定缺陷类型的问题",
+    "查找成功的解决方案",
+    "按试模阶段筛选",
+    "统计缺陷类型分布",
+    "查找高严重度问题"
+  ],
+  "columns": [
+    {"name": "id", "type": "SERIAL", "description": "自增主键"},
+    {"name": "issue_id", "type": "VARCHAR(150)", "description": "问题ID，格式: {case_id}-{issue_number}-{excel_row}", "unique": true},
+    {"name": "case_id", "type": "VARCHAR(100)", "description": "关联的案例ID", "foreign_key": "troubleshooting_cases.case_id"},
+    {"name": "issue_number", "type": "INTEGER", "description": "问题序号"},
+    {"name": "excel_row", "type": "INTEGER", "description": "Excel行号"},
+    {"name": "trial_version", "type": "VARCHAR(10)", "description": "试模版本: T0(首次), T1(第二次), T2(第三次)"},
+    {"name": "category", "type": "VARCHAR(100)", "description": "问题分类"},
+    {"name": "problem", "type": "TEXT", "description": "问题描述", "important": true},
+    {"name": "solution", "type": "TEXT", "description": "解决方案", "important": true},
+    {"name": "result_t1", "type": "VARCHAR(20)", "description": "T1结果: OK(成功), NG(失败), 空"},
+    {"name": "result_t2", "type": "VARCHAR(20)", "description": "T2结果: OK(成功), NG(失败), 空"},
+    {"name": "cause_classification", "type": "VARCHAR(100)", "description": "原因分类"},
+    {"name": "defect_types", "type": "TEXT[]", "description": "缺陷类型数组", "important": true, "examples": ["披锋", "拉白", "火花纹残留", "模具表面污染"]},
+    {"name": "vlm_processed", "type": "BOOLEAN", "description": "是否经过VLM处理"},
+    {"name": "vlm_confidence", "type": "FLOAT", "description": "VLM置信度"},
+    {"name": "severity", "type": "VARCHAR(20)", "description": "严重程度: high, medium, low"},
+    {"name": "tags", "type": "TEXT[]", "description": "标签列表"},
+    {"name": "key_insights", "type": "TEXT[]", "description": "关键洞察"},
+    {"name": "suggested_actions", "type": "TEXT[]", "description": "建议操作"},
+    {"name": "has_images", "type": "BOOLEAN", "description": "是否有关联图像"},
+    {"name": "image_count", "type": "INTEGER", "description": "关联图像数量"},
+    {"name": "created_at", "type": "TIMESTAMP", "description": "创建时间"},
+    {"name": "updated_at", "type": "TIMESTAMP", "description": "更新时间"}
+  ],
+  "primary_key": "issue_id",
+  "foreign_keys": [
+    {"column": "case_id", "references": "troubleshooting_cases.case_id", "on_delete": "CASCADE"}
+  ],
+  "indexes": ["case_id", "trial_version", "result_t1", "result_t2", "defect_types (GIN)", "severity"],
+  "data_quality_notes": [
+    "defect_types 是数组类型，使用 @> 操作符查询，例如: defect_types @> ARRAY['披锋']",
+    "result_t1 和 result_t2 的值为 'OK', 'NG' 或 NULL",
+    "problem 和 solution 字段为中文文本",
+    "trial_version 的值为 'T0', 'T1', 'T2' 或 NULL"
+  ],
+  "common_queries": [
+    {
+      "description": "统计各缺陷类型的问题数",
+      "sql": "SELECT unnest(defect_types) as defect, COUNT(*) as count FROM troubleshooting_issues GROUP BY defect ORDER BY count DESC"
+    },
+    {
+      "description": "查找成功解决的问题",
+      "sql": "SELECT * FROM troubleshooting_issues WHERE result_t1 = 'OK' OR result_t2 = 'OK'"
+    },
+    {
+      "description": "查找包含特定缺陷类型的问题",
+      "sql": "SELECT * FROM troubleshooting_issues WHERE defect_types @> ARRAY['{defect_type}']"
+    },
+    {
+      "description": "按严重程度统计",
+      "sql": "SELECT severity, COUNT(*) FROM troubleshooting_issues WHERE severity IS NOT NULL GROUP BY severity"
+    }
+  ]
+}

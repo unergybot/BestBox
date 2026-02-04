@@ -1,0 +1,49 @@
+{
+  "table_name": "troubleshooting_synonyms",
+  "table_description": "同义词表 - ASR语音识别和查询扩展的术语映射",
+  "use_cases": [
+    "将ASR识别的口语术语映射到标准术语",
+    "扩展搜索查询覆盖同义词",
+    "记录学习到的新同义词"
+  ],
+  "columns": [
+    {"name": "id", "type": "SERIAL", "description": "自增主键"},
+    {"name": "canonical_term", "type": "VARCHAR(100)", "description": "标准术语（系统使用）", "example": "披锋"},
+    {"name": "synonym", "type": "VARCHAR(100)", "description": "同义词/别名", "example": "毛边"},
+    {"name": "term_type", "type": "VARCHAR(50)", "description": "术语类型: defect, material, process, trial, result"},
+    {"name": "confidence", "type": "FLOAT", "description": "映射置信度 0.0-1.0"},
+    {"name": "source", "type": "VARCHAR(50)", "description": "来源: manual(手动), learned(学习), asr(语音识别)"},
+    {"name": "usage_count", "type": "INTEGER", "description": "使用次数"},
+    {"name": "last_used_at", "type": "TIMESTAMP", "description": "最后使用时间"},
+    {"name": "created_at", "type": "TIMESTAMP", "description": "创建时间"}
+  ],
+  "primary_key": "id",
+  "unique_constraints": ["(canonical_term, synonym)"],
+  "indexes": ["synonym", "canonical_term", "term_type"],
+  "data_quality_notes": [
+    "同义词映射是双向查询的，可以从 synonym 找 canonical_term",
+    "confidence < 0.8 的映射需要人工确认",
+    "source = 'learned' 的映射来自系统自动学习"
+  ],
+  "term_types": {
+    "defect": "缺陷类型术语，如 披锋、拉白、火花纹",
+    "material": "材料术语，如 ABS、HIPS、PP",
+    "process": "工艺术语，如 注塑、模具、浇口",
+    "trial": "试模阶段术语，如 T0、T1、T2",
+    "result": "结果状态术语，如 OK、NG、成功、失败"
+  },
+  "common_queries": [
+    {
+      "description": "查找某个词的标准术语",
+      "sql": "SELECT canonical_term FROM troubleshooting_synonyms WHERE synonym = '{term}' ORDER BY confidence DESC LIMIT 1"
+    },
+    {
+      "description": "获取某个标准术语的所有同义词",
+      "sql": "SELECT synonym FROM troubleshooting_synonyms WHERE canonical_term = '{term}'"
+    },
+    {
+      "description": "获取所有缺陷类型的同义词映射",
+      "sql": "SELECT canonical_term, array_agg(synonym) as synonyms FROM troubleshooting_synonyms WHERE term_type = 'defect' GROUP BY canonical_term"
+    }
+  ]
+}

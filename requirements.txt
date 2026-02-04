@@ -11,12 +11,13 @@ uvicorn[standard]>=0.27.0
 websockets>=12.0
 python-multipart>=0.0.9
 
-# Troubleshooting KB (Excel ingestion + Qdrant)
+# Troubleshooting KB (Excel ingestion + Qdrant + PostgreSQL)
 pandas>=2.0
 openpyxl>=3.1
 pillow>=10.0
 pdf2image>=1.16.0
 qdrant-client>=1.7
+psycopg2-binary>=2.9.0  # PostgreSQL for text-to-SQL
 
 # VLM Service Integration
 httpx>=0.24.0
