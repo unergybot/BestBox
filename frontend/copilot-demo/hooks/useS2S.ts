@@ -148,10 +148,9 @@ export function useS2S({
     const client = getS2SClient();
     clientRef.current = client;
 
-    // Configure client
-    if (serverUrl) {
-      client.setServerUrl(serverUrl);
-    }
+    // Configure client - use provided URL or smart default
+    const effectiveUrl = serverUrl || getDefaultServerUrl();
+    client.setServerUrl(effectiveUrl);
     client.setLanguage(language);
 
     // Sync initial state
