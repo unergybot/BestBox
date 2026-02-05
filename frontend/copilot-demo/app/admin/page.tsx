@@ -1,65 +1,118 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Activity, Users, BarChart3, MessageSquare, Settings, LogOut } from 'lucide-react';
-import { SystemStatus } from '@/components/SystemStatus';
+import { useEffect, useState } from "react";
+import ReasoningTrace from "@/components/ReasoningTrace";
 
-type DashboardView = 'system' | 'users' | 'agents' | 'conversations';
+interface Session {
+  id: string;
+  user_id?: string;
+  channel?: string;
+  started_at?: string;
+  ended_at?: string;
+  message_count?: number;
+  status?: string;
+  rating?: string;
+  rating_note?: string;
+}
+
+interface SessionMessage {
+  role: string;
+  content: string;
+  reasoning_trace?: Array<{
+    type: "think" | "act" | "observe" | "answer";
+    content: string;
+    tool_name?: string;
+    tool_args?: Record<string, unknown>;
+    timestamp: number;
+  }>;
+}
+
+interface SessionDetail extends Session {
+  messages: SessionMessage[];
+}
 
 export default function AdminPage() {
-  const [activeView, setActiveView] = useState<DashboardView>('system');
+  const [adminToken, setAdminToken] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedSession, setSelectedSession] = useState<SessionDetail | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Simple password protection (replace with proper auth in production)
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-
-    // TODO: Replace with environment variable or proper auth
-    if (password === process.env.NEXT_PUBLIC_ADMIN_PASSWORD || password === 'bestbox2026') {
-      setIsAuthenticated(true);
-      localStorage.setItem('admin_authenticated', 'true');
-    } else {
-      alert('Invalid password');
-    }
+    if (!adminToken) return;
+    localStorage.setItem("admin_token", adminToken);
+    setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
+    localStorage.removeItem("admin_token");
     setIsAuthenticated(false);
-    localStorage.removeItem('admin_authenticated');
+    setSessions([]);
+    setSelectedSession(null);
   };
 
-  // Check localStorage on mount
   useEffect(() => {
-    if (localStorage.getItem('admin_authenticated') === 'true') {
+    const stored = localStorage.getItem("admin_token");
+    if (stored) {
+      setAdminToken(stored);
       setIsAuthenticated(true);
     }
   }, []);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const fetchSessions = async () => {
+      setLoading(true);
+      const res = await fetch("/admin/sessions", {
+        headers: { "admin-token": adminToken },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSessions(data);
+      }
+      setLoading(false);
+    };
+    fetchSessions();
+  }, [isAuthenticated, adminToken]);
+
+  const loadSessionDetail = async (sessionId: string) => {
+    setLoading(true);
+    const res = await fetch(`/admin/sessions/${sessionId}`, {
+      headers: { "admin-token": adminToken },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setSelectedSession(data);
+    }
+    setLoading(false);
+  };
+
+  const rateSession = async (sessionId: string, rating: "good" | "bad") => {
+    await fetch(`/admin/sessions/${sessionId}/rating`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "admin-token": adminToken,
+      },
+      body: JSON.stringify({ rating }),
+    });
+    await loadSessionDetail(sessionId);
+  };
+
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-          <div className="flex items-center justify-center mb-6">
-            <Settings className="text-blue-600 mr-2" size={32} />
-            <h1 className="text-2xl font-bold text-gray-900">Admin Login</h1>
-          </div>
-
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Admin Access</h1>
           <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Admin Password
-              </label>
-              <input
-                type="password"
-                placeholder="Enter admin password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                autoFocus
-              />
-            </div>
-
+            <input
+              type="password"
+              placeholder="Admin token"
+              value={adminToken}
+              onChange={(e) => setAdminToken(e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
             <button
               type="submit"
               className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -67,148 +120,98 @@ export default function AdminPage() {
               Login
             </button>
           </form>
-
-          <p className="text-xs text-gray-500 mt-4 text-center">
-            Access restricted to authorized administrators only
-          </p>
         </div>
       </div>
     );
   }
 
-  const tabs = [
-    { id: 'system' as const, label: 'System Health', icon: Activity },
-    { id: 'users' as const, label: 'User Analytics', icon: Users },
-    { id: 'agents' as const, label: 'Agent Performance', icon: BarChart3 },
-    { id: 'conversations' as const, label: 'Conversation Audit', icon: MessageSquare },
-  ];
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
         <div className="px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">BestBox Admin Dashboard</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Session Review</h1>
             <p className="text-sm text-gray-500 mt-1">
-              System observability and user analytics
+              Review ReAct traces and session details
             </p>
           </div>
-
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <LogOut size={16} />
             Logout
           </button>
         </div>
       </header>
 
-      {/* Navigation Tabs */}
-      <nav className="bg-white border-b border-gray-200">
-        <div className="px-6">
-          <div className="flex space-x-8">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveView(tab.id)}
-                  className={`flex items-center gap-2 py-4 border-b-2 transition-colors font-medium ${
-                    activeView === tab.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon size={18} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+      <main className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section className="bg-white rounded-lg shadow-sm p-4 lg:col-span-1">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold">Sessions</h2>
+            {loading && <span className="text-xs text-gray-400">Loading...</span>}
           </div>
-        </div>
-      </nav>
+          <div className="space-y-3">
+            {sessions.map((session) => (
+              <button
+                key={session.id}
+                onClick={() => loadSessionDetail(session.id)}
+                className={`w-full text-left p-3 rounded-lg border ${
+                  selectedSession?.id === session.id ? "border-blue-500" : "border-gray-200"
+                } hover:border-blue-400 transition-colors`}
+              >
+                <div className="text-sm font-medium text-gray-900">{session.id}</div>
+                <div className="text-xs text-gray-500">{session.user_id || "anonymous"}</div>
+                <div className="text-xs text-gray-400 mt-1">{session.status || "active"}</div>
+              </button>
+            ))}
+            {sessions.length === 0 && !loading && (
+              <div className="text-sm text-gray-500">No sessions found.</div>
+            )}
+          </div>
+        </section>
 
-      {/* Dashboard Content */}
-      <main className="p-6 space-y-6">
-        {/* System Status Widget (always visible) */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Activity size={20} className="text-blue-600" />
-            Service Health
-          </h2>
-          <SystemStatus />
-        </div>
+        <section className="bg-white rounded-lg shadow-sm p-4 lg:col-span-2">
+          {!selectedSession && (
+            <div className="text-sm text-gray-500">Select a session to view details.</div>
+          )}
+          {selectedSession && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold">Session {selectedSession.id}</h2>
+                  <p className="text-xs text-gray-500">User: {selectedSession.user_id || "anonymous"}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="px-3 py-1 text-sm bg-green-600 text-white rounded"
+                    onClick={() => rateSession(selectedSession.id, "good")}
+                  >
+                    Good
+                  </button>
+                  <button
+                    className="px-3 py-1 text-sm bg-red-600 text-white rounded"
+                    onClick={() => rateSession(selectedSession.id, "bad")}
+                  >
+                    Bad
+                  </button>
+                </div>
+              </div>
 
-        {/* Main Dashboard Content */}
-        <DashboardContent view={activeView} />
+              <div className="space-y-3">
+                {selectedSession.messages?.map((msg, idx) => (
+                  <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                    <div className="text-xs uppercase text-gray-400 mb-2">{msg.role}</div>
+                    <div className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{msg.content}</div>
+                    {msg.reasoning_trace && msg.reasoning_trace.length > 0 && (
+                      <ReasoningTrace steps={msg.reasoning_trace} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       </main>
-    </div>
-  );
-}
-
-function DashboardContent({ view }: { view: DashboardView }) {
-  // Map view to Grafana dashboard UID (set in dashboard JSON)
-  const dashboardUrls: Record<DashboardView, string> = {
-    system: 'http://localhost:3001/d/system-health/bestbox-system-health',
-    users: 'http://localhost:3001/d/user-analytics/bestbox-user-analytics',
-    agents: 'http://localhost:3001/d/agent-performance/bestbox-agent-performance',
-    conversations: 'http://localhost:3001/d/conversation-audit/bestbox-conversation-audit',
-  };
-
-  return (
-    <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-      {/* Embedded Grafana Dashboard */}
-      <iframe
-        src={`${dashboardUrls[view]}?orgId=1&kiosk=tv&theme=light`}
-        className="w-full h-[calc(100vh-400px)] min-h-[600px]"
-        frameBorder="0"
-        title={`${view} dashboard`}
-        allow="fullscreen"
-      />
-
-      {/* Quick Actions Panel */}
-      <div className="border-t border-gray-200 p-4 bg-gray-50">
-        <QuickActions view={view} />
-      </div>
-    </div>
-  );
-}
-
-function QuickActions({ view }: { view: DashboardView }) {
-  const actions: Record<DashboardView, Array<{ label: string; url?: string; action?: () => void }>> = {
-    system: [
-      { label: 'View Jaeger Traces', url: 'http://localhost:16686' },
-      { label: 'Prometheus Metrics', url: 'http://localhost:9090' },
-      { label: 'Download System Report', action: () => alert('Report download feature coming soon') },
-    ],
-    users: [
-      { label: 'Export User Data (CSV)', action: () => alert('Export feature coming soon') },
-      { label: 'User Segmentation Analysis', action: () => alert('Segmentation feature coming soon') },
-    ],
-    agents: [
-      { label: 'View Failed Traces', url: 'http://localhost:16686/search?service=bestbox-agent-api&tags=%7B%22error%22%3A%22true%22%7D' },
-      { label: 'Agent Performance Report', action: () => alert('Report generation coming soon') },
-    ],
-    conversations: [
-      { label: 'Export Conversations (JSON)', action: () => alert('Export feature coming soon') },
-      { label: 'Search by User ID', action: () => alert('Advanced search coming soon') },
-    ],
-  };
-
-  return (
-    <div className="flex flex-wrap items-center gap-4">
-      <span className="text-sm text-gray-600 font-medium">Quick Actions:</span>
-      {actions[view].map((action, idx) => (
-        <button
-          key={idx}
-          onClick={() => action.url ? window.open(action.url, '_blank') : action.action?.()}
-          className="text-sm text-blue-600 hover:text-blue-800 underline hover:no-underline transition-all"
-        >
-          {action.label}
-        </button>
-      ))}
     </div>
   );
 }

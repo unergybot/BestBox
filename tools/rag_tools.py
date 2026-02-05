@@ -1,10 +1,12 @@
 """RAG tools for agent knowledge base access."""
 import logging
+import re
+import hashlib
 import requests
 from typing import Optional, List, Dict, Any
 from langchain_core.tools import tool
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from qdrant_client.models import Filter, FieldCondition, MatchValue, SparseVector
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,27 @@ COLLECTION_NAME = "bestbox_knowledge"
 
 # Request timeout
 TIMEOUT = 5
+
+# Sparse vector config
+SPARSE_VECTOR_SIZE = 65536
+
+
+def _tokenize(text: str) -> List[str]:
+    """Simple tokenizer for sparse vectors."""
+    return re.findall(r"[A-Za-z0-9_]+", text.lower())
+
+
+def _build_sparse_vector(text: str) -> SparseVector:
+    """Build a hashed sparse vector for hybrid search."""
+    term_counts: Dict[int, int] = {}
+    for token in _tokenize(text):
+        token_hash = hashlib.md5(token.encode("utf-8")).hexdigest()
+        idx = int(token_hash[:8], 16) % SPARSE_VECTOR_SIZE
+        term_counts[idx] = term_counts.get(idx, 0) + 1
+
+    indices = list(term_counts.keys())
+    values = [float(term_counts[i]) for i in indices]
+    return SparseVector(indices=indices, values=values)
 
 
 def _embed_query(query: str) -> Optional[List[float]]:
@@ -96,6 +119,56 @@ def _hybrid_search(
     except Exception as e:
         logger.error(f"Qdrant search error: {e}")
         return []
+
+
+def _hybrid_search_dense_sparse(
+    query_vector: List[float],
+    query_sparse_vector: SparseVector,
+    domain: Optional[str] = None,
+    limit: int = 20,
+    dense_weight: float = 0.7,
+    sparse_weight: float = 0.3,
+) -> List[Dict[str, Any]]:
+    """
+    Perform dense + sparse hybrid search on Qdrant.
+    """
+    try:
+        client = QdrantClient(url=QDRANT_URL)
+
+        query_filter = None
+        if domain:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="domain",
+                        match=MatchValue(value=domain)
+                    )
+                ]
+            )
+
+        response = client.query_points(
+            collection_name=COLLECTION_NAME,
+            query_vector=("", query_vector),
+            query_sparse_vector=("text", query_sparse_vector),
+            score_weights={"": dense_weight, "text": sparse_weight},
+            query_filter=query_filter,
+            limit=limit,
+            with_payload=True,
+        )
+
+        search_results = []
+        for point in response.points:
+            search_results.append({
+                "id": point.id,
+                "score": point.score,
+                "payload": point.payload,
+            })
+
+        return search_results
+
+    except Exception as e:
+        logger.warning(f"Hybrid dense+sparse search failed, falling back to dense-only: {e}")
+        return _hybrid_search(query_vector, domain=domain, limit=limit)
 
 
 def _rerank_results(
@@ -221,4 +294,65 @@ def search_knowledge_base(
         top_results = [search_results[i] for i in ranked_indices[:top_k]]
 
     # Step 4: Format with sources
+    return _format_results(top_results)
+
+
+@tool
+def search_knowledge_base_hybrid(
+    query: str,
+    domain: Optional[str] = None,
+    top_k: int = 5,
+    dense_weight: float = 0.7,
+    sparse_weight: float = 0.3,
+) -> str:
+    """
+    Hybrid search combining dense and sparse (BM25-like) vectors.
+
+    Args:
+        query: Search query
+        domain: Optional domain filter
+        top_k: Top results to return
+        dense_weight: Weight for dense similarity
+        sparse_weight: Weight for sparse similarity
+
+    Returns:
+        Formatted string with search results and sources
+    """
+    logger.info(
+        "Hybrid search: query='%s', domain=%s, top_k=%s, dense_weight=%s, sparse_weight=%s",
+        query,
+        domain,
+        top_k,
+        dense_weight,
+        sparse_weight,
+    )
+
+    query_vector = _embed_query(query)
+    if query_vector is None:
+        return (
+            "Error: Embeddings service unavailable. "
+            "Please ensure the embeddings service is running (scripts/start-embeddings.sh)."
+        )
+
+    sparse_vector = _build_sparse_vector(query)
+    search_results = _hybrid_search_dense_sparse(
+        query_vector=query_vector,
+        query_sparse_vector=sparse_vector,
+        domain=domain,
+        limit=20,
+        dense_weight=dense_weight,
+        sparse_weight=sparse_weight,
+    )
+
+    if not search_results:
+        return "No relevant information found in the knowledge base."
+
+    passages = [result["payload"].get("text", "") for result in search_results]
+    ranked_indices = _rerank_results(query, passages)
+
+    if ranked_indices is None:
+        top_results = search_results[:top_k]
+    else:
+        top_results = [search_results[i] for i in ranked_indices[:top_k]]
+
     return _format_results(top_results)

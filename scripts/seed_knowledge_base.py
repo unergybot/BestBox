@@ -22,7 +22,9 @@ sys.path.insert(0, str(project_root))
 
 import requests
 import uuid
-from qdrant_client.models import Distance, VectorParams, PointStruct
+import re
+import hashlib
+from qdrant_client.models import Distance, PointStruct, SparseVector
 from typing import List, Dict, Any
 from services.rag_pipeline.ingest import DocumentIngester
 from services.rag_pipeline.chunker import TextChunker
@@ -49,6 +51,19 @@ def get_embeddings(texts: List[str], timeout: int = 30) -> List[List[float]]:
     return response.json()["embeddings"]
 
 
+def build_sparse_vector(text: str, size: int = 65536) -> SparseVector:
+    """Build a simple hashed sparse vector for BM25-style hybrid search."""
+    term_counts: Dict[int, int] = {}
+    for token in re.findall(r"[A-Za-z0-9_]+", text.lower()):
+        token_hash = hashlib.md5(token.encode("utf-8")).hexdigest()
+        idx = int(token_hash[:8], 16) % size
+        term_counts[idx] = term_counts.get(idx, 0) + 1
+
+    indices = list(term_counts.keys())
+    values = [float(term_counts[i]) for i in indices]
+    return SparseVector(indices=indices, values=values)
+
+
 def seed_knowledge_base():
     """Main seeding function."""
     print("🚀 Starting knowledge base seeding...")
@@ -69,11 +84,13 @@ def seed_knowledge_base():
         print(f"✅ Collection '{collection_name}' already exists")
     except Exception:
         print(f"Creating new collection: {collection_name}")
-        vector_store.client.create_collection(
+        vector_store.create_collection(
             collection_name=collection_name,
-            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
+            vector_size=1024,
+            distance=Distance.COSINE,
+            enable_bm25=True,
         )
-        print(f"✅ Collection created with 1024-dim vectors")
+        print("✅ Collection created with 1024-dim vectors and BM25 sparse vectors")
 
     print()
 
@@ -136,9 +153,13 @@ def seed_knowledge_base():
                 for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
                     chunk_id = f"{doc_stem}_chunk{i}"
 
+                    sparse_vector = build_sparse_vector(chunk["text"])
                     point = PointStruct(
                         id=str(uuid.uuid4()),  # Use UUID for Qdrant
-                        vector=embedding,
+                        vector={
+                            "": embedding,
+                            "text": sparse_vector,
+                        },
                         payload={
                             "chunk_id": chunk_id,
                             "text": chunk["text"],
@@ -149,8 +170,8 @@ def seed_knowledge_base():
                             "section": chunk.get("section", ""),
                             "token_count": chunk["token_count"],
                             "start_char": chunk["start_char"],
-                            "end_char": chunk["end_char"]
-                        }
+                            "end_char": chunk["end_char"],
+                        },
                     )
                     points.append(point)
 

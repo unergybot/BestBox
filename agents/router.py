@@ -1,5 +1,4 @@
-from typing import Literal
-from langchain_core.messages import SystemMessage, HumanMessage
+from typing import Literal, List
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
@@ -12,6 +11,10 @@ class RouteDecision(BaseModel):
     destination: Literal["erp_agent", "crm_agent", "it_ops_agent", "oa_agent", "mold_agent", "general_agent", "fallback"] = Field(
         ...,
         description="The target agent to handle the user request."
+    )
+    secondary_domains: List[str] = Field(
+        default_factory=list,
+        description="Other domains that might be relevant to the request."
     )
     reasoning: str = Field(..., description="The reasoning behind the routing decision.")
 
@@ -30,7 +33,21 @@ Rules:
 - Greetings/help/Hudson Group → general_agent
 - Manufacturing/mold/product defects → mold_agent
 - Only use fallback for completely unrelated requests
+
+For secondary_domains: If the question may need information from multiple domains, list the secondary ones.
+Example: "What's our procurement policy?" → destination=erp_agent, secondary_domains=["it_ops"] (policy docs)
 """
+
+DESTINATION_DOMAIN_MAP = {
+    "erp_agent": "erp",
+    "crm_agent": "crm",
+    "it_ops_agent": "it_ops",
+    "oa_agent": "oa",
+    "mold_agent": "mold",
+    "general_agent": "general",
+    "fallback": "general",
+}
+
 
 def router_node(state: AgentState):
     """
@@ -64,10 +81,18 @@ def router_node(state: AgentState):
     
     try:
         decision: RouteDecision = chain.invoke({"messages": messages})
+        primary_domain = DESTINATION_DOMAIN_MAP.get(decision.destination, "general")
+        merged_context = dict(state.get("context", {}))
+        merged_context.update({
+            "primary_domain": primary_domain,
+            "secondary_domains": decision.secondary_domains,
+            "router_reasoning": decision.reasoning,
+        })
         return {
             "current_agent": decision.destination,
             "confidence": 1.0, # Placeholder
-            "reasoning": decision.reasoning 
+            "reasoning": decision.reasoning,
+            "context": merged_context,
         }
     except Exception as e:
         # Fallback if parsing fails

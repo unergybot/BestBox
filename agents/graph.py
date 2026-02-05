@@ -8,6 +8,7 @@ from agents.it_ops_agent import it_ops_agent_node, IT_OPS_TOOLS
 from agents.oa_agent import oa_agent_node, OA_TOOLS
 from agents.mold_agent import mold_agent_node, MOLD_TOOLS
 from agents.general_agent import general_agent_node, GENERAL_TOOLS
+from agents.react_node import react_loop
 from langchain_core.messages import AIMessage, BaseMessage
 import logging
 
@@ -160,3 +161,43 @@ workflow.add_edge("fallback", END)
 
 # Compile
 app = workflow.compile()
+
+# ============================================================
+# ReAct Graph (Parallel Path)
+# ============================================================
+
+
+def react_node_wrapper(state: AgentState):
+    """Execute the ReAct loop using all available tools."""
+    tool_objects = {tool.name: tool for tool in UNIQUE_TOOLS}
+    tool_names = [tool.name for tool in UNIQUE_TOOLS]
+    return react_loop(state=state, available_tools=tool_names, tool_objects=tool_objects)
+
+
+react_workflow = StateGraph(AgentState)
+
+react_workflow.add_node("router", router_node_with_hooks)
+react_workflow.add_node("react", react_node_wrapper)
+react_workflow.add_node("fallback", fallback_node)
+
+react_workflow.set_entry_point("router")
+
+
+def route_to_react_or_fallback(state: AgentState) -> str:
+    """Route to ReAct node unless fallback is needed."""
+    return "fallback" if state.get("current_agent") == "fallback" else "react"
+
+
+react_workflow.add_conditional_edges(
+    "router",
+    route_to_react_or_fallback,
+    {
+        "react": "react",
+        "fallback": "fallback",
+    },
+)
+
+react_workflow.add_edge("react", END)
+react_workflow.add_edge("fallback", END)
+
+react_app = react_workflow.compile()

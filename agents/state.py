@@ -1,6 +1,17 @@
-from typing import TypedDict, Annotated, List, Union, Dict, Any, Optional
+from typing import TypedDict, Annotated, List, Union, Dict, Any, Optional, Literal
 from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+
+
+class ReasoningStep(TypedDict):
+    """
+    A single step in the ReAct reasoning trace.
+    """
+    type: Literal["think", "act", "observe", "answer"]
+    content: str
+    tool_name: Optional[str]
+    tool_args: Optional[Dict[str, Any]]
+    timestamp: float
 
 
 class PluginContext(TypedDict, total=False):
@@ -44,3 +55,9 @@ class AgentState(TypedDict):
 
     # Plugin system context
     plugin_context: Optional[PluginContext]
+
+    # ReAct reasoning trace (optional)
+    reasoning_trace: Optional[List[ReasoningStep]]
+
+    # Session ID for persistence (optional)
+    session_id: Optional[str]

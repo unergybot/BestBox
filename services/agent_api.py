@@ -72,8 +72,9 @@ from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional, Union, cast
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from agents.graph import app as agent_app
+from agents.graph import app as agent_app, react_app
 from agents.state import AgentState
+from services.session_store import SessionStore
 import uvicorn
 import json
 import time
@@ -123,11 +124,12 @@ app.add_middleware(
 # ==========================================================
 
 db_pool: Optional[asyncpg.Pool] = None
+session_store: Optional[SessionStore] = None
 
 @app.on_event("startup")
 async def startup():
     """Initialize database connection pool and register plugin HTTP routes on startup"""
-    global db_pool
+    global db_pool, session_store
 
     # Register plugin HTTP routes (plugins already loaded at module level)
     try:
@@ -179,13 +181,24 @@ async def startup():
         logger.warning(f"⚠️  Database connection failed: {e}. Observability logging will be disabled.")
         db_pool = None
 
+    if os.getenv("SESSION_STORE_ENABLED", "true").lower() == "true":
+        try:
+            session_store = await SessionStore.create()
+            logger.info("✅ Session store initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  Session store init failed: {e}")
+            session_store = None
+
 @app.on_event("shutdown")
 async def shutdown():
     """Close database connection pool on shutdown"""
-    global db_pool
+    global db_pool, session_store
     if db_pool:
         await db_pool.close()
         logger.info("Database connection pool closed")
+    if session_store:
+        await session_store.close()
+        logger.info("Session store closed")
 
 async def log_conversation(
     session_id: str,
@@ -1152,6 +1165,27 @@ def parse_message_content(content: Union[str, List[Dict[str, Any]]]) -> str:
         return str(content)
 
 
+def verify_admin_token(token: str) -> None:
+    """Verify admin token from request headers."""
+    expected = os.getenv("ADMIN_TOKEN")
+    if not expected or token != expected:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+
+
+def build_tool_calls_from_trace(reasoning_trace: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Extract tool calls from a reasoning trace."""
+    tool_calls = []
+    for step in reasoning_trace:
+        if step.get("type") == "act":
+            tool_calls.append(
+                {
+                    "tool": step.get("tool_name"),
+                    "args": step.get("tool_args"),
+                }
+            )
+    return tool_calls
+
+
 @app.post("/chat")
 async def chat_legacy_endpoint(
     request: ChatRequest,
@@ -1162,6 +1196,182 @@ async def chat_legacy_endpoint(
     Some clients post to `/chat`; route them to the OpenAI-compatible handler.
     """
     return await chat_completion_endpoint(request=request, user_id=user_id)
+
+
+@app.post("/chat/react")
+async def chat_react_endpoint(
+    request: ChatRequest,
+    user_id: str = Header(default="anonymous", alias="x-user-id"),
+):
+    """ReAct endpoint with visible reasoning trace."""
+    if request.stream:
+        return await chat_react_stream(request, user_id)
+
+    start_time = time.time()
+    
+    if request.thread_id:
+        session_id = request.thread_id
+        if session_store:
+            await session_store.ensure_session(session_id, user_id, "api")
+    else:
+        session_id = await session_store.create_session(user_id, "api") if session_store else str(uuid.uuid4())
+
+    messages_to_process = []
+    if request.messages:
+        messages_to_process = request.messages
+    elif request.input:
+        for item in request.input:
+            if isinstance(item, dict) and "role" in item:
+                content = item.get("content", "")
+                msg = ChatMessage(role=item["role"], content=content)
+                if "tool_calls" in item:
+                    msg.tool_calls = item["tool_calls"]
+                messages_to_process.append(msg)
+    else:
+        raise HTTPException(status_code=422, detail="Either 'messages' or 'input' field is required")
+
+    lc_messages = []
+    user_message = ""
+    for msg in messages_to_process:
+        content_text = parse_message_content(msg.content) if msg.content is not None else ""
+        if msg.role == "user":
+            lc_messages.append(HumanMessage(content=content_text))
+            user_message = content_text
+        elif msg.role == "assistant":
+            tool_calls = msg.tool_calls or []
+            lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
+        elif msg.role == "system":
+            lc_messages.append(SystemMessage(content=content_text))
+
+    if not lc_messages:
+        raise HTTPException(status_code=422, detail="No valid messages to process")
+
+    inputs: AgentState = {
+        "messages": lc_messages,
+        "current_agent": "router",
+        "tool_calls": 0,
+        "confidence": 1.0,
+        "context": {},
+        "plan": [],
+        "step": 0,
+        "reasoning_trace": [],
+        "session_id": session_id,
+    }
+
+    result = await react_app.ainvoke(cast(AgentState, inputs))
+    last_msg = result["messages"][-1]
+    content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
+    reasoning_trace = result.get("reasoning_trace", [])
+
+    latency_ms = int((time.time() - start_time) * 1000)
+    if session_store:
+        await session_store.add_message(
+            session_id=session_id,
+            role="user",
+            content=user_message,
+        )
+        await session_store.add_message(
+            session_id=session_id,
+            role="assistant",
+            content=content or "",
+            reasoning_trace=reasoning_trace,
+            tool_calls=build_tool_calls_from_trace(reasoning_trace),
+            metrics={"latency_ms": latency_ms},
+        )
+
+    return {
+        "id": f"chatcmpl-{int(time.time())}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": request.model or "bestbox-react",
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": content or "",
+                },
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        },
+        "session_id": session_id,
+        "reasoning_trace": reasoning_trace,
+    }
+
+
+async def chat_react_stream(request: ChatRequest, user_id: str):
+    """Stream ReAct response with reasoning steps."""
+    async def generate():
+        try:
+            request_copy = request.model_copy(update={"stream": False})
+            response = await chat_react_endpoint(request_copy, user_id)
+            reasoning_trace = response.get("reasoning_trace", [])
+            for step in reasoning_trace:
+                yield f"data: {json.dumps({'type': 'reasoning_step', 'step': step})}\n\n"
+
+            content = response["choices"][0]["message"]["content"]
+            yield f"data: {json.dumps({'type': 'message', 'content': content})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as e:
+            logger.error(f"ReAct streaming error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+class SessionRatingRequest(BaseModel):
+    rating: str
+    note: Optional[str] = None
+
+
+@app.get("/admin/sessions")
+async def admin_list_sessions(
+    limit: int = 50,
+    offset: int = 0,
+    user_id: Optional[str] = None,
+    status: Optional[str] = None,
+    admin_token: str = Header(..., alias="admin-token"),
+):
+    """List sessions for admin review."""
+    verify_admin_token(admin_token)
+    if not session_store:
+        raise HTTPException(status_code=503, detail="Session store unavailable")
+    return await session_store.list_sessions(limit, offset, user_id, status)
+
+
+@app.get("/admin/sessions/{session_id}")
+async def admin_get_session(
+    session_id: str,
+    admin_token: str = Header(..., alias="admin-token"),
+):
+    """Get full session with messages and reasoning traces."""
+    verify_admin_token(admin_token)
+    if not session_store:
+        raise HTTPException(status_code=503, detail="Session store unavailable")
+    session = await session_store.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+@app.post("/admin/sessions/{session_id}/rating")
+async def admin_rate_session(
+    session_id: str,
+    request: SessionRatingRequest,
+    admin_token: str = Header(..., alias="admin-token"),
+):
+    """Admin rates a session for quality tracking."""
+    verify_admin_token(admin_token)
+    if not session_store:
+        raise HTTPException(status_code=503, detail="Session store unavailable")
+    await session_store.add_rating(session_id, request.rating, request.note)
+    return {"status": "ok", "session_id": session_id, "rating": request.rating}
 
 @app.post("/v1/chat/completions")
 async def chat_completion_endpoint(

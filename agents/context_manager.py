@@ -22,12 +22,14 @@ from langchain_core.messages import (
 import tiktoken
 import logging
 
+from agents.utils import get_llm
+
 logger = logging.getLogger(__name__)
 
 # Configuration
 MAX_CONTEXT_TOKENS = 3500  # Leave headroom for response (4096 - 600)
 MAX_MESSAGES = 10  # Maximum messages in context (excluding system)
-MAX_TOOL_RESULT_CHARS = 6000  # Truncate long tool results (increased for troubleshooting KB)
+MAX_TOOL_RESULT_CHARS = 12000  # Truncate long tool results (increased for troubleshooting KB with images)
 CHARS_PER_TOKEN_ESTIMATE = 4  # Rough estimate for non-tiktoken
 
 
@@ -230,3 +232,57 @@ def get_context_stats(messages: List[BaseMessage]) -> dict:
         "at_risk": total_tokens > MAX_CONTEXT_TOKENS * 0.8,
         "exceeded": total_tokens > MAX_CONTEXT_TOKENS
     }
+
+
+COMPRESSION_PROMPT = """Summarize this conversation history concisely.
+Preserve key facts, decisions, and context needed to continue the conversation.
+
+Conversation:
+{messages}
+
+Summary (be concise, focus on key points):"""
+
+
+def format_messages_for_summary(messages: List[BaseMessage]) -> str:
+    """Format messages for summarization prompt."""
+    lines: List[str] = []
+    for msg in messages:
+        role = "user"
+        if isinstance(msg, AIMessage):
+            role = "assistant"
+        elif isinstance(msg, SystemMessage):
+            role = "system"
+        elif isinstance(msg, ToolMessage):
+            role = "tool"
+
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        lines.append(f"[{role}] {content}")
+    return "\n".join(lines)
+
+
+async def compress_if_needed(
+    messages: List[BaseMessage],
+    token_budget: int = 6000,
+    keep_recent: int = 4,
+) -> List[BaseMessage]:
+    """
+    Summarize older turns if total tokens exceed budget.
+
+    Keeps the last `keep_recent` messages intact.
+    """
+    current_tokens = sum(estimate_message_tokens(m) for m in messages)
+    if current_tokens <= token_budget:
+        return messages
+
+    if len(messages) <= keep_recent:
+        return messages
+
+    old_messages = messages[:-keep_recent]
+    recent_messages = messages[-keep_recent:]
+
+    llm = get_llm(temperature=0.2)
+    summary_prompt = COMPRESSION_PROMPT.format(messages=format_messages_for_summary(old_messages))
+    summary_response = await llm.ainvoke(summary_prompt)
+    summary_text = summary_response.content if hasattr(summary_response, "content") else str(summary_response)
+
+    return [SystemMessage(content=f"Previous conversation summary:\n{summary_text}"), *recent_messages]
