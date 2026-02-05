@@ -86,8 +86,8 @@ def _normalize_troubleshooting_query(raw_query: str) -> str:
         "火花纹": "火花纹残留",
         "脏污": "模具表面污染",
         "污染": "模具表面污染",
-        "尺寸": "产品尺寸",
         "尺寸NG": "产品尺寸NG",
+        "尺寸": "产品尺寸",
     }
     for needle, canonical in keyword_map.items():
         if needle in q:

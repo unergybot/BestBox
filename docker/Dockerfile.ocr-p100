@@ -1,0 +1,87 @@
+# P100-compatible GOT-OCR2.0 Service Container
+# Uses PyTorch 2.1.2 + CUDA 11.8 for P100 (SM60) compatibility
+FROM pytorch/pytorch:2.1.2-cuda11.8-cudnn8-devel
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    TRANSFORMERS_NO_ADVISORY_WARNINGS=1 \
+    OCR_PORT=8084 \
+    CUDA_VISIBLE_DEVICES=0
+
+# Install system dependencies
+# Install system dependencies
+# Remove authoritative CUDA repo list which has expired keys in this older image
+# We don't need to update CUDA, just install curl/git
+RUN rm -f /etc/apt/sources.list.d/cuda.list && \
+    rm -f /etc/apt/sources.list.d/nvidia-ml.list && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip install --upgrade pip wheel setuptools
+
+# Install OCR dependencies
+# pinned versions for stability on P100
+RUN pip install --no-cache-dir \
+    fastapi>=0.109.0 \
+    uvicorn[standard]>=0.27.0 \
+    python-multipart>=0.0.9 \
+    transformers>=4.40.0 \
+    tiktoken \
+    verovio \
+    accelerate>=0.26.0 \
+    pillow>=10.0 \
+    scipy \
+    torchvision \
+    protobuf
+
+# Pre-download GOT-OCR2.0 model to cache it in image
+# NOTE: Disabled due to PyTorch 2.1.2 compatibility issues with GOT-OCR2.0
+# The model will be downloaded on first service startup instead
+# This prevents downloading 1.4GB on every container start, but first start will be slower
+# RUN python -c "from transformers import AutoModel, AutoTokenizer; \
+#     AutoTokenizer.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True); \
+#     AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True)"
+
+# Copy OCR service code
+# We copy the specific file to matching directory structure expected by imports
+COPY services/ocr /app/services/ocr
+
+# Expose port
+EXPOSE 8084
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost:8084/health || exit 1
+
+# Start script
+COPY <<'EOF' /app/start-ocr.sh
+#!/bin/bash
+set -e
+echo "Starting P100 OCR Service (GOT-OCR2.0)..."
+echo "  Model: stepfun-ai/GOT-OCR2_0"
+echo "  Device: cuda:0"
+echo "  Port: $OCR_PORT"
+
+# Run uvicorn directly
+# Note: we are inside /app, so module path services.ocr.got_ocr_service works
+# if we set PYTHONPATH or run from parent. 
+# Better: since we copied to /app/services/ocr, we can run module from /app
+
+export PYTHONPATH=/app
+
+python -m uvicorn services.ocr.got_ocr_service:app \
+    --host 0.0.0.0 \
+    --port "$OCR_PORT" \
+    --log-level info
+EOF
+
+RUN chmod +x /app/start-ocr.sh
+
+CMD ["/app/start-ocr.sh"]

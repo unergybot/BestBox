@@ -53,7 +53,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
         <div className="min-w-0">
           <span className="text-xs font-medium text-gray-500">Problem:</span>
           <p className="text-xs sm:text-sm text-gray-800 mt-0.5 break-words">
-            {truncate(data.problem, 100)}
+            {truncate(data.problem, 200)}
           </p>
         </div>
 
@@ -61,7 +61,7 @@ export const SummaryView: React.FC<SummaryViewProps> = ({
         <div className="min-w-0">
           <span className="text-xs font-medium text-gray-500">Solution:</span>
           <p className="text-xs sm:text-sm text-gray-600 mt-0.5 break-words">
-            {truncate(data.solution, 150)}
+            {truncate(data.solution, 300)}
           </p>
         </div>
 

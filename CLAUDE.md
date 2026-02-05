@@ -24,8 +24,8 @@ docker compose up -d                    # Qdrant, PostgreSQL, Redis
 
 # Backend services (each in separate terminal)
 ./scripts/start-llm.sh                  # LLM server on :8080 (AMD Vulkan)
-./scripts/start-llm-cuda.sh             # LLM server on :8080 (NVIDIA CUDA)
-./scripts/start-embeddings.sh           # Embeddings on :8081
+./scripts/start-llm-cuda.sh             # LLM server on :8001 (NVIDIA CUDA)
+./scripts/start-embeddings.sh           # Embeddings and Reranker on :8004
 ./scripts/start-agent-api.sh            # Agent API on :8000
 
 # Frontend
@@ -40,9 +40,9 @@ cd frontend/copilot-demo && npm run lint # Frontend linting
 
 ### Health Checks
 ```bash
-curl http://localhost:8080/health       # LLM server
-curl http://localhost:8081/health       # Embeddings
-curl http://localhost:8082/health       # Reranker
+curl http://localhost:8001/health       # LLM server
+curl http://localhost:8004/health       # Embeddings
+curl http://localhost:8004/health       # Reranker
 curl http://localhost:8000/health       # Agent API
 ```
 
@@ -86,9 +86,9 @@ python scripts/seed_knowledge_base.py
 ### Service Ports
 | Service | Port |
 |---------|------|
-| LLM (llama-server) | 8080 |
-| Embeddings (BGE-M3) | 8081 |
-| Reranker (BGE-reranker-v2-m3) | 8082 |
+| LLM (llama-server) | 8001 |
+| Embeddings (BGE-M3) | 8004 |
+| Reranker (BGE-reranker-v2-m3) | 8004 |
 | Agent API | 8000 |
 | S2S Gateway | 8765 |
 | Frontend | 3000 |

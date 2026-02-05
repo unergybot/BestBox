@@ -264,6 +264,7 @@ class ChatRequest(BaseModel):
     thread_id: Optional[str] = None
     stream: Optional[bool] = False
     tools: Optional[List[Dict[str, Any]]] = None
+    metadata: Optional[Dict[str, Any]] = None  # For force_domain, query_type, etc.
 
 class ChatResponse(BaseModel):
     response: str
@@ -411,12 +412,99 @@ async def admin_process_sample_troubleshooting_xlsx(
         logger.error(f"Admin sample processing failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Sample processing failed: {str(e)}")
 
+# ==========================================================
+# Direct Troubleshooting Query Endpoint (Performance Optimization)
+# ==========================================================
+# Bypasses agent entirely for structured queries, saving 1-3 seconds
+
+class TroubleshootingQueryRequest(BaseModel):
+    """Request model for direct troubleshooting queries."""
+    query: str
+    mode: Optional[str] = "AUTO"  # AUTO, STRUCTURED, SEMANTIC, HYBRID
+    top_k: int = 10
+    filters: Optional[Dict[str, Any]] = None
+    return_sql: bool = False
+
+
+class TroubleshootingQueryResponse(BaseModel):
+    """Response model for direct troubleshooting queries."""
+    query: str
+    expanded_query: str
+    mode: str
+    total_found: int
+    results: List[Dict[str, Any]]
+    generated_sql: Optional[str] = None
+    latency_ms: int
+
+
+@app.post("/v1/troubleshooting/query", response_model=TroubleshootingQueryResponse)
+async def direct_troubleshooting_query(request: TroubleshootingQueryRequest):
+    """
+    Direct troubleshooting query endpoint - bypasses agent for faster responses.
+
+    Use this endpoint for structured queries (counts, filters) where full agent
+    reasoning is not needed. Saves 1-3 seconds compared to /v1/chat/completions.
+
+    Query types:
+    - STRUCTURED: SQL queries (counts, filters, aggregations)
+    - SEMANTIC: Vector search (similarity, concepts)
+    - HYBRID: Both SQL + vector with result fusion
+    - AUTO: Let system detect best approach
+
+    Examples:
+    - "有多少个披锋问题" → STRUCTURED (count query)
+    - "披锋怎么解决" → SEMANTIC (how-to query)
+    - "HIPS材料的披锋解决方案" → HYBRID (filtered semantic)
+    """
+    import time
+    start_time = time.time()
+
+    try:
+        from services.troubleshooting.hybrid_searcher import HybridSearcher
+
+        searcher = HybridSearcher(
+            pg_host=os.getenv("POSTGRES_HOST", "localhost"),
+            pg_port=int(os.getenv("POSTGRES_PORT", "5432")),
+            pg_database=os.getenv("POSTGRES_DB", "bestbox"),
+            pg_user=os.getenv("POSTGRES_USER", "bestbox"),
+            pg_password=os.getenv("POSTGRES_PASSWORD", "bestbox"),
+            qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
+            qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
+            llm_url=os.getenv("LLM_BASE_URL", "http://localhost:8001"),
+            embeddings_url=os.getenv("EMBEDDINGS_URL", "http://localhost:8004"),
+        )
+
+        result = searcher.search(
+            query=request.query,
+            mode=request.mode,  # type: ignore
+            top_k=request.top_k,
+            filters=request.filters,
+            return_sql=request.return_sql,
+        )
+
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        return TroubleshootingQueryResponse(
+            query=result["query"],
+            expanded_query=result["expanded_query"],
+            mode=result["mode"],
+            total_found=result["total_found"],
+            results=result["results"],
+            generated_sql=result.get("generated_sql"),
+            latency_ms=latency_ms,
+        )
+
+    except Exception as e:
+        logger.error(f"Direct troubleshooting query failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+
+
 @app.get("/api/troubleshooting/images/{image_id}")
 async def get_troubleshooting_image(image_id: str):
     """
     Serve troubleshooting case images.
     Images are stored in data/troubleshooting/processed/images/
-    
+
     Handles both prefixed (with timestamp) and non-prefixed image IDs.
     """
     import os
@@ -907,16 +995,26 @@ async def responses_api_stream(request: ChatRequest):
                 elif msg.role == "system":
                     lc_messages.append(SystemMessage(content=content_text))
             
+            # Extract optimization metadata
+            force_domain = None
+            query_type = None
+            if request.metadata:
+                force_domain = request.metadata.get("force_domain")
+                query_type = request.metadata.get("query_type")
+
             inputs: AgentState = {
                 "messages": lc_messages,
                 "current_agent": "router",
                 "tool_calls": 0,
                 "confidence": 1.0,
-                "context": {},
+                "context": {
+                    "force_domain": force_domain,
+                    "query_type": query_type,
+                },
                 "plan": [],
                 "step": 0
             }
-            
+
             # 1. Send response.created event
             created_event = {
                 "type": "response.created",
@@ -1062,16 +1160,26 @@ async def chat_completion_stream(request: ChatRequest):
                 elif msg.role == "system":
                     lc_messages.append(SystemMessage(content=content_text))
             
+            # Extract optimization metadata
+            force_domain = None
+            query_type = None
+            if request.metadata:
+                force_domain = request.metadata.get("force_domain")
+                query_type = request.metadata.get("query_type")
+
             inputs: AgentState = {
                 "messages": lc_messages,
                 "current_agent": "router",
                 "tool_calls": 0,
                 "confidence": 1.0,
-                "context": {},
+                "context": {
+                    "force_domain": force_domain,
+                    "query_type": query_type,
+                },
                 "plan": [],
                 "step": 0
             }
-            
+
             # Get response from agent
             result = await agent_app.ainvoke(cast(AgentState, inputs))
             last_msg = result["messages"][-1]
@@ -1376,7 +1484,9 @@ async def admin_rate_session(
 @app.post("/v1/chat/completions")
 async def chat_completion_endpoint(
     request: ChatRequest,
-    user_id: str = Header(default="anonymous", alias="x-user-id")
+    user_id: str = Header(default="anonymous", alias="x-user-id"),
+    openclaw_session: Optional[str] = Header(None, alias="X-OpenClaw-Session"),
+    openclaw_channel: Optional[str] = Header(None, alias="X-OpenClaw-Channel"),
 ):
     """
     OpenAI-compatible endpoint supporting both standard and CopilotKit formats.
@@ -1394,7 +1504,16 @@ async def chat_completion_endpoint(
     # ==========================================================
 
     start_time = time.time()
-    session_id = request.thread_id or str(uuid.uuid4())
+    
+    # OpenClaw session bridging: use prefixed session ID when OpenClaw headers present
+    if openclaw_session:
+        session_id = f"oc-{openclaw_session}"
+        channel = openclaw_channel or "openclaw"
+        if session_store:
+            await session_store.ensure_session(session_id, openclaw_session, channel)
+        logger.info(f"Bridged OpenClaw session: {openclaw_session} -> {session_id} (channel: {channel})")
+    else:
+        session_id = request.thread_id or str(uuid.uuid4())
 
     # Get current trace context (for linking to Jaeger)
     current_span = trace.get_current_span() if OPENTELEMETRY_AVAILABLE else None
@@ -1458,12 +1577,24 @@ async def chat_completion_endpoint(
             active_sessions.dec()
         raise HTTPException(status_code=422, detail="No valid messages to process")
 
+    # Extract optimization metadata from request
+    force_domain = None
+    query_type = None
+    if request.metadata:
+        force_domain = request.metadata.get("force_domain")
+        query_type = request.metadata.get("query_type")  # count, semantic, hybrid
+        if force_domain:
+            logger.info(f"force_domain={force_domain} from metadata (skipping router LLM)")
+
     inputs: AgentState = {
         "messages": lc_messages,
         "current_agent": "router",
         "tool_calls": 0,
         "confidence": 1.0,
-        "context": {},
+        "context": {
+            "force_domain": force_domain,
+            "query_type": query_type,
+        },
         "plan": [],
         "step": 0
     }

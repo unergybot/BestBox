@@ -4,7 +4,7 @@ import { CopilotKit, useCopilotChat } from "@copilotkit/react-core";
 import { CopilotChat, AssistantMessage as CopilotKitAssistantMessage } from "@copilotkit/react-ui";
 import { VoiceInput } from "@/components/VoiceInput";
 import { ServiceStatusCard } from "@/components/ServiceStatusCard";
-import { detectTroubleshootingResults } from "@/lib/troubleshooting-detector";
+import { detectTroubleshootingResults, isTroubleshootingResult, normalizeToTroubleshootingIssue } from "@/lib/troubleshooting-detector";
 import { TroubleshootingCard } from "@/components/troubleshooting";
 import { ChatMessagesProvider, useChatMessages as useTroubleshootingMessages } from "@/contexts/ChatMessagesContext";
 import "@copilotkit/react-ui/styles.css";
@@ -44,47 +44,68 @@ function TroubleshootingCodeBlock({ inline, className, children, ...props }: any
     const normalized = code.replace(/\n$/, '').trim();
 
     // Try to parse as JSON directly (since we already have the code block content)
+    let troubleshootingIssues: TroubleshootingIssue[] = [];
+
     try {
       const parsed = JSON.parse(normalized);
 
       // Check if it's a troubleshooting search results wrapper
       if (parsed && parsed.results && Array.isArray(parsed.results)) {
-        const issues = parsed.results.filter(
-          (r: any) => r.result_type === 'specific_solution'
-        ) as TroubleshootingIssue[];
+        const issues = parsed.results
+          .filter((r: any) => isTroubleshootingResult(r))
+          .map((r: any) => normalizeToTroubleshootingIssue(r))
+          .filter((r: TroubleshootingIssue) => r.result_type === 'specific_solution');
 
         if (issues.length > 0) {
           // Deduplicate by case_id + issue_number + problem + solution
           const seenKeys = new Set<string>();
-          const uniqueIssues = issues.filter((issue) => {
+          troubleshootingIssues = issues.filter((issue: TroubleshootingIssue) => {
             const key = `${issue.case_id}-${issue.issue_number}-${issue.problem}-${issue.solution}`;
             if (seenKeys.has(key)) return false;
             seenKeys.add(key);
             return true;
           });
+        }
+      }
+      // Check if it's a raw array of troubleshooting results (some models output this format)
+      else if (Array.isArray(parsed)) {
+        const issues = parsed
+          .filter((r: any) => isTroubleshootingResult(r))
+          .map((r: any) => normalizeToTroubleshootingIssue(r))
+          .filter((r: TroubleshootingIssue) => r.result_type === 'specific_solution');
 
-          return (
-            <div className="space-y-4 my-4">
-              {uniqueIssues.map((issue, index) => (
-                <TroubleshootingCard
-                  key={`${issue.case_id}-${issue.issue_number}-${index}`}
-                  data={issue}
-                />
-              ))}
-            </div>
-          );
+        if (issues.length > 0) {
+          const seenKeys = new Set<string>();
+          troubleshootingIssues = issues.filter((issue: TroubleshootingIssue) => {
+            const key = `${issue.case_id}-${issue.issue_number}-${issue.problem}-${issue.solution}`;
+            if (seenKeys.has(key)) return false;
+            seenKeys.add(key);
+            return true;
+          });
         }
       }
       // Check if it's a single troubleshooting result
-      else if (parsed && parsed.result_type === 'specific_solution') {
-        return (
-          <div className="space-y-4 my-4">
-            <TroubleshootingCard data={parsed as TroubleshootingIssue} />
-          </div>
-        );
+      else if (isTroubleshootingResult(parsed)) {
+        const issue = normalizeToTroubleshootingIssue(parsed);
+        if (issue.result_type === 'specific_solution') {
+          troubleshootingIssues = [issue];
+        }
       }
     } catch {
       // Not valid JSON or not troubleshooting data - fall through to default rendering
+    }
+
+    if (troubleshootingIssues.length > 0) {
+      return (
+        <div className="space-y-4 my-4">
+          {troubleshootingIssues.map((issue: TroubleshootingIssue, index: number) => (
+            <TroubleshootingCard
+              key={`${issue.case_id}-${issue.issue_number}-${index}`}
+              data={issue}
+            />
+          ))}
+        </div>
+      );
     }
   }
 

@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Configuration for local services - use environment variables with defaults
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8080/v1")
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8001/v1")
 EMBEDDINGS_BASE_URL = os.environ.get("EMBEDDINGS_BASE_URL", "http://127.0.0.1:8004/v1")
 
 SPEECH_FORMAT_INSTRUCTION = """
@@ -21,25 +21,27 @@ Example:
 Based on the financial reports, the Q4 revenue hit $15M... (rest of detailed answer)
 """
 
-def get_llm(temperature: float = 0.7):
+def get_llm(temperature: float = 0.7, max_tokens: int = 4096):
     """
     Get the configured ChatOpenAI instance connected to local llama-server.
 
     Note: The startup script unsets proxy environment variables to ensure local
     services can communicate directly without going through proxies.
-    
+
     Environment variables:
-    - LLM_BASE_URL: URL of the LLM server (default: http://127.0.0.1:8080/v1)
+    - LLM_BASE_URL: URL of the LLM server (default: http://127.0.0.1:8001/v1)
+    - LLM_MAX_TOKENS: Maximum tokens for response (default: 4096)
     """
-    logger.info(f"Creating LLM client with base_url={LLM_BASE_URL}")
+    response_max_tokens = int(os.environ.get("LLM_MAX_TOKENS", str(max_tokens)))
+    logger.info(f"Creating LLM client with base_url={LLM_BASE_URL}, max_tokens={response_max_tokens}")
     return ChatOpenAI(
         base_url=LLM_BASE_URL,
         api_key="sk-no-key-required",  # Local server doesn't need real API key
         model=os.environ.get("LLM_MODEL", "qwen3-30b-a3b"),
         temperature=temperature,
         streaming=True,
-        request_timeout=120,  # Increased to 120 seconds for complex queries
         max_retries=2,  # Retry on transient failures
+        max_tokens=response_max_tokens,  # Ensure response isn't truncated
     )
 
 class LocalBGEEmbeddings(OpenAIEmbeddings):

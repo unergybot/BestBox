@@ -15,20 +15,35 @@ interface Session {
   rating_note?: string;
 }
 
+interface ReasoningStep {
+  type: "think" | "act" | "observe" | "answer";
+  content: string;
+  tool_name?: string;
+  tool_args?: Record<string, unknown>;
+  timestamp: number;
+}
+
 interface SessionMessage {
   role: string;
   content: string;
-  reasoning_trace?: Array<{
-    type: "think" | "act" | "observe" | "answer";
-    content: string;
-    tool_name?: string;
-    tool_args?: Record<string, unknown>;
-    timestamp: number;
-  }>;
+  reasoning_trace?: string | ReasoningStep[];  // Can be JSON string or parsed array
 }
 
 interface SessionDetail extends Session {
   messages: SessionMessage[];
+}
+
+const API_BASE = "http://localhost:8000";
+
+function parseReasoningTrace(trace: string | ReasoningStep[] | undefined | null): ReasoningStep[] {
+  if (!trace) return [];
+  if (Array.isArray(trace)) return trace;
+  try {
+    const parsed = JSON.parse(trace);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 export default function AdminPage() {
@@ -64,7 +79,7 @@ export default function AdminPage() {
     if (!isAuthenticated) return;
     const fetchSessions = async () => {
       setLoading(true);
-      const res = await fetch("/admin/sessions", {
+      const res = await fetch(`${API_BASE}/admin/sessions`, {
         headers: { "admin-token": adminToken },
       });
       if (res.ok) {
@@ -78,7 +93,7 @@ export default function AdminPage() {
 
   const loadSessionDetail = async (sessionId: string) => {
     setLoading(true);
-    const res = await fetch(`/admin/sessions/${sessionId}`, {
+    const res = await fetch(`${API_BASE}/admin/sessions/${sessionId}`, {
       headers: { "admin-token": adminToken },
     });
     if (res.ok) {
@@ -89,7 +104,7 @@ export default function AdminPage() {
   };
 
   const rateSession = async (sessionId: string, rating: "good" | "bad") => {
-    await fetch(`/admin/sessions/${sessionId}/rating`, {
+    await fetch(`${API_BASE}/admin/sessions/${sessionId}/rating`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -202,8 +217,8 @@ export default function AdminPage() {
                   <div key={idx} className="border border-gray-200 rounded-lg p-3">
                     <div className="text-xs uppercase text-gray-400 mb-2">{msg.role}</div>
                     <div className="text-sm text-gray-800 whitespace-pre-wrap mb-3">{msg.content}</div>
-                    {msg.reasoning_trace && msg.reasoning_trace.length > 0 && (
-                      <ReasoningTrace steps={msg.reasoning_trace} />
+                    {msg.reasoning_trace && parseReasoningTrace(msg.reasoning_trace).length > 0 && (
+                      <ReasoningTrace steps={parseReasoningTrace(msg.reasoning_trace)} />
                     )}
                   </div>
                 ))}

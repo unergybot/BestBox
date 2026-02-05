@@ -38,3 +38,8 @@ slack_sdk>=3.0.0
 slack_bolt>=1.18.0
 aiohttp>=3.9.0
 python-telegram-bot>=20.0
+
+# OCR Service (GOT-OCR2.0)
+transformers>=4.40.0
+tiktoken
+verovio  # For GOT-OCR music/formula support

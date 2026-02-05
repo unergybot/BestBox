@@ -20,7 +20,7 @@ export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-max_split_size_mb:512}
 
 # BestBox local services (CUDA docker defaults; override by exporting beforehand)
 export LLM_BASE_URL=${LLM_BASE_URL:-http://127.0.0.1:8001/v1}
-export LLM_MODEL=${LLM_MODEL:-Qwen/Qwen3-4B-Instruct-2507}
+export LLM_MODEL=${LLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}
 export EMBEDDINGS_URL=${EMBEDDINGS_URL:-http://127.0.0.1:8004}
 export RERANKER_URL=${RERANKER_URL:-http://127.0.0.1:8004}
 

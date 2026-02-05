@@ -32,6 +32,7 @@ import json
 import logging
 
 from services.troubleshooting.embedder import TroubleshootingEmbedder
+from services.troubleshooting.cache import TroubleshootingCache
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,7 +52,8 @@ class TroubleshootingSearcher:
         ),
         reranker_url: str = os.getenv("RERANKER_URL", "http://172.23.0.3:8003"),
         qdrant_host: str = "localhost",
-        qdrant_port: int = 6333
+        qdrant_port: int = 6333,
+        enable_cache: bool = True,
     ):
         """Initialize searcher with service URLs"""
 
@@ -72,7 +74,36 @@ class TroubleshootingSearcher:
         self.qdrant = QdrantClient(host=qdrant_host, port=qdrant_port)
         self.embedder = TroubleshootingEmbedder(embeddings_url=embeddings_url)
 
-        logger.info("Searcher initialized")
+        # Initialize cache for embeddings and search results
+        self.cache = TroubleshootingCache(enabled=enable_cache)
+
+        logger.info(f"Searcher initialized (cache={enable_cache})")
+
+    def _get_embedding_cached(self, query: str) -> List[float]:
+        """
+        Get embedding with caching.
+
+        Checks cache first; if miss, generates embedding and caches it.
+        Saves 100-300ms on cache hits.
+
+        Args:
+            query: Query text
+
+        Returns:
+            Embedding vector
+        """
+        # Try cache first
+        cached = self.cache.get_embedding(query)
+        if cached is not None:
+            return cached
+
+        # Cache miss - generate embedding
+        embedding = self.embedder._get_embedding(query)
+
+        # Store in cache (async-safe for sync caller)
+        self.cache.set_embedding(query, embedding)
+
+        return embedding
 
     def search(
         self,
@@ -213,8 +244,8 @@ class TroubleshootingSearcher:
     ) -> List[Dict]:
         """Case-level search"""
 
-        # Get query embedding
-        query_embedding = self.embedder._get_embedding(query)
+        # Get query embedding (with caching)
+        query_embedding = self._get_embedding_cached(query)
 
         # Build Qdrant filter
         qdrant_filter = self._build_filter(filters) if filters else None
@@ -255,8 +286,8 @@ class TroubleshootingSearcher:
     ) -> List[Dict]:
         """Issue-level search with reranking"""
 
-        # Stage 1: Vector search (retrieve 3x for reranking)
-        query_embedding = self.embedder._get_embedding(query)
+        # Stage 1: Vector search (retrieve 3x for reranking) - with caching
+        query_embedding = self._get_embedding_cached(query)
         qdrant_filter = self._build_filter(filters) if filters else None
 
         response = self.qdrant.query_points(

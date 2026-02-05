@@ -6,7 +6,7 @@
 set -e
 
 # Configuration (override via environment variables)
-MODEL="${LLM_MODEL:-Qwen/Qwen3-4B-Instruct-2507}"
+MODEL="${LLM_MODEL:-Qwen/Qwen2.5-14B-Instruct}"
 MODEL_PATH="${LLM_MODEL_PATH:-}"
 PORT="${LLM_PORT:-8001}"
 CUDA_DEVICE="${LLM_CUDA_DEVICE:-1}"

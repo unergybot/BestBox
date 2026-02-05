@@ -26,7 +26,7 @@ function extractCodeBlocks(text: string, language?: string): string[] {
  * - { result_type: "specific_solution", ... }
  * - { case_id, part_number, trial_version, problem, solution, ... }
  */
-function isTroubleshootingResult(data: any): data is TroubleshootingResult {
+export function isTroubleshootingResult(data: any): data is TroubleshootingResult {
   if (!data || typeof data !== "object") return false;
 
   // Format 1: Has result_type field
@@ -60,7 +60,7 @@ function isTroubleshootingSearchResults(data: any): data is TroubleshootingSearc
 /**
  * Normalize a result to TroubleshootingIssue format
  */
-function normalizeToTroubleshootingIssue(item: any): TroubleshootingIssue {
+export function normalizeToTroubleshootingIssue(item: any): TroubleshootingIssue {
   const buildImageUrl = (img: any, idx: number): string => {
     if (typeof img?.image_url === "string" && img.image_url.length > 0) {
       // If backend already provided a local path, normalize it through the Next.js proxy
@@ -146,6 +146,14 @@ export function detectTroubleshootingResults(content: string): TroubleshootingRe
       // Check if it's a search results wrapper with results array
       if (isTroubleshootingSearchResults(parsed)) {
         for (const result of parsed.results) {
+          if (isTroubleshootingResult(result)) {
+            results.push(normalizeToTroubleshootingIssue(result));
+          }
+        }
+      }
+      // Check if it's a raw array of troubleshooting results (some models output this format)
+      else if (Array.isArray(parsed)) {
+        for (const result of parsed) {
           if (isTroubleshootingResult(result)) {
             results.push(normalizeToTroubleshootingIssue(result));
           }

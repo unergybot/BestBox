@@ -449,9 +449,9 @@ class ExcelTroubleshootingExtractor:
                 # Issue reasonably close to image - medium confidence
                 confidence = max(0.6, 0.85 - (distance_to_image_start * 0.05))
                 match_type = 'secondary'
-            elif distance_to_image_start <= 15:
-                # Issue further away but still potentially related
-                confidence = max(0.4, 0.65 - (distance_to_image_start * 0.03))
+            elif distance_to_image_start <= 50:
+                # Issue further away but still potentially related (e.g. attached page)
+                confidence = max(0.4, 0.65 - (distance_to_image_start * 0.01))
                 match_type = 'tertiary'
             else:
                 # Too far, likely belongs to a different issue

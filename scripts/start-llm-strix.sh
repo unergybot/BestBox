@@ -10,7 +10,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 # Configuration
 LLAMA_SERVER="${PROJECT_DIR}/third_party/llama.cpp/build/bin/llama-server"
 # Default to Qwen3-30B MoE as recommended in docs
-MODEL_PATH="${HOME}/models/30b/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf"
+MODEL_PATH="${HOME}/models/14b/Qwen2.5-14B-Instruct-Q4_K_M.gguf"
 PORT=8080
 HOST="0.0.0.0"
 CONTEXT_SIZE=8192

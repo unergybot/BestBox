@@ -48,37 +48,74 @@ DESTINATION_DOMAIN_MAP = {
     "fallback": "general",
 }
 
+# Reverse map: domain -> agent name
+DOMAIN_TO_AGENT_MAP = {
+    "erp": "erp_agent",
+    "crm": "crm_agent",
+    "it_ops": "it_ops_agent",
+    "itops": "it_ops_agent",
+    "oa": "oa_agent",
+    "mold": "mold_agent",
+    "general": "general_agent",
+}
+
 
 def router_node(state: AgentState):
     """
     Analyzes the latest message and decides the next agent.
     Uses context management to prevent context overflow.
+
+    Supports force_domain optimization: if state.context.force_domain is set,
+    skip LLM classification and route directly to the specified domain agent.
+    This saves 200-500ms per request when the caller knows the domain.
     """
+    context = state.get("context", {})
+    force_domain = context.get("force_domain") if context else None
+
+    # OPTIMIZATION: Skip LLM classification if force_domain is set
+    if force_domain:
+        agent_name = DOMAIN_TO_AGENT_MAP.get(force_domain.lower())
+        if agent_name:
+            merged_context = dict(context)
+            merged_context.update({
+                "primary_domain": force_domain,
+                "secondary_domains": [],
+                "router_reasoning": f"Forced routing to {force_domain} (skipped LLM classification)",
+                "router_skipped": True,
+            })
+            return {
+                "current_agent": agent_name,
+                "confidence": 1.0,
+                "reasoning": f"Direct routing via force_domain={force_domain}",
+                "context": merged_context,
+            }
+
+    # Standard LLM-based routing
     llm = get_llm(temperature=0.1) # Low temp for classification
-    
+
     # Simple structured output wrapper since we are using Qwen
     # We can ask it to output JSON directly or use with_structured_output if supported by the backend/library combo.
     # Qwen supports function calling, so we can try .with_structured_output(RouteDecision)
-    
+
     structured_llm = llm.with_structured_output(RouteDecision)
-    
+
     # Apply sliding window to prevent context overflow
     # Router only needs recent context for classification
     messages = apply_sliding_window(
-        state["messages"], 
+        state["messages"],
         max_tokens=1500,  # Router needs minimal context
         max_messages=3,   # Only recent messages matter for routing
         keep_system=False
     )
-    
+
     # Create prompt
     prompt = ChatPromptTemplate.from_messages([
         ("system", ROUTER_SYSTEM_PROMPT),
         ("placeholder", "{messages}"),
     ])
-    
+
     chain = prompt | structured_llm
-    
+
     try:
         decision: RouteDecision = chain.invoke({"messages": messages})
         primary_domain = DESTINATION_DOMAIN_MAP.get(decision.destination, "general")

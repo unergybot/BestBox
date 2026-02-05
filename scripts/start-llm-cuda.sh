@@ -9,11 +9,12 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Configuration (override via environment variables)
 LLAMA_SERVER_BIN="${LLM_SERVER_BIN:-}"
-MODEL_PATH="${LLM_MODEL_PATH:-${HOME}/models/4b/Qwen3-4B-Instruct-Q4_K_M.gguf}"
-PORT="${LLM_PORT:-8080}"
+MODEL_PATH="${LLM_MODEL_PATH:-/home/apexai/SHAIE/models/llm/qwen2.5-14b-instruct-q4_k_m.gguf}"
+PORT="${LLM_PORT:-8001}"
 HOST="${LLM_HOST:-0.0.0.0}"
-CONTEXT_SIZE="${LLM_CONTEXT_SIZE:-4096}"
+CONTEXT_SIZE="${LLM_CONTEXT_SIZE:-8192}"
 GPU_LAYERS="${LLM_GPU_LAYERS:-999}"
+N_PREDICT="${LLM_N_PREDICT:-4096}"  # Max tokens to generate per response
 LOG_FILE="${LLM_LOG_FILE:-${PROJECT_DIR}/llama-server.log}"
 
 # Optional: pin to a specific CUDA device (useful for multi-GPU systems)
@@ -70,6 +71,7 @@ nohup "$LLAMA_SERVER" \
     --host "$HOST" \
     -c "$CONTEXT_SIZE" \
     --n-gpu-layers "$GPU_LAYERS" \
+    --n-predict "$N_PREDICT" \
     > "$LOG_FILE" 2>&1 &
 
 SERVER_PID=$!
