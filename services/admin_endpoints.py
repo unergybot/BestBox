@@ -1293,6 +1293,157 @@ async def _index_chunks(
     return len(points)
 
 
+async def _index_chunks_with_enrichment(
+    chunks: List[Dict[str, Any]],
+    enrichment_results: Optional[List] = None,
+    collection: str = "mold_reference_kb",
+) -> int:
+    """Embed and index chunks into Qdrant, optionally adding enriched points.
+
+    When *enrichment_results* is provided (a list parallel to *chunks*), each
+    non-None entry causes an additional "enriched" point to be created alongside
+    the "original" point.  Enrichment metadata tags are applied to both points
+    via ``qdrant.set_payload()``.
+
+    When *enrichment_results* is ``None`` the function behaves identically to
+    :func:`_index_chunks` (only original points are created).
+
+    Returns the total number of points upserted.
+    """
+    import httpx
+    from qdrant_client import QdrantClient
+    from qdrant_client.models import PointStruct, VectorParams, Distance
+
+    embeddings_url = os.getenv(
+        "EMBEDDINGS_URL",
+        os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
+    )
+
+    # ------------------------------------------------------------------
+    # 1. Build parallel lists: texts to embed  +  point specs
+    # ------------------------------------------------------------------
+    texts: List[str] = []
+    point_specs: List[Dict[str, Any]] = []  # chunk_index, chunk_type, text, metadata
+
+    for i, chunk in enumerate(chunks):
+        base_metadata = {**chunk["metadata"]}
+        chunk_text = chunk["text"]
+
+        # Original point
+        texts.append(chunk_text)
+        point_specs.append({
+            "chunk_index": i,
+            "chunk_type": "original",
+            "text": chunk_text,
+            "metadata": base_metadata,
+        })
+
+        # Enriched point (only when enrichment was performed and succeeded)
+        if (
+            enrichment_results is not None
+            and i < len(enrichment_results)
+            and enrichment_results[i] is not None
+        ):
+            enriched_text = enrichment_results[i].to_enriched_text()
+            texts.append(enriched_text)
+            point_specs.append({
+                "chunk_index": i,
+                "chunk_type": "enriched",
+                "text": enriched_text,
+                "metadata": {**base_metadata},
+            })
+
+    if not texts:
+        return 0
+
+    # ------------------------------------------------------------------
+    # 2. Embed all texts in one batch call
+    # ------------------------------------------------------------------
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{embeddings_url}/embed",
+                json={"texts": texts},
+            )
+            resp.raise_for_status()
+            embeddings = resp.json().get("embeddings", [])
+    except Exception as e:
+        logger.error(f"Embedding failed: {e}")
+        return 0
+
+    if len(embeddings) != len(texts):
+        logger.error(
+            f"Embedding count mismatch: {len(embeddings)} vs {len(texts)}"
+        )
+        return 0
+
+    # ------------------------------------------------------------------
+    # 3. Ensure Qdrant collection exists
+    # ------------------------------------------------------------------
+    qdrant = QdrantClient(
+        host=os.getenv("QDRANT_HOST", "localhost"),
+        port=int(os.getenv("QDRANT_PORT", "6333")),
+    )
+
+    try:
+        qdrant.get_collection(collection)
+    except Exception:
+        vector_size = len(embeddings[0]) if embeddings else 1024
+        qdrant.create_collection(
+            collection_name=collection,
+            vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+        )
+
+    # ------------------------------------------------------------------
+    # 4. Build PointStruct list and upsert
+    # ------------------------------------------------------------------
+    points: List[PointStruct] = []
+    point_ids_by_chunk: Dict[int, Dict[str, str]] = {}  # chunk_idx -> {type: point_id}
+
+    for spec, embedding in zip(point_specs, embeddings):
+        point_id = str(uuid.uuid4())
+        payload = {
+            **spec["metadata"],
+            "text": spec["text"],
+            "chunk_type": spec["chunk_type"],
+        }
+        points.append(PointStruct(id=point_id, vector=embedding, payload=payload))
+
+        # Track point IDs by chunk index for later set_payload
+        cidx = spec["chunk_index"]
+        if cidx not in point_ids_by_chunk:
+            point_ids_by_chunk[cidx] = {}
+        point_ids_by_chunk[cidx][spec["chunk_type"]] = point_id
+
+    qdrant.upsert(collection_name=collection, points=points)
+
+    # ------------------------------------------------------------------
+    # 5. Apply enrichment metadata tags to both original & enriched points
+    # ------------------------------------------------------------------
+    if enrichment_results is not None:
+        for i, er in enumerate(enrichment_results):
+            if er is None:
+                continue
+            enrichment_meta = er.to_metadata()
+            if not enrichment_meta:
+                continue
+
+            ids_for_chunk = point_ids_by_chunk.get(i, {})
+            for _ctype, pid in ids_for_chunk.items():
+                try:
+                    qdrant.set_payload(
+                        collection_name=collection,
+                        payload=enrichment_meta,
+                        points=[pid],
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"set_payload failed for point {pid}: {e}"
+                    )
+
+    return len(points)
+
+
 async def _delete_from_qdrant(doc_id: str, collection: str) -> int:
     """Delete all points matching a doc_id (or source filename) from Qdrant."""
     try:
@@ -1439,10 +1590,13 @@ async def _process_url_job(
 
         if chunks:
             if enrichment_results is not None:
-                # TODO: replace with _index_chunks_with_enrichment in Task 5
-                indexed = await _index_chunks(chunks, body.collection)
+                indexed = await _index_chunks_with_enrichment(
+                    chunks, enrichment_results, body.collection
+                )
             else:
-                indexed = await _index_chunks(chunks, body.collection)
+                indexed = await _index_chunks_with_enrichment(
+                    chunks, None, body.collection
+                )
         else:
             indexed = 0
 
