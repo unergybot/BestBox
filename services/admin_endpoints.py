@@ -807,6 +807,7 @@ async def admin_get_document(
                     "upload_date": upload_date,
                     "uploaded_by": payload.get("uploaded_by", ""),
                     "processing_method": payload.get("processing_method", ""),
+                    "source_url": payload.get("source_url", ""),
                 }
             chunks.append({
                 "chunk_index": payload.get("chunk_index", 0),
@@ -816,6 +817,8 @@ async def admin_get_document(
                 "severity": payload.get("severity", ""),
                 "has_images": payload.get("has_images", False),
                 "image_paths": payload.get("image_paths", []),
+                "chunk_type": payload.get("chunk_type", "original"),
+                "root_cause_category": payload.get("root_cause_category", ""),
             })
 
         chunks.sort(key=lambda c: c.get("chunk_index", 0))
