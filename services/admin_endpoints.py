@@ -475,6 +475,100 @@ async def admin_batch_upload(
 _batch_jobs: Dict[str, Dict[str, Any]] = {}
 
 
+@router.post("/documents/upload-url")
+async def admin_upload_url(
+    body: UploadUrlRequest,
+    request: Request,
+    user: Dict = Depends(require_permission("upload")),
+):
+    """
+    Download a document from a URL and process it through the Docling pipeline.
+
+    Returns a job_id for status polling via GET /admin/documents/jobs/{job_id}.
+    """
+    import asyncio
+    from services.admin_auth import log_audit
+
+    pool = _get_db_pool(request)
+
+    # Duplicate check: look for points with matching source_url in Qdrant
+    if not body.force:
+        try:
+            from qdrant_client import QdrantClient
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+            qdrant = QdrantClient(
+                host=os.getenv("QDRANT_HOST", "localhost"),
+                port=int(os.getenv("QDRANT_PORT", "6333")),
+            )
+            points, _ = qdrant.scroll(
+                collection_name=body.collection,
+                scroll_filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="source_url",
+                            match=MatchValue(value=body.url),
+                        )
+                    ]
+                ),
+                limit=1,
+                with_payload=False,
+                with_vectors=False,
+            )
+            if points:
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "detail": "URL already indexed. Use force=true to re-import."
+                    },
+                )
+        except Exception:
+            # Collection may not exist yet — that's fine, no duplicates
+            pass
+
+    # Download the file
+    saved_path, filename = await _download_url(body.url)
+
+    # Create a job for status polling
+    job_id = str(uuid.uuid4())
+    _batch_jobs[job_id] = {
+        "id": job_id,
+        "status": "processing",
+        "stage": "downloading",
+        "url": body.url,
+        "filename": filename,
+        "total_chunks": 0,
+        "enriched_chunks": 0,
+        "enrichment_progress": "",
+        "completed": 0,
+        "failed": 0,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Dispatch background processing
+    asyncio.create_task(
+        _process_url_job(job_id, saved_path, filename, body, user, pool)
+    )
+
+    # Audit log
+    if pool:
+        await log_audit(
+            pool,
+            user.get("sub"),
+            "upload_url",
+            resource_type="document",
+            resource_id=job_id,
+            details={
+                "url": body.url,
+                "collection": body.collection,
+                "domain": body.domain,
+                "filename": filename,
+            },
+        )
+
+    return {"job_id": job_id, "filename": filename, "status": "processing"}
+
+
 @router.get("/documents/jobs/{job_id}")
 async def admin_get_job_status(
     job_id: str,
@@ -1269,6 +1363,101 @@ async def _fallback_upload(
         "domain": domain,
         "processing_method": "legacy_ocr_fallback",
     }
+
+
+async def _process_url_job(
+    job_id: str,
+    saved_path: Path,
+    filename: str,
+    body: UploadUrlRequest,
+    user: Dict[str, Any],
+    pool,
+):
+    """Background task: process a URL-downloaded file through the full pipeline.
+
+    Stages: converting → chunking → enriching (optional) → indexing.
+    Updates ``_batch_jobs[job_id]`` at each stage for polling.
+    """
+    from services.docling_client import DoclingClient
+    from services.mold_case_extractor import MoldCaseExtractor
+
+    job = _batch_jobs[job_id]
+
+    try:
+        # ----- Stage 1: converting -----
+        job["stage"] = "converting"
+        ext = saved_path.suffix.lower()
+        client = DoclingClient()
+        options = client.options_for_format(ext)
+        if body.ocr_engine != "easyocr":
+            options["ocr_engine"] = body.ocr_engine
+
+        docling_result = await client.convert_file(str(saved_path), options)
+
+        # ----- Stage 2: chunking -----
+        job["stage"] = "chunking"
+
+        chunks: List[Dict[str, Any]] = []
+        if body.domain == "mold" and ext in (".xlsx", ".xls"):
+            extractor = MoldCaseExtractor()
+            chunks = extractor.extract(
+                docling_result,
+                source_file=filename,
+                uploaded_by=user.get("username", ""),
+            )
+        else:
+            chunks = _hierarchical_chunk(
+                docling_result,
+                source_file=filename,
+                domain=body.domain,
+                uploaded_by=user.get("username", ""),
+            )
+
+        # Inject source_url into all chunk metadata
+        for chunk in chunks:
+            chunk.setdefault("metadata", {})["source_url"] = body.url
+
+        job["total_chunks"] = len(chunks)
+
+        # ----- Stage 3: enriching (optional) -----
+        enrichment_results = None
+        if body.enrich and chunks:
+            job["stage"] = "enriching"
+
+            from services.llm_enrichment import enrich_document
+
+            def _progress_callback(done: int, total: int):
+                job["enriched_chunks"] = done
+                job["enrichment_progress"] = f"{done}/{total}"
+
+            enrichment_results = await enrich_document(
+                chunks, body.domain, progress_callback=_progress_callback
+            )
+
+        # ----- Stage 4: indexing -----
+        job["stage"] = "indexing"
+
+        if chunks:
+            if enrichment_results is not None:
+                # TODO: replace with _index_chunks_with_enrichment in Task 5
+                indexed = await _index_chunks(chunks, body.collection)
+            else:
+                indexed = await _index_chunks(chunks, body.collection)
+        else:
+            indexed = 0
+
+        job["completed"] = indexed
+        job["status"] = "completed"
+        job["stage"] = "done"
+        logger.info(
+            f"URL job {job_id} completed: {indexed} chunks indexed from {filename}"
+        )
+
+    except Exception as exc:
+        logger.error(f"URL job {job_id} failed: {exc}", exc_info=True)
+        job["status"] = "failed"
+        job["error"] = str(exc)
+        job["failed"] = 1
 
 
 async def _process_batch(
