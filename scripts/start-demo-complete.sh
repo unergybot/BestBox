@@ -108,6 +108,8 @@ echo -e "🖥️ ${BLUE}Frontend${NC}:           http://localhost:3000"
 echo -e "🧠 ${BLUE}Reranker${NC}:           http://localhost:8082"
 S2S_PORT_DISPLAY="${BESTBOX_S2S_PORT:-8765}"
 echo -e "🗣️ ${BLUE}S2S/Speech${NC}:         http://localhost:${S2S_PORT_DISPLAY}"
+echo -e "👁️ ${BLUE}OCR Service${NC}:        http://localhost:8084"
+
 echo ""
 echo -e "Logs:"
 echo -e "  - Voice Agent:   ${YELLOW}tail -f livekit_agent.log${NC}"

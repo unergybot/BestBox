@@ -176,6 +176,93 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Mold Reference Document Upload */}
+        <div className="mt-6 bg-white rounded-xl shadow-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-800">
+            📄 Mold Reference Documents
+          </h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Upload PDF, DOCX, or PPTX documents for the Mold Knowledge Base. Images will be processed with OCR.
+          </p>
+
+          <div className="mt-4 space-y-4">
+            <div>
+              <input
+                type="file"
+                id="mold-doc-upload"
+                accept=".pdf,.docx,.pptx"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) {
+                    setFile(f);
+                    setResult(null);
+                  }
+                }}
+                className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+              />
+              {file && (file.name.endsWith('.pdf') || file.name.endsWith('.docx') || file.name.endsWith('.pptx')) && (
+                <div className="mt-2 text-sm text-gray-600">
+                  Selected: <span className="font-medium">{file.name}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={indexIntoQdrant}
+                  onChange={(e) => setIndexIntoQdrant(e.target.checked)}
+                />
+                Index into Qdrant
+              </label>
+            </div>
+
+            <button
+              type="button"
+              disabled={isSubmitting || !file || !(file.name.endsWith('.pdf') || file.name.endsWith('.docx') || file.name.endsWith('.pptx'))}
+              onClick={async () => {
+                if (!file) return;
+                setIsSubmitting(true);
+                setResult(null);
+                try {
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  const params = new URLSearchParams({
+                    index: indexIntoQdrant ? "true" : "false",
+                    run_ocr: "true",
+                    collection: "mold_reference_kb",
+                    domain: "mold",
+                  });
+                  const res = await fetch(
+                    `/api/proxy/agent/admin/documents/upload?${params}`,
+                    { method: "POST", body: formData }
+                  );
+                  let json: UploadResult;
+                  try {
+                    json = await res.json();
+                  } catch {
+                    setResult({ detail: "Failed to parse response" });
+                    return;
+                  }
+                  if (!res.ok) {
+                    setResult({ detail: json.detail || "Upload failed" });
+                    return;
+                  }
+                  setResult(json);
+                } catch (err) {
+                  setResult({ detail: err instanceof Error ? err.message : "Upload failed" });
+                } finally {
+                  setIsSubmitting(false);
+                }
+              }}
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {isSubmitting ? "Processing with OCR..." : "Upload Mold Document"}
+            </button>
+          </div>
+        </div>
+
         <div className="mt-6 bg-white rounded-xl shadow-lg p-6">
           <h2 className="text-xl font-semibold text-gray-800">{t("links.title")}</h2>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">

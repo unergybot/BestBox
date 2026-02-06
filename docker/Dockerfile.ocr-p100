@@ -23,12 +23,14 @@ RUN rm -f /etc/apt/sources.list.d/cuda.list && \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN pip install --upgrade pip wheel setuptools
+# Upgrade pip (pin setuptools to avoid build_py_2to3 removal issues with older packages)
+RUN pip install --upgrade pip wheel "setuptools<70.0.0"
 
-# Install OCR dependencies
+# Install OCR + Docling dependencies
 # pinned versions for stability on P100
-RUN pip install --no-cache-dir \
+RUN pip install \
+    torch==2.1.2 \
+    torchvision==0.16.2 \
     fastapi>=0.109.0 \
     uvicorn[standard]>=0.27.0 \
     python-multipart>=0.0.9 \
@@ -38,8 +40,17 @@ RUN pip install --no-cache-dir \
     accelerate>=0.26.0 \
     pillow>=10.0 \
     scipy \
-    torchvision \
-    protobuf
+    "numpy<2.0.0" \
+    "protobuf>=3.20,<5" \
+    httpx
+
+# Additional utilities for OCR service
+RUN pip install --no-cache-dir \
+    tqdm \
+    requests \
+    aiohttp \
+    pydantic \
+    pydantic_settings
 
 # Pre-download GOT-OCR2.0 model to cache it in image
 # NOTE: Disabled due to PyTorch 2.1.2 compatibility issues with GOT-OCR2.0

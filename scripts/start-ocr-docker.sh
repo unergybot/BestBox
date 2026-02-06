@@ -1,44 +1,34 @@
 #!/bin/bash
-# Start GOT-OCR2.0 Service in Docker
-# Target: P100 GPU (16GB VRAM, CUDA 11.8)
+# Start Decoupled OCR & Docling Services in Docker
+# Target: GPU OCR (P100) + CPU Docling
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-DOCKER_FILE="$PROJECT_ROOT/docker/Dockerfile.ocr-p100"
-IMAGE_NAME="bestbox-ocr-p100"
-CONTAINER_NAME="bestbox-ocr"
+COMPOSE_FILE="$PROJECT_ROOT/docker/docker-compose.ocr.yml"
 
-# Source environment variables if available
+echo "Orchestrating OCR and Docling services..."
+
+# We don't need to manually export .env vars for docker-compose 
+# if we specify the --env-file or let it find it.
+# However, for the echo at the end we might need them.
+
+# Load variables for the script output safely
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    source "$PROJECT_ROOT/.env"
+    OCR_PORT=$(grep ^OCR_PORT= "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
+    DOC_PORT=$(grep ^DOC_PORT= "$PROJECT_ROOT/.env" | cut -d'=' -f2-)
 fi
 
 OCR_PORT=${OCR_PORT:-8084}
+DOC_PORT=${DOC_PORT:-8085}
 
-echo "Building OCR Docker image..."
-docker build -t "$IMAGE_NAME" -f "$DOCKER_FILE" "$PROJECT_ROOT"
+# Use docker-compose to build and start
+# --env-file ensures it finds the root .env
+docker compose -f "$COMPOSE_FILE" --env-file "$PROJECT_ROOT/.env" up -d --build
 
-echo "Starting OCR container..."
-# Stop existing container if running
-if [ "$(docker ps -q -f name=$CONTAINER_NAME)" ]; then
-    docker stop "$CONTAINER_NAME"
-    docker rm "$CONTAINER_NAME"
-fi
-# Remove stopped container if exists
-if [ "$(docker ps -aq -f status=exited -f name=$CONTAINER_NAME)" ]; then
-    docker rm "$CONTAINER_NAME"
-fi
-
-docker run -d \
-    --name "$CONTAINER_NAME" \
-    --gpus 'device=0' \
-    -p "$OCR_PORT":8084 \
-    --restart unless-stopped \
-    -e OCR_PORT=8084 \
-    -e CUDA_VISIBLE_DEVICES=0 \
-    "$IMAGE_NAME"
-
-echo "OCR Service started in Docker container: $CONTAINER_NAME on port $OCR_PORT"
-echo "Logs:"
-docker logs -f "$CONTAINER_NAME"
+echo ""
+echo "Services started:"
+echo "  - OCR GPU Service: http://localhost:$OCR_PORT"
+echo "  - Docling CPU Service: http://localhost:$DOC_PORT"
+echo ""
+echo "To view logs, run: docker compose -f $COMPOSE_FILE logs -f"

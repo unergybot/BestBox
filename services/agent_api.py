@@ -84,6 +84,8 @@ import asyncpg
 from pathlib import Path
 import re
 
+from services.tool_results_context import BESTBOX_TOOL_RESULTS_SESSION_ID
+
 # Troubleshooting response validator - filters hallucinated case_ids
 try:
     from services.troubleshooting.validator import validate_and_filter_results
@@ -276,6 +278,35 @@ async def health():
     return {"status": "ok", "service": "langgraph-agent"}
 
 
+@app.get("/v1/tool-results/latest")
+async def get_latest_tool_results(
+    session_id: Optional[str] = Query(default=None),
+    after_ms: Optional[int] = Query(default=None),
+    result_id: Optional[str] = Query(default=None),
+):
+    """Get the latest tool results for frontend rendering.
+    Called by frontend after receiving a message to get full tool results."""
+    try:
+        from tools.troubleshooting_tools import get_latest_full_results
+        results = get_latest_full_results(session_id=session_id, after_ms=after_ms, result_id=result_id)
+        if results:
+            return {"status": "ok", "data": results}
+        return {"status": "ok", "data": None}
+    except ImportError:
+        return {"status": "error", "message": "Tool results not available"}
+
+
+@app.delete("/v1/tool-results/clear")
+async def clear_tool_results(session_id: Optional[str] = Query(default=None)):
+    """Clear the tool results cache. Called on frontend session start."""
+    try:
+        from tools.troubleshooting_tools import clear_latest_results
+        clear_latest_results(session_id=session_id)
+        return {"status": "ok", "message": "Tool results cache cleared"}
+    except ImportError:
+        return {"status": "error", "message": "Tool results not available"}
+
+
 def _safe_filename(original_name: str) -> str:
     """Normalize uploaded filenames to avoid path traversal and weird characters."""
     name = Path(original_name).name
@@ -411,6 +442,128 @@ async def admin_process_sample_troubleshooting_xlsx(
     except Exception as e:
         logger.error(f"Admin sample processing failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Sample processing failed: {str(e)}")
+
+
+# ==========================================================
+# Mold Document Upload Endpoint (PDF/DOCX/PPTX with OCR)
+# ==========================================================
+
+class DocumentUploadResponse(BaseModel):
+    """Response model for document upload."""
+    status: str
+    filename: str
+    file_type: str
+    title: str
+    text_length: int
+    image_count: int
+    ocr_count: int
+    indexed: bool
+    collection: Optional[str] = None
+
+
+@app.post("/admin/documents/upload", response_model=DocumentUploadResponse)
+async def admin_upload_document(
+    file: UploadFile = File(...),
+    index: bool = Query(True, description="If true, index into Qdrant"),
+    collection: str = Query("mold_reference_kb", description="Target Qdrant collection"),
+    domain: str = Query("mold", description="Domain classification"),
+    run_ocr: bool = Query(True, description="Run OCR on extracted images"),
+):
+    """
+    Admin endpoint to upload and process PDF/DOCX/PPTX documents for Mold KB.
+    
+    Uses Docling for document parsing and GOT-OCR2.0 for image text extraction.
+    Processed text is indexed into the specified Qdrant collection.
+    
+    Supported formats: .pdf, .docx, .pptx
+    Max file size: 50MB
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    safe_name = _safe_filename(file.filename)
+    ext = Path(safe_name).suffix.lower()
+    
+    allowed_extensions = {".pdf", ".docx", ".pptx"}
+    if ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(allowed_extensions)}"
+        )
+
+    repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    uploads_dir = repo_root / "data" / "mold_documents" / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_path = uploads_dir / f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{safe_name}"
+
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty upload")
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large (max 50MB)")
+
+        saved_path.write_bytes(content)
+
+        # Import the MoldDocumentIngester
+        from services.rag_pipeline.mold_document_ingester import MoldDocumentIngester
+
+        ingester = MoldDocumentIngester()
+        try:
+            result = await ingester.ingest_document(
+                doc_path=saved_path,
+                domain=domain,
+                run_ocr=run_ocr
+            )
+        finally:
+            await ingester.close()
+
+        if not result:
+            raise HTTPException(status_code=500, detail="Document ingestion failed")
+
+        # Index into Qdrant if requested
+        indexed = False
+        if index and result.get("text"):
+            try:
+                from services.rag_pipeline.document_indexer import DocumentIndexer
+                
+                indexer = DocumentIndexer(
+                    qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
+                    qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
+                    embeddings_url=os.getenv(
+                        "EMBEDDINGS_URL",
+                        os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
+                    ),
+                    collection_name=collection,
+                )
+                await indexer.index_document(
+                    text=result["text"],
+                    metadata=result["metadata"],
+                )
+                indexed = True
+            except ImportError:
+                logger.warning("DocumentIndexer not available, skipping indexing")
+            except Exception as e:
+                logger.error(f"Indexing failed: {e}", exc_info=True)
+
+        return DocumentUploadResponse(
+            status="ok",
+            filename=safe_name,
+            file_type=ext.lstrip("."),
+            title=result["metadata"].get("title", safe_name),
+            text_length=len(result.get("text", "")),
+            image_count=result.get("image_count", 0),
+            ocr_count=len(result.get("ocr_results", [])),
+            indexed=indexed,
+            collection=collection if indexed else None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Document upload failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 # ==========================================================
 # Direct Troubleshooting Query Endpoint (Performance Optimization)
@@ -947,23 +1100,32 @@ async def list_models():
     }
 
 @app.post("/v1/responses")
-async def create_response(request: ChatRequest):
+async def create_response(
+    request: ChatRequest,
+    bbx_session: Optional[str] = Header(None, alias="X-BBX-Session"),
+):
     """
     OpenAI Responses API endpoint for CopilotKit v1.50+.
     Uses the new event-based streaming format.
     """
+    session_id_override: Optional[str] = None
+    if bbx_session:
+        session_id_override = f"ui-{bbx_session}"
+    elif request.thread_id:
+        session_id_override = request.thread_id
     if request.stream:
-        return await responses_api_stream(request)
+        return await responses_api_stream(request, session_id_override=session_id_override)
     else:
         return await chat_completion(request)
 
-async def responses_api_stream(request: ChatRequest):
+async def responses_api_stream(request: ChatRequest, session_id_override: Optional[str] = None):
     """Stream the response using OpenAI Responses API format for CopilotKit"""
     async def generate():
         response_id = f"resp_{uuid.uuid4().hex[:24]}"
         item_id = f"msg_{uuid.uuid4().hex[:24]}"
         
         try:
+            request_start_ms = int(time.time() * 1000)
             # Process the request
             messages_to_process = []
             
@@ -1042,8 +1204,13 @@ async def responses_api_stream(request: ChatRequest):
             }
             yield f"data: {json.dumps(output_item_added)}\n\n"
             
-            # Get response from agent
-            result = await agent_app.ainvoke(cast(AgentState, inputs))
+            # Scope tool-results storage to this request/session.
+            session_id = session_id_override or request.thread_id or str(uuid.uuid4())
+            token = BESTBOX_TOOL_RESULTS_SESSION_ID.set(session_id)
+            try:
+                result = await agent_app.ainvoke(cast(AgentState, inputs))
+            finally:
+                BESTBOX_TOOL_RESULTS_SESSION_ID.reset(token)
             last_msg = result["messages"][-1]
             content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
             current_agent = result.get("current_agent", "unknown")
@@ -1051,6 +1218,17 @@ async def responses_api_stream(request: ChatRequest):
             # Ensure content is never undefined - always a string
             if content is None:
                 content = ""
+
+            # Embed full tool results for the UI (frontend extracts and renders).
+            try:
+                from tools.troubleshooting_tools import get_latest_full_results
+                full_tool_results = get_latest_full_results(session_id=session_id, after_ms=request_start_ms - 1)
+            except ImportError:
+                full_tool_results = None
+            if full_tool_results:
+                tool_results_json = json.dumps([full_tool_results], ensure_ascii=False)
+                content = f"[TOOL_RESULTS]{tool_results_json}[/TOOL_RESULTS]\n\n{content}"
+            content = f"{content}\n\n[BBX_SESSION]{session_id}[/BBX_SESSION]"
 
             # Validate response - filter hallucinated case_ids
             if VALIDATOR_AVAILABLE and content and current_agent == "mold_agent":
@@ -1125,13 +1303,14 @@ async def responses_api_stream(request: ChatRequest):
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
-async def chat_completion_stream(request: ChatRequest):
+async def chat_completion_stream(request: ChatRequest, session_id_override: Optional[str] = None):
     """Stream the response using SSE format"""
     async def generate():
         try:
+            request_start_ms = int(time.time() * 1000)
             # Process the request
             messages_to_process = []
-            
+
             if request.messages:
                 messages_to_process = request.messages
             elif request.input:
@@ -1142,16 +1321,16 @@ async def chat_completion_stream(request: ChatRequest):
                         if "tool_calls" in item:
                             msg.tool_calls = item["tool_calls"]
                         messages_to_process.append(msg)
-            
+
             if not messages_to_process:
                 yield f"data: {json.dumps({'error': 'No messages provided'})}\n\n"
                 return
-            
+
             # Convert to LangChain messages
             lc_messages = []
             for msg in messages_to_process:
                 content_text = parse_message_content(msg.content) if msg.content is not None else ""
-                
+
                 if msg.role == "user":
                     lc_messages.append(HumanMessage(content=content_text))
                 elif msg.role == "assistant":
@@ -1159,7 +1338,7 @@ async def chat_completion_stream(request: ChatRequest):
                     lc_messages.append(AIMessage(content=content_text, tool_calls=tool_calls))
                 elif msg.role == "system":
                     lc_messages.append(SystemMessage(content=content_text))
-            
+
             # Extract optimization metadata
             force_domain = None
             query_type = None
@@ -1180,15 +1359,40 @@ async def chat_completion_stream(request: ChatRequest):
                 "step": 0
             }
 
-            # Get response from agent
-            result = await agent_app.ainvoke(cast(AgentState, inputs))
+            # Scope tool-results storage to this request/session.
+            session_id = session_id_override or request.thread_id or str(uuid.uuid4())
+            token = BESTBOX_TOOL_RESULTS_SESSION_ID.set(session_id)
+            try:
+                result = await agent_app.ainvoke(cast(AgentState, inputs))
+            finally:
+                BESTBOX_TOOL_RESULTS_SESSION_ID.reset(token)
             last_msg = result["messages"][-1]
             content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
             current_agent = result.get("current_agent", "unknown")
 
+            # ==========================================================
+            # OPTION A: Get full tool results from global cache
+            # The tool stores condensed results in the message (for LLM context)
+            # but keeps full results in a global cache (for frontend rendering)
+            # ==========================================================
+            try:
+                from tools.troubleshooting_tools import get_latest_full_results
+                full_tool_results = get_latest_full_results(session_id=session_id, after_ms=request_start_ms - 1)
+                # Don't clear - frontend will fetch via /v1/tool-results/latest
+            except ImportError:
+                full_tool_results = None
+
             # Ensure content is never undefined - always a string
             if content is None:
                 content = ""
+
+            # Prepend full tool results as hidden data tag (frontend extracts and renders)
+            if full_tool_results:
+                tool_results_json = json.dumps([full_tool_results], ensure_ascii=False)
+                content = f"[TOOL_RESULTS]{tool_results_json}[/TOOL_RESULTS]\n\n{content}"
+
+            # Include session id for deterministic frontend fetch fallback.
+            content = f"{content}\n\n[BBX_SESSION]{session_id}[/BBX_SESSION]"
 
             # Validate response - filter hallucinated case_ids
             if VALIDATOR_AVAILABLE and content and current_agent == "mold_agent":
@@ -1197,25 +1401,28 @@ async def chat_completion_stream(request: ChatRequest):
                 except Exception as e:
                     logger.warning(f"Response validation failed in SSE stream: {e}")
 
-            # Stream the content as chunks
+            # Stream the content in small chunks to avoid SSE line-size
+            # truncation in CopilotKit / OpenAI SDK pipelines.
             chunk_id = f"chatcmpl-{int(time.time())}"
-            
-            # Send the content in one chunk (can be split for true streaming)
-            chunk = {
-                "id": chunk_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": request.model or "bestbox-agent",
-                "choices": [{
-                    "index": 0,
-                    "delta": {
-                        "role": "assistant",
-                        "content": content  # Always a string now
-                    },
-                    "finish_reason": None
-                }]
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
+            model_name = request.model or "bestbox-agent"
+            chunk_size = 200  # characters per delta
+            for i in range(0, len(content), chunk_size):
+                chunk_text = content[i:i+chunk_size]
+                delta: dict = {"content": chunk_text}
+                if i == 0:
+                    delta["role"] = "assistant"
+                chunk = {
+                    "id": chunk_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model_name,
+                    "choices": [{
+                        "index": 0,
+                        "delta": delta,
+                        "finish_reason": None
+                    }]
+                }
+                yield f"data: {json.dumps(chunk)}\n\n"
             
             # Send finish chunk
             finish_chunk = {
@@ -1258,7 +1465,11 @@ async def chat_completion_stream(request: ChatRequest):
 def parse_message_content(content: Union[str, List[Dict[str, Any]]]) -> str:
     """Parse message content from either string or array format"""
     if isinstance(content, str):
-        return content
+        text = content
+        text = re.sub(r"\[TOOL_RESULTS\][\s\S]*?\[\/TOOL_RESULTS\]", "", text)
+        text = re.sub(r"\[SPEECH\][\s\S]*?\[\/SPEECH\]", "", text)
+        text = re.sub(r"\[BBX_SESSION\][\s\S]*?\[\/BBX_SESSION\]", "", text)
+        return text.strip()
     elif isinstance(content, list):
         # Extract text from array format like [{"type": "input_text", "text": "hello"}]
         text_parts = []
@@ -1487,6 +1698,7 @@ async def chat_completion_endpoint(
     user_id: str = Header(default="anonymous", alias="x-user-id"),
     openclaw_session: Optional[str] = Header(None, alias="X-OpenClaw-Session"),
     openclaw_channel: Optional[str] = Header(None, alias="X-OpenClaw-Channel"),
+    bbx_session: Optional[str] = Header(None, alias="X-BBX-Session"),
 ):
     """
     OpenAI-compatible endpoint supporting both standard and CopilotKit formats.
@@ -1497,13 +1709,21 @@ async def chat_completion_endpoint(
     """
     # If streaming is requested, use the streaming handler
     if request.stream:
-        return await chat_completion_stream(request)
+        session_id_override: Optional[str] = None
+        if openclaw_session:
+            session_id_override = f"oc-{openclaw_session}"
+        elif request.thread_id:
+            session_id_override = request.thread_id
+        elif bbx_session:
+            session_id_override = f"ui-{bbx_session}"
+        return await chat_completion_stream(request, session_id_override=session_id_override)
 
     # ==========================================================
     # Observability Setup
     # ==========================================================
 
     start_time = time.time()
+    request_start_ms = int(start_time * 1000)
     
     # OpenClaw session bridging: use prefixed session ID when OpenClaw headers present
     if openclaw_session:
@@ -1513,7 +1733,12 @@ async def chat_completion_endpoint(
             await session_store.ensure_session(session_id, openclaw_session, channel)
         logger.info(f"Bridged OpenClaw session: {openclaw_session} -> {session_id} (channel: {channel})")
     else:
-        session_id = request.thread_id or str(uuid.uuid4())
+        if request.thread_id:
+            session_id = request.thread_id
+        elif bbx_session:
+            session_id = f"ui-{bbx_session}"
+        else:
+            session_id = str(uuid.uuid4())
 
     # Get current trace context (for linking to Jaeger)
     current_span = trace.get_current_span() if OPENTELEMETRY_AVAILABLE else None
@@ -1606,7 +1831,11 @@ async def chat_completion_endpoint(
         # Agent Execution (with instrumentation)
         # ==========================================================
 
-        result = await agent_app.ainvoke(cast(AgentState, inputs))
+        token = BESTBOX_TOOL_RESULTS_SESSION_ID.set(session_id)
+        try:
+            result = await agent_app.ainvoke(cast(AgentState, inputs))
+        finally:
+            BESTBOX_TOOL_RESULTS_SESSION_ID.reset(token)
 
         last_msg = result["messages"][-1]
         current_agent = result.get("current_agent", "unknown")
@@ -1614,6 +1843,29 @@ async def chat_completion_endpoint(
 
         content = last_msg.content if hasattr(last_msg, 'content') else str(last_msg)
         tool_calls = last_msg.tool_calls if hasattr(last_msg, 'tool_calls') else None
+
+        # ==========================================================
+        # OPTION A: Get full tool results from global cache
+        # Don't clear - let frontend fetch via /v1/tool-results/latest
+        # ==========================================================
+        try:
+            from tools.troubleshooting_tools import get_latest_full_results
+            full_tool_results = get_latest_full_results(session_id=session_id, after_ms=request_start_ms - 1)
+            # Don't clear - frontend will fetch separately
+        except ImportError:
+            full_tool_results = None
+
+        # Ensure content is a string
+        if content is None:
+            content = ""
+
+        # Embed full tool results for the UI (frontend extracts and renders).
+        if full_tool_results:
+            tool_results_json = json.dumps([full_tool_results], ensure_ascii=False)
+            content = f"[TOOL_RESULTS]{tool_results_json}[/TOOL_RESULTS]\n\n{content}"
+
+        # Include session id for deterministic frontend fetch fallback.
+        content = f"{content}\n\n[BBX_SESSION]{session_id}[/BBX_SESSION]"
 
         # ==========================================================
         # Validate response - filter hallucinated case_ids

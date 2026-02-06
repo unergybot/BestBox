@@ -9,10 +9,11 @@ image and document analysis.
 """
 
 import os
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, AIMessage, ToolMessage, HumanMessage
 from agents.state import AgentState
 from agents.utils import get_llm, SPEECH_FORMAT_INSTRUCTION
 from agents.context_manager import apply_sliding_window
+import uuid
 from tools.troubleshooting_tools import (
     search_troubleshooting_kb,
     get_troubleshooting_case_details,
@@ -55,140 +56,46 @@ if VLM_ENABLED and VLM_TOOLS_AVAILABLE:
         compare_images
     ])
 
-# Base system prompt - Tool results render directly in UI via useRenderToolCall
-MOLD_SYSTEM_PROMPT_BASE = """You are the Mold Service Agent, a manufacturing expert specializing in mold troubleshooting.
+# Base system prompt - Condensed for context efficiency
+MOLD_SYSTEM_PROMPT_BASE = """You are the Mold Service Agent.
 
-CRITICAL: Always use tools to search the knowledge base. Never make up case data or solutions.
+## MANDATORY: Tool Use on EVERY Query
+You MUST call a search tool for EVERY user question, even if you already answered a similar question before.
+NEVER reuse previous results or answer from memory. Each query deserves a fresh search.
+If the user asks the same question again, call the tool again.
 
-Your expertise:
-- **Equipment Troubleshooting**: Access to 1000+ real production cases with detailed solutions
-- **Defect Diagnosis**: Product flash (披锋), whitening (拉白), spark marks (火花纹), contamination (脏污), scratches, deformation
-- **Mold Issues**: Surface contamination, iron powder dragging, polishing defects, dimensional problems
-- **Trial Analysis**: T0/T1/T2 trial results and iterative corrections
+## Tools
+- `search_troubleshooting_kb`: Semantic search for "how to solve X" questions
+- `search_troubleshooting_structured`: SQL+Vector search for counting/filtering/statistics
 
-## Search Tools
+## Response Rules
+IMPORTANT: Frontend automatically renders tool results as cards. DO NOT copy JSON data.
 
-You have two search tools available:
+After tool calls, provide BRIEF analysis in Chinese:
+1. Summarize findings (e.g., "找到X个案例")
+2. Highlight key solutions and patterns
+3. Point out most relevant cases
 
-1. **`search_troubleshooting_kb`** - Semantic (vector) search
-   - Best for: Finding similar problems, understanding defects, "how to solve X"
-   - Example: "披锋怎么解决", "类似的案例有哪些"
-
-2. **`search_troubleshooting_structured`** - Hybrid search (SQL + Vector)
-   - Best for: Counting, filtering, statistics, specific criteria
-   - Example: "有多少个披锋问题", "T1成功的案例", "HIPS材料的问题"
-   - Automatically detects intent: STRUCTURED (counts/filters), SEMANTIC (similarity), HYBRID (both)
-
-**Choose the right tool:**
-- Questions with "多少", "几个", "统计", "成功/失败" → `search_troubleshooting_structured`
-- Questions with "怎么", "如何", "解决方案" → `search_troubleshooting_kb` or `search_troubleshooting_structured` with AUTO mode
-- Combined filters + semantic (e.g., "HIPS材料的披锋解决方案") → `search_troubleshooting_structured` with HYBRID mode
-
-## Learning Tools
-
-When you discover patterns or corrections:
-
-1. **`save_troubleshooting_learning`** - Save error patterns, gotchas
-   - Use after fixing a query mistake or discovering a data quirk
-   - Example: "defect_types uses @> operator for array membership"
-
-2. **`learn_troubleshooting_synonym`** - Learn new term mappings
-   - Use when user uses a term that should map to a standard term
-   - Example: "飞边" → "披锋" (both mean flash/burr)
-
-## Response Format
-
-IMPORTANT: The frontend UI automatically renders tool results as beautiful cards with images.
-You do NOT need to copy or repeat the JSON data. Just provide helpful analysis.
-
-After calling search tools, provide a brief ANALYSIS in Chinese:
-
-1. Summarize what was found (e.g., "找到了X个相关案例")
-2. Highlight key patterns or common solutions
-3. Point out which cases are most relevant and why
-4. Mention any common root causes identified
-
-Example response after tool call:
+Example:
 ```
-找到了5个相关的披锋案例。
-
-**主要解决方向：**
-- 模具调整：通过加铁0.03-0.06mm修正分型面间隙
-- 烧焊修正：重新配模后对披锋位置进行烧焊处理
-
-**常见根本原因：**
-- 分型面间隙过大
-- 锁模力不足
-- 注射压力过高
-
-建议优先参考案例1和案例3，它们的T1/T2结果都是OK，解决方案经过验证。
+找到3个披锋案例。主要解决方向：加铁0.03-0.06mm修正间隙。建议参考案例1。
 ```
 
-## CRITICAL RULES
-
-✅ DO:
-- Always call search tools before answering troubleshooting questions
-- Provide insightful analysis of the search results
-- Identify patterns across multiple cases
-- Recommend which cases are most relevant
-- Use Chinese for all responses
-
-❌ DO NOT:
-- Copy or repeat the JSON data from tool results (UI handles this automatically)
-- Make up case IDs, solutions, or data not in the search results
-- Give vague answers without using tools first
-- Output ```json blocks (the UI renders tool results directly)
+DO: Use tools for EVERY question, provide analysis, use Chinese
+DO NOT: Copy JSON, make up data, output json blocks, answer without calling tools
 """
 
 
-# VLM enhancement section
+# VLM enhancement section - condensed
 VLM_ENHANCEMENT = """
 
-## Enhanced Visual Analysis Capabilities
+## VLM Tools
+- `analyze_image_realtime`: Analyze defect images (15-30s)
+- `analyze_document_realtime`: Analyze PDF/Excel reports
+- `compare_images`: Compare images with historical cases
+- `find_similar_defects`: Analyze image + search similar cases
 
-You now have access to advanced VLM (Vision-Language Model) analysis tools:
-
-**Real-time Image Analysis (`analyze_image_realtime`):**
-- Use when users share images of defects during conversation
-- Provides detailed defect identification, severity assessment, and suggested actions
-- Results typically in 15-30 seconds
-- Example: "分析这张图片中的缺陷" → call analyze_image_realtime
-
-**Document Analysis (`analyze_document_realtime`):**
-- Use for PDF/Excel files shared during conversation
-- Extracts key insights, embedded images, and topics
-- Correlates with known issues in knowledge base
-- Example: "帮我分析这份报告" → call analyze_document_realtime
-
-**Image Comparison (`compare_images`):**
-- Compare new defect images with historical cases
-- Identify similar defect patterns across multiple images
-- Helps correlate new issues with solved problems
-- Example: "这个缺陷和之前的案例相似吗" → call compare_images
-
-**Find Similar Defects (`find_similar_defects`):**
-- Automatically analyze an uploaded image and search for similar cases
-- One-step workflow: VLM Analysis → Semantic Search
-- Use when user uploads an image and asks "Have we seen this before?" or "Find similar cases"
-- Example: "查找类似案例" → call find_similar_defects
-
-**Enhanced Search Results:**
-When using `search_troubleshooting_kb`, results now include:
-- VLM-extracted tags, topics, and entity mentions
-- Confidence scores for relevance
-- Rich image descriptions from VLM analysis
-- Severity indicators and suggested actions
-
-**Workflow for Image-Related Queries:**
-1. If user provides an image → First use `analyze_image_realtime` to understand the defect
-2. Use the defect type/keywords from analysis → Search KB with `search_troubleshooting_kb`
-3. If similar cases found → Use `compare_images` to find the closest match
-4. Combine VLM insights with KB results for comprehensive response
-
-**Important Notes:**
-- VLM analysis may take 15-60 seconds - inform user if needed
-- Always search KB after VLM analysis to find related cases
-- Use Chinese for all responses unless user uses English"""
+For image queries: analyze_image_realtime → search_troubleshooting_kb → compare_images"""
 
 # Build final system prompt
 # Note: SPEECH instruction is now integrated into MOLD_SYSTEM_PROMPT_BASE
@@ -199,6 +106,25 @@ else:
     MOLD_SYSTEM_PROMPT = MOLD_SYSTEM_PROMPT_BASE
 
 
+def _is_tool_result_pass(messages) -> bool:
+    """Check if the last message is a ToolMessage (meaning tools just ran)."""
+    for msg in reversed(messages):
+        if isinstance(msg, ToolMessage):
+            return True
+        if isinstance(msg, HumanMessage):
+            return False
+    return False
+
+
+def _extract_user_query(messages) -> str:
+    """Extract the latest user query from messages."""
+    for msg in reversed(messages):
+        if isinstance(msg, HumanMessage):
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            return content
+    return ""
+
+
 def mold_agent_node(state: AgentState):
     """Mold service agent node for LangGraph"""
     llm = get_llm()
@@ -206,14 +132,32 @@ def mold_agent_node(state: AgentState):
 
     managed_messages = apply_sliding_window(
         state["messages"],
-        max_tokens=6000,
-        max_messages=8,
+        max_tokens=4000,
+        max_messages=6,
         keep_system=False
     )
 
     response = llm_with_tools.invoke([
         ("system", MOLD_SYSTEM_PROMPT),
     ] + managed_messages)
+
+    # If the LLM skipped tool calling on the first pass (no prior ToolMessage),
+    # force a search_troubleshooting_kb call so the frontend always gets card data.
+    if (isinstance(response, AIMessage)
+            and not response.tool_calls
+            and not _is_tool_result_pass(state["messages"])):
+        user_query = _extract_user_query(state["messages"])
+        if user_query:
+            tool_call_id = f"forced_{uuid.uuid4().hex[:8]}"
+            forced_response = AIMessage(
+                content="",
+                tool_calls=[{
+                    "id": tool_call_id,
+                    "name": "search_troubleshooting_kb",
+                    "args": {"query": user_query}
+                }]
+            )
+            return {"messages": [forced_response], "current_agent": "mold_agent"}
 
     return {"messages": [response], "current_agent": "mold_agent"}
 

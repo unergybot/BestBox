@@ -8,29 +8,328 @@ import { detectTroubleshootingResults, isTroubleshootingResult, normalizeToTroub
 import { TroubleshootingCard } from "@/components/troubleshooting";
 import { ChatMessagesProvider, useChatMessages as useTroubleshootingMessages } from "@/contexts/ChatMessagesContext";
 import "@copilotkit/react-ui/styles.css";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
 
 import { TroubleshootingIssue } from "@/types/troubleshooting";
 
-function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKitAssistantMessage>) {
-  const raw = (props as any)?.message?.content;
-  const content = typeof raw === "string" ? raw : "";
+// Context for storing extracted tool results
+// Each message gets its own results keyed by message ID
+// Session start time prevents fetching for restored (old) messages
+const ToolResultsContext = React.createContext<{
+  toolResultsMap: Map<string, any>;
+  setToolResultsForMessage: (messageId: string, results: any) => void;
+  fetchToolResultsForMessage: (messageId: string, messageTimestamp?: number, expectedQuery?: string | null, sessionId?: string | null) => Promise<boolean>;
+  clearAllResults: () => void;
+  sessionStartTime: number;
+}>({
+  toolResultsMap: new Map(),
+  setToolResultsForMessage: () => {},
+  fetchToolResultsForMessage: async () => false,
+  clearAllResults: () => {},
+  sessionStartTime: 0,
+});
 
-  // Hide speech-control blocks from the visible chat bubble.
-  // (We do not mutate CopilotKit's underlying message state, so TTS can still read the tags.)
-  // Handle both correct [/SPEECH] and malformed [SPEECH] closing tags (LLM sometimes omits the /)
+function normalizeQueryText(value: string): string {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/[?？!！。．，,、:：;；]/g, "")
+    .trim();
+}
+
+function isQueryMatch(expected?: string | null, actual?: string | null): boolean {
+  if (!expected || !actual) return false;
+  const normalizedExpected = normalizeQueryText(expected);
+  const normalizedActual = normalizeQueryText(actual);
+  if (!normalizedExpected || !normalizedActual) return false;
+  return normalizedActual.includes(normalizedExpected) || normalizedExpected.includes(normalizedActual);
+}
+
+function ToolResultsProvider({ children }: { children: React.ReactNode }) {
+  const [toolResultsMap, setToolResultsMap] = useState<Map<string, any>>(new Map());
+  // Session start time - set once on mount, used to filter out restored messages
+  const [sessionStartTime] = useState(() => Date.now());
+  const debugLogs = process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true";
+
+  // Clear stale backend tool-results cache on page mount (survives Ctrl+F5)
+  useEffect(() => {
+    fetch('/api/proxy/agent/v1/tool-results/clear', { method: 'DELETE' }).catch(() => {});
+  }, []);
+
+  const setToolResultsForMessage = useCallback((messageId: string, results: any) => {
+    setToolResultsMap(prev => {
+      const newMap = new Map(prev);
+      newMap.set(messageId, results);
+      return newMap;
+    });
+  }, []);
+
+  const fetchToolResultsForMessage = useCallback(async (messageId: string, messageTimestamp?: number, expectedQuery?: string | null, sessionId?: string | null) => {
+    if (debugLogs) {
+      console.log(`[ToolResults] fetchToolResultsForMessage called for ${messageId}, timestamp=${messageTimestamp}, sessionStart=${sessionStartTime}`);
+    }
+
+    // Skip fetching for messages that existed before this session (restored messages)
+    if (messageTimestamp && messageTimestamp < sessionStartTime) {
+      if (debugLogs) {
+        console.log(`[ToolResults] Skipping fetch for restored message ${messageId}`);
+      }
+      return false;
+    }
+
+    try {
+      const params = new URLSearchParams();
+      if (sessionId) params.set("session_id", sessionId);
+      if (typeof messageTimestamp === "number") params.set("after_ms", String(messageTimestamp - 1));
+      const url = `/api/proxy/agent/v1/tool-results/latest${params.size ? `?${params.toString()}` : ""}`;
+      if (debugLogs) {
+        console.log(`[ToolResults] Fetching from ${url}`);
+      }
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        if (debugLogs) {
+          console.log(`[ToolResults] Received data:`, data.status, data.data ? `query=${data.data.query}, total=${data.data.total_available}` : 'null');
+        }
+        if (data.status === 'ok' && data.data) {
+          if (debugLogs) {
+            console.log(`[ToolResults] Storing results for ${messageId}`);
+          }
+          setToolResultsForMessage(messageId, data.data);
+          return true;
+        }
+      }
+    } catch (error) {
+      if (debugLogs) {
+        console.error('[ToolResults] Failed to fetch tool results:', error);
+      }
+    }
+    return false;
+  }, [debugLogs, setToolResultsForMessage, sessionStartTime]);
+
+  const clearAllResults = useCallback(() => {
+    setToolResultsMap(new Map());
+  }, []);
+
+  return (
+    <ToolResultsContext.Provider value={{ toolResultsMap, setToolResultsForMessage, fetchToolResultsForMessage, clearAllResults, sessionStartTime }}>
+      {children}
+    </ToolResultsContext.Provider>
+  );
+}
+
+function useToolResults() {
+  return React.useContext(ToolResultsContext);
+}
+
+// Renders tool results as TroubleshootingCards with pagination
+function ToolResultsRenderer({ messageId }: { messageId: string }) {
+  const { toolResultsMap } = useToolResults();
+  const [visibleCount, setVisibleCount] = useState(3); // Initially show 3 (same as top_k)
+
+  const toolResult = toolResultsMap.get(messageId);
+
+  if (!toolResult) {
+    return null;
+  }
+
+  // Get pagination info
+  const totalAvailable = toolResult?.total_available || 0;
+  const pageSize = toolResult?.page_size || 3;
+
+  // Extract results from this message's tool result
+  const allIssues: TroubleshootingIssue[] = [];
+  const seenKeys = new Set<string>();
+
+  if (toolResult?.results && Array.isArray(toolResult.results)) {
+    for (const item of toolResult.results) {
+      if (isTroubleshootingResult(item)) {
+        const issue = normalizeToTroubleshootingIssue(item);
+        if (issue.result_type === 'specific_solution') {
+          const key = `${issue.case_id}-${issue.issue_number}-${issue.problem}`;
+          if (!seenKeys.has(key)) {
+            seenKeys.add(key);
+            allIssues.push(issue);
+          }
+        }
+      }
+    }
+  }
+
+  if (allIssues.length === 0) {
+    return null;
+  }
+
+  const visibleIssues = allIssues.slice(0, visibleCount);
+  const hasMore = visibleCount < allIssues.length;
+
+  return (
+    <div className="space-y-4 my-4">
+      {/* Header with count */}
+      <div className="text-sm text-gray-500 mb-2">
+        显示 {visibleIssues.length} / {allIssues.length} 个案例
+      </div>
+
+      {/* Cards */}
+      {visibleIssues.map((issue, index) => (
+        <TroubleshootingCard
+          key={`${issue.case_id}-${issue.issue_number}-${index}`}
+          data={issue}
+        />
+      ))}
+
+      {/* Load more button */}
+      {hasMore && (
+        <button
+          onClick={() => setVisibleCount(prev => Math.min(prev + pageSize, allIssues.length))}
+          className="w-full py-2 px-4 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg border border-blue-200 transition-colors"
+        >
+          加载更多 ({allIssues.length - visibleCount} 个剩余)
+        </button>
+      )}
+
+      {/* Show less button when expanded */}
+      {visibleCount > pageSize && (
+        <button
+          onClick={() => setVisibleCount(pageSize)}
+          className="w-full py-2 px-4 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg border border-gray-200 transition-colors"
+        >
+          收起
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKitAssistantMessage>) {
+  const { visibleMessages } = useCopilotChat();
+  const message = (props as any)?.message;
+  const raw = message?.content;
+  const content = typeof raw === "string" ? raw : "";
+  const copilotId = message?.id;
+  const messageTimestamp = message?.timestamp || message?.createdAt;
+
+  // Generate STABLE message ID that doesn't change during streaming
+  // Use CopilotKit's ID if available, otherwise generate once on first render
+  const [stableMessageId] = useState(() => {
+    if (copilotId) return copilotId;
+    // Generate a unique ID once - don't use content since it changes during streaming
+    return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  });
+  const messageId =
+    copilotId ||
+    (typeof messageTimestamp === "number" ? `assistant-${messageTimestamp}` : stableMessageId);
+
+  const { fetchToolResultsForMessage, toolResultsMap, setToolResultsForMessage, sessionStartTime } = useToolResults();
+  const [hasFetched, setHasFetched] = useState(false);
+  // Per-component mount time: ensures each message only fetches results created
+  // AFTER this component appeared (prevents Q1 results leaking into Q2 cards)
+  const [mountedAt] = useState(() => Date.now());
+  const afterMs = typeof messageTimestamp === "number" ? messageTimestamp : mountedAt;
+
+  const expectedQuery = useMemo(() => {
+    if (!visibleMessages || !Array.isArray(visibleMessages) || !copilotId) return null;
+    const currentIndex = visibleMessages.findIndex((msg: any) => msg?.id === copilotId);
+    const searchFrom = currentIndex > 0 ? currentIndex - 1 : visibleMessages.length - 1;
+    for (let i = searchFrom; i >= 0; i -= 1) {
+      const candidate = visibleMessages[i] as any;
+      if (candidate?.role === "user" && typeof candidate?.content === "string") {
+        return candidate.content;
+      }
+    }
+    return null;
+  }, [visibleMessages, copilotId]);
+
+  const toolResultsFromContent = useMemo(() => {
+    if (typeof raw !== "string" || raw.length === 0) return null;
+    const match = raw.match(/\[TOOL_RESULTS\]([\s\S]*?)\[\/TOOL_RESULTS\]/);
+    if (!match || !match[1]) return null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (Array.isArray(parsed)) {
+        return parsed[0] ?? null;
+      }
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
+  }, [raw]);
+
+  const bbxSessionId = useMemo(() => {
+    if (typeof raw !== "string" || raw.length === 0) return null;
+    const match = raw.match(/\[BBX_SESSION\]([\s\S]*?)\[\/BBX_SESSION\]/);
+    return match && match[1] ? match[1].trim() : null;
+  }, [raw]);
+
+  useEffect(() => {
+    if (toolResultsFromContent) {
+      setToolResultsForMessage(messageId, toolResultsFromContent);
+    }
+  }, [toolResultsFromContent, messageId, setToolResultsForMessage]);
+
+  // Fetch tool results when a new assistant message appears
+  // Pass timestamp so we can skip fetching for restored (old) messages
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
+      console.log(`[SanitizedAssistantMessage] useEffect: content=${!!content}, hasFetched=${hasFetched}, messageId=${messageId}`);
+    }
+    // Fetch from backend even when hidden session tags are stripped.
+    // The proxy route will scope tool-results to this UI session using the `bbx_session` cookie.
+    if (content && !hasFetched && !toolResultsFromContent) {
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let attempt = 0;
+      const maxAttempts = 6;
+      const delayMs = 250;
+
+      const runAttempt = async () => {
+        if (cancelled) return;
+        if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
+          console.log(`[SanitizedAssistantMessage] Triggering fetch for ${messageId} (attempt ${attempt + 1})`);
+        }
+        const stored = await fetchToolResultsForMessage(messageId, afterMs, expectedQuery, bbxSessionId);
+        if (stored || attempt >= maxAttempts - 1) {
+          setHasFetched(true);
+          return;
+        }
+        attempt += 1;
+        timer = setTimeout(runAttempt, delayMs);
+      };
+
+      // 1.5s initial delay: gives the embedded [TOOL_RESULTS] path time to
+      // parse from the streamed content before falling back to a network fetch.
+      timer = setTimeout(runAttempt, 1500);
+      return () => {
+        cancelled = true;
+        if (timer) clearTimeout(timer);
+      };
+    }
+  }, [content, hasFetched, fetchToolResultsForMessage, messageId, afterMs, toolResultsFromContent, expectedQuery, bbxSessionId]);
+
+  // Hide speech-control blocks from the visible chat bubble
   const sanitizedContent = content
-    .replace(/\[SPEECH\][\s\S]*?\[\/SPEECH\]/g, "")  // Correct format: [SPEECH]...[/SPEECH]
-    .replace(/\[SPEECH\][\s\S]*?\[SPEECH\]/g, "")    // Malformed format: [SPEECH]...[SPEECH]
+    .replace(/\[TOOL_RESULTS\][\s\S]*?\[\/TOOL_RESULTS\]\n*/g, "")
+    .replace(/\[SPEECH\][\s\S]*?\[\/SPEECH\]/g, "")
+    .replace(/\[SPEECH\][\s\S]*?\[SPEECH\]/g, "")
+    .replace(/\[BBX_SESSION\][\s\S]*?\[\/BBX_SESSION\]\n*/g, "")
     .trim();
 
-  const message = (props as any)?.message
-    ? ({ ...(props as any).message, content: sanitizedContent } as any)
-    : (props as any).message;
+  const sanitizedMessage = message
+    ? ({ ...message, content: sanitizedContent } as any)
+    : message;
 
-  return <CopilotKitAssistantMessage {...(props as any)} message={message} />;
+  const hasResults = toolResultsMap.has(messageId);
+  if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
+    console.log(`[SanitizedAssistantMessage] Render: copilotId=${copilotId}, stableMessageId=${stableMessageId}, messageId=${messageId}, hasResults=${hasResults}, mapSize=${toolResultsMap.size}`);
+  }
+
+  return (
+    <>
+      {hasResults && <ToolResultsRenderer messageId={messageId} />}
+      <CopilotKitAssistantMessage {...(props as any)} message={sanitizedMessage} />
+    </>
+  );
 }
 
 // Custom code block renderer that detects and renders troubleshooting cards
@@ -128,17 +427,21 @@ function TroubleshootingCardsOverlay() {
       return results;
     }
 
-    console.log("=== TroubleshootingCardsOverlay Debug ===");
-    console.log("Messages count:", messages.length);
+    if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
+      console.log("=== TroubleshootingCardsOverlay Debug ===");
+      console.log("Messages count:", messages.length);
+    }
 
     for (const msg of messages) {
       if (msg && typeof msg === "object" && "content" in msg) {
         const content = typeof msg.content === "string" ? msg.content : "";
         if (content) {
           const detected = detectTroubleshootingResults(content);
-          console.log(`Detected ${detected.length} results from message`);
-          if (detected.length > 0) {
-            console.log("First result:", JSON.stringify(detected[0], null, 2));
+          if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
+            console.log(`Detected ${detected.length} results from message`);
+            if (detected.length > 0) {
+              console.log("First result:", JSON.stringify(detected[0], null, 2));
+            }
           }
           const issues = detected
             .filter((r): r is TroubleshootingIssue => r.result_type === "specific_solution")
@@ -147,7 +450,9 @@ function TroubleshootingCardsOverlay() {
         }
       }
     }
-    console.log("Total issues for cards:", results.length);
+    if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
+      console.log("Total issues for cards:", results.length);
+    }
     return results;
   }, [messages]);
 
@@ -183,31 +488,33 @@ export default function Home() {
 
   return (
     <ChatMessagesProvider>
-      <CopilotKit runtimeUrl="/api/copilotkit">
-        {/* TTS component watches CopilotKit messages and speaks [SPEECH] content */}
-        <CopilotTTS />
-        <div className="flex flex-col lg:flex-row h-screen">
+      <ToolResultsProvider>
+        <CopilotKit runtimeUrl="/api/copilotkit">
+          {/* TTS component watches CopilotKit messages and speaks [SPEECH] content */}
+          <CopilotTTS />
+          <div className="flex flex-col lg:flex-row h-screen">
 
-          {/* Dashboard Column - 40% on desktop, hidden on mobile */}
-          <div className="hidden lg:block lg:w-[40%] overflow-y-auto bg-gradient-to-br from-blue-50 to-indigo-100">
-            <MemoizedDashboardContent />
+            {/* Dashboard Column - 40% on desktop, hidden on mobile */}
+            <div className="hidden lg:block lg:w-[40%] overflow-y-auto bg-gradient-to-br from-blue-50 to-indigo-100">
+              <MemoizedDashboardContent />
+            </div>
+
+            {/* Chat Column - 60% on desktop, full width on mobile */}
+            <div className="w-full lg:w-[60%] flex flex-col border-l border-gray-200">
+              <CopilotChatRecorder>
+                <CopilotChat
+                  labels={labels}
+                  Input={VoiceInput}
+                  AssistantMessage={SanitizedAssistantMessage}
+                  markdownTagRenderers={markdownTagRenderers}
+                  className="h-full"
+                />
+              </CopilotChatRecorder>
+            </div>
+
           </div>
-
-          {/* Chat Column - 60% on desktop, full width on mobile */}
-          <div className="w-full lg:w-[60%] flex flex-col border-l border-gray-200">
-            <CopilotChatRecorder>
-              <CopilotChat
-                labels={labels}
-                Input={VoiceInput}
-                AssistantMessage={SanitizedAssistantMessage}
-                markdownTagRenderers={markdownTagRenderers}
-                className="h-full"
-              />
-            </CopilotChatRecorder>
-          </div>
-
-        </div>
-      </CopilotKit>
+        </CopilotKit>
+      </ToolResultsProvider>
     </ChatMessagesProvider>
   );
 }

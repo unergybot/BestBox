@@ -4,18 +4,24 @@ import {
   OpenAIAdapter,
 } from "@copilotkit/runtime";
 import { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
-// Agent API URL - configured via OPENAI_BASE_URL environment variable
-// CopilotKit's OpenAIAdapter will create its own OpenAI client using:
-// - OPENAI_BASE_URL (points to our LangGraph backend)
-// - OPENAI_API_KEY (placeholder for local LLM)
+function getAgentApiBaseUrl(): string {
+  const raw = process.env.OPENAI_BASE_URL;
+  if (!raw) {
+    throw new Error("OPENAI_BASE_URL is not set");
+  }
+  return raw.replace(/\/$/, "").replace(/\/v1\/?$/, "");
+}
+
+function getOrCreateUiSessionId(req: NextRequest): string {
+  const existing = req.cookies.get("bbx_session")?.value;
+  if (existing && existing.length >= 8) return existing;
+  return crypto.randomUUID();
+}
+
 console.log("OPENAI_BASE_URL:", process.env.OPENAI_BASE_URL);
-
-// Use OpenAIAdapter - it will use env vars to create the client
-// Do NOT pass a custom openai client to avoid version mismatch issues
-const serviceAdapter = new OpenAIAdapter({
-  model: "bestbox-agent",
-});
 
 const runtime = new CopilotRuntime({
   actions: [
@@ -39,11 +45,38 @@ const runtime = new CopilotRuntime({
 });
 
 export const POST = async (req: NextRequest) => {
+  const uiSessionId = getOrCreateUiSessionId(req);
+  const baseURL = getAgentApiBaseUrl();
+
+  // Send the raw cookie value; the Python backend adds the "ui-" prefix
+  // to match what the proxy injects on tool-results fetches.
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY || "local",
+    baseURL,
+    defaultHeaders: {
+      "X-BBX-Session": uiSessionId,
+    },
+  });
+
+  const serviceAdapter = new OpenAIAdapter({
+    model: "bestbox-agent",
+    openai,
+  });
+
   const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
     runtime,
     serviceAdapter,
     endpoint: "/api/copilotkit",
   });
 
-  return handleRequest(req);
+  const response = await handleRequest(req);
+  const nextResponse = new NextResponse(response.body, {
+    status: response.status,
+    headers: response.headers,
+  });
+  nextResponse.cookies.set("bbx_session", uiSessionId, {
+    path: "/",
+    sameSite: "lax",
+  });
+  return nextResponse;
 };

@@ -19,10 +19,11 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from langchain_core.tools import tool
-from typing import Optional, Literal
+from typing import Optional, Literal, Any, Dict, List
 import json
 import logging
 import re
+import time
 
 from services.troubleshooting.searcher import TroubleshootingSearcher
 from qdrant_client import QdrantClient
@@ -36,6 +37,77 @@ logger = logging.getLogger(__name__)
 # Initialize searchers (singletons)
 _searcher = None
 _hybrid_searcher = None
+
+from services.tool_results_context import BESTBOX_TOOL_RESULTS_SESSION_ID
+
+
+def _tool_results_session_key(explicit_session_id: Optional[str] = None) -> str:
+    if explicit_session_id:
+        return explicit_session_id
+    sid = BESTBOX_TOOL_RESULTS_SESSION_ID.get()
+    return sid or "__global__"
+
+
+# Session-scoped cache for full tool results (to be extracted by agent_api)
+# Each session keeps a small ring buffer so the frontend can retry safely.
+_tool_results_by_session: Dict[str, List[Dict[str, Any]]] = {}
+_tool_results_by_session_id_map: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+
+def _store_tool_results(session_key: str, entry: Dict[str, Any]) -> None:
+    entries = _tool_results_by_session.setdefault(session_key, [])
+    entries.append(entry)
+    # Keep the most recent N entries per session to avoid unbounded growth.
+    if len(entries) > 50:
+        del entries[:-50]
+
+    id_map = _tool_results_by_session_id_map.setdefault(session_key, {})
+    entry_id = entry.get("result_id")
+    if isinstance(entry_id, str) and entry_id:
+        id_map[entry_id] = entry
+
+
+
+def get_latest_full_results(
+    session_id: Optional[str] = None,
+    after_ms: Optional[int] = None,
+    result_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Get tool results for frontend rendering.
+
+    - If result_id is provided: return that specific entry.
+    - Else if after_ms is provided: return the newest entry created after that.
+    - Else: return the latest entry for the session.
+    """
+    session_key = _tool_results_session_key(session_id)
+
+    if result_id:
+        entry = _tool_results_by_session_id_map.get(session_key, {}).get(result_id)
+        return entry
+
+    entries = _tool_results_by_session.get(session_key, [])
+    if not entries:
+        return None
+
+    if after_ms is None:
+        return entries[-1]
+
+    # Find the newest entry created strictly after the given timestamp.
+    for entry in reversed(entries):
+        created = entry.get("created_at_ms")
+        if isinstance(created, int) and created > after_ms:
+            return entry
+    return None
+
+
+def clear_latest_results(session_id: Optional[str] = None) -> None:
+    """Clear stored tool results.
+
+    If session_id is omitted, clears only the current context session.
+    """
+    session_key = _tool_results_session_key(session_id)
+    _tool_results_by_session.pop(session_key, None)
+    _tool_results_by_session_id_map.pop(session_key, None)
 
 
 def get_searcher():
@@ -99,11 +171,13 @@ def _normalize_troubleshooting_query(raw_query: str) -> str:
 @tool
 def search_troubleshooting_kb(
     query: str,
-    top_k: int = 5,
+    top_k: int = 3,
     part_number: Optional[str] = None,
     trial_version: Optional[str] = None,
     only_successful: bool = False,
-    adaptive: bool = True
+    adaptive: bool = False,
+    max_results: int = 20,
+    min_score: float = 0.55
 ) -> str:
     """
     搜索故障排除知识库，查找设备问题的解决方案。
@@ -114,17 +188,13 @@ def search_troubleshooting_kb(
     Args:
         query: 搜索查询（问题描述或关键词）/ Search query (problem description or keywords)
             Examples: "产品披锋", "模具表面污染", "火花纹残留", "mold defects"
-        top_k: 最大返回结果数量 / Maximum number of results to return (default: 5)
-            When adaptive=True, actual count may vary based on relevance scores
+        top_k: 返回给LLM的结果数量 / Results shown to LLM (default: 3, for context efficiency)
         part_number: 零件号过滤 / Filter by part number (optional)
-            Example: "1947688"
         trial_version: 试模版本过滤 (T0/T1/T2) / Filter by trial version (optional)
-            Example: "T2"
         only_successful: 仅显示成功的解决方案 / Only show successful solutions (default: False)
-        adaptive: 自适应结果数量 / Use adaptive result count based on relevance (default: True)
-            When True, returns all highly relevant results (score >= 0.65) up to top_k*2,
-            using score gap detection to find natural result boundaries.
-            When False, returns exactly top_k results.
+        adaptive: 自适应结果数量 / Use adaptive result count (default: False)
+        max_results: 存储供前端分页的最大结果数 / Max results stored for frontend pagination (default: 20)
+        min_score: 最低相关性分数阈值 / Minimum relevance score threshold (default: 0.75)
 
     Returns:
         JSON string with search results including problems, solutions, trial results, and related images
@@ -132,9 +202,7 @@ def search_troubleshooting_kb(
     Examples:
         - search_troubleshooting_kb("产品披锋怎么解决")
         - search_troubleshooting_kb("mold surface contamination", part_number="1947688")
-        - search_troubleshooting_kb("火花纹残留", only_successful=True)
-        - search_troubleshooting_kb("T2阶段的问题", trial_version="T2")
-        - search_troubleshooting_kb("披锋", adaptive=False, top_k=3)  # Fixed count
+        - search_troubleshooting_kb("披锋", top_k=3, max_results=15, min_score=0.8)
     """
     try:
         logger.info(f"Searching troubleshooting KB: query='{query}', top_k={top_k}")
@@ -152,29 +220,92 @@ def search_troubleshooting_kb(
         if only_successful:
             filters['result'] = 'OK'
 
-        # Search
+        # Search with max_results to get more for frontend pagination
         searcher = get_searcher()
         results = searcher.search(
             query=normalized_query or query,
-            top_k=top_k,
+            top_k=max(top_k, max_results),  # Get more results for pagination
             filters=filters if filters else None,
-            classify=True,  # Enable LLM-based query classification
-            adaptive=adaptive  # Enable adaptive result count
+            classify=True,
+            adaptive=adaptive
         )
 
-        # Format for agent consumption
-        formatted_results = {
+        # Format results - CONDENSED for LLM (to avoid context overflow)
+        # Full results will be extracted by agent_api and sent to frontend separately
+        raw_results = results['results']
+
+        # Extract keywords from query for relevance filtering
+        # Map related terms together (query term -> terms to match in problem text)
+        keyword_groups = {
+            "披锋": ["披锋"],
+            "拉白": ["拉白"],
+            "火花纹": ["火花纹"],
+            "脏污": ["脏污", "污染"],
+            "污染": ["脏污", "污染"],  # "污染" in query should match "脏污" in problem
+            "尺寸": ["尺寸"],
+            "变形": ["变形"],
+            "缩水": ["缩水"],
+            "熔接痕": ["熔接痕"],
+            "划痕": ["划痕"],
+        }
+
+        search_keywords = set()
+        match_keywords = set()  # Keywords to actually match in problem text
+        for kw, related in keyword_groups.items():
+            if kw in (normalized_query or query):
+                search_keywords.add(kw)
+                match_keywords.update(related)
+
+        # Filter by: (1) min score, (2) keyword match - strict mode
+        all_results = []
+        keyword_matched = []
+        non_keyword_matched = []
+
+        for item in raw_results:
+            score = item.get('score', 0)
+            problem = item.get('problem', '')
+
+            # Skip if below minimum score threshold
+            if score < min_score:
+                continue
+
+            # Check if problem contains any of the match keywords
+            has_keyword = any(kw in problem for kw in match_keywords) if match_keywords else True
+
+            if has_keyword:
+                keyword_matched.append(item)
+            else:
+                non_keyword_matched.append(item)
+
+        # If we found keyword matches, use only those
+        # Otherwise fall back to all results above threshold
+        if match_keywords and keyword_matched:
+            all_results = keyword_matched
+            logger.info(f"Using {len(keyword_matched)} keyword-matched results for query keywords {search_keywords} matching {match_keywords}")
+        else:
+            all_results = keyword_matched + non_keyword_matched
+            logger.info(f"No keyword filter, using all {len(all_results)} results above min_score")
+
+        total_available = len(all_results)
+        logger.info(f"Filtered {len(raw_results)} -> {total_available} results")
+
+        condensed_results = {
             "query": query,
             **({"normalized_query": normalized_query} if normalized_query and normalized_query != query else {}),
             "search_mode": results['mode'],
-            "adaptive_mode": results.get('adaptive', False),
             "total_found": results['total_found'],
+            "showing": min(top_k, total_available),
+            "total_available": total_available,
             "results": []
         }
 
-        for item in results['results']:
+        # Full results for frontend rendering (all results for pagination)
+        full_results = []
+
+        for idx, item in enumerate(all_results):
             if item['type'] == 'issue':
-                formatted_item = {
+                # Full item for frontend
+                full_item = {
                     "result_type": "specific_solution",
                     "relevance_score": round(item['score'], 3),
                     "case_id": item['case_id'],
@@ -201,9 +332,23 @@ def search_troubleshooting_kb(
                             "description": img.get('vl_description', 'Image available'),
                             "defect_type": img.get('defect_type', '')
                         }
-                        for img in item.get('images', [])  # Return all images
+                        for img in item.get('images', [])
                     ]
                 }
+                full_results.append(full_item)
+
+                # Only add top_k items to condensed results for LLM
+                if idx < top_k:
+                    condensed_item = {
+                        "result_type": "specific_solution",
+                        "case_id": item['case_id'],
+                        "issue_number": item['issue_number'],
+                        "problem": item['problem'][:100] + "..." if len(item['problem']) > 100 else item['problem'],
+                        "solution": item['solution'][:150] + "..." if len(item['solution']) > 150 else item['solution'],
+                        "success_status": item.get('result_t2') or item.get('result_t1'),
+                        "has_images": len(item.get('images', [])) > 0
+                    }
+                    condensed_results['results'].append(condensed_item)
 
             elif item['type'] == 'case':
                 formatted_item = {
@@ -216,13 +361,36 @@ def search_troubleshooting_kb(
                     "summary": item.get('text_summary', ''),
                     "source_file": item.get('source_file')
                 }
+                condensed_results['results'].append(formatted_item)
+                full_results.append(formatted_item)
 
             else:
-                formatted_item = item
+                condensed_results['results'].append(item)
+                full_results.append(item)
 
-            formatted_results['results'].append(formatted_item)
+        # Store full results in a session-scoped cache (agent_api / frontend will extract this)
+        import uuid
+        result_id = str(uuid.uuid4())[:12]
+        condensed_results['__result_id__'] = result_id
 
-        return json.dumps(formatted_results, ensure_ascii=False, indent=2)
+        entry = {
+            "result_id": result_id,
+            "created_at_ms": int(time.time() * 1000),
+            "query": query,
+            "search_mode": results['mode'],
+            "total_found": results['total_found'],
+            "total_available": total_available,
+            "page_size": top_k,
+            "results": full_results,
+        }
+
+        _store_tool_results(_tool_results_session_key(), entry)
+
+        # Add note to LLM about more results available
+        if total_available > top_k:
+            condensed_results['note'] = f"显示前{top_k}个结果，共{total_available}个。用户可在UI中查看更多。"
+
+        return json.dumps(condensed_results, ensure_ascii=False, indent=2)
 
     except Exception as e:
         logger.error(f"Troubleshooting search failed: {e}")

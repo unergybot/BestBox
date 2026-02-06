@@ -133,6 +133,7 @@ fi
 echo -e "${GREEN}✓ Tier 1 complete${NC}"
 echo ""
 
+
 # Wait for ERPNext (part of Tier 1 but takes longer)
 echo -n "Waiting for ERPNext..."
 if timeout 180 bash -c 'until curl -f http://localhost:8002/api/method/ping >/dev/null 2>&1; do sleep 2; done'; then
@@ -140,6 +141,34 @@ if timeout 180 bash -c 'until curl -f http://localhost:8002/api/method/ping >/de
 else
     echo -e "${YELLOW}Warning: ERPNext startup timed out (may still be initializing)${NC}"
 fi
+
+# Start OCR Service (Docker)
+if [ -f "./scripts/start-ocr-docker.sh" ]; then
+    echo "Starting OCR Service..."
+    if docker ps -q -f name=bestbox-ocr > /dev/null; then
+        echo -e "${YELLOW}OCR Service already running${NC}"
+    else
+        # Run in background to avoid blocking on log tailing
+        # We use setsid or nohup to detach, but the script itself tails logs.
+        # We need to run it in a way that doesn't block.
+        # However, start-ocr-docker.sh ends with "docker logs -f".
+        # We should probably modify start-ocr-docker.sh to support a "no-logs" flag, 
+        # OR just call docker run directly here?
+        # Better: run it in background and let it tail logs to a file or /dev/null if we don't want to see them here.
+        # Actually, start-ocr-docker.sh is a "start and follow logs" script.
+        # Let's run it in background and rely on health check.
+        ./scripts/start-ocr-docker.sh > ocr_startup.log 2>&1 &
+        OCR_PID=$!
+        # The script blocks on docker logs -f, so sending it to background is correct.
+    fi
+
+    if ! check_health "OCR Service" "http://localhost:8084/health" 60; then
+        echo -e "${YELLOW}Warning: OCR Service not responding (may still be loading)${NC}"
+    fi
+else
+    echo -e "${YELLOW}OCR start script not found, skipping...${NC}"
+fi
+
 
 
 echo -e "${YELLOW}=== Tier 2: LLM Inference Services ===${NC}"
