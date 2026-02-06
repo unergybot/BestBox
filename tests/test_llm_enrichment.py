@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 import pytest
 
-from services.llm_enrichment import enrich_chunk, EnrichmentResult, QAPair
+from services.llm_enrichment import enrich_chunk, enrich_document, EnrichmentResult, QAPair
 
 
 # --- Fixtures ---
@@ -150,3 +150,67 @@ async def test_enrich_chunk_returns_none_on_bad_json():
         result = await enrich_chunk("Some text with bad LLM response.", domain="mold")
 
     assert result is None
+
+
+# --- enrich_document tests ---
+
+
+@pytest.mark.asyncio
+async def test_enrich_document_processes_all_chunks():
+    """Mock enrich_chunk to always return a result. Pass 3 chunks.
+    Verify all 3 get results. Verify progress_callback is called with (1,3), (2,3), (3,3)."""
+    fake_result = EnrichmentResult(summary="test summary")
+
+    chunks = [
+        {"text": "chunk one"},
+        {"text": "chunk two"},
+        {"text": "chunk three"},
+    ]
+
+    progress_calls = []
+
+    def progress_callback(current: int, total: int) -> None:
+        progress_calls.append((current, total))
+
+    with patch("services.llm_enrichment.enrich_chunk", new_callable=AsyncMock) as mock_enrich:
+        mock_enrich.return_value = fake_result
+        results = await enrich_document(chunks, domain="mold", progress_callback=progress_callback)
+
+    assert len(results) == 3
+    for r in results:
+        assert r is not None
+        assert isinstance(r, EnrichmentResult)
+        assert r.summary == "test summary"
+
+    assert mock_enrich.call_count == 3
+    assert progress_calls == [(1, 3), (2, 3), (3, 3)]
+
+
+@pytest.mark.asyncio
+async def test_enrich_document_skips_failed_chunks():
+    """Mock enrich_chunk to return None for 1st chunk, EnrichmentResult for 2nd.
+    Verify results[0] is None, results[1] is not None. Both chunks are still processed."""
+    fake_result = EnrichmentResult(summary="success chunk")
+
+    chunks = [
+        {"text": "chunk that fails"},
+        {"text": "chunk that succeeds"},
+    ]
+
+    async def side_effect(text: str, domain: str = "mold"):
+        if text == "chunk that fails":
+            return None
+        return fake_result
+
+    with patch("services.llm_enrichment.enrich_chunk", new_callable=AsyncMock) as mock_enrich:
+        mock_enrich.side_effect = side_effect
+        results = await enrich_document(chunks, domain="mold")
+
+    assert len(results) == 2
+    assert results[0] is None
+    assert results[1] is not None
+    assert isinstance(results[1], EnrichmentResult)
+    assert results[1].summary == "success chunk"
+
+    # Both chunks were processed (enrich_chunk called twice)
+    assert mock_enrich.call_count == 2

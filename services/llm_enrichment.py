@@ -14,7 +14,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
 
@@ -258,3 +258,42 @@ async def enrich_chunk(
     except Exception as e:
         logger.warning("LLM enrichment failed: %s", e)
         return None
+
+
+async def enrich_document(
+    chunks: List[Dict[str, Any]],
+    domain: str = "mold",
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+) -> List[Optional[EnrichmentResult]]:
+    """Process all chunks of a document through LLM enrichment sequentially.
+
+    Chunks are processed one at a time to avoid overloading the local LLM.
+    Individual chunk failures do not stop processing of subsequent chunks.
+
+    Args:
+        chunks: List of dicts, each expected to have a ``"text"`` key.
+        domain: Domain hint forwarded to :func:`enrich_chunk`.
+        progress_callback: Optional ``(current, total)`` callback invoked
+            after each chunk is processed.
+
+    Returns:
+        A list parallel to *chunks* where each element is an
+        :class:`EnrichmentResult` on success, or ``None`` on failure
+        (including chunks with empty/missing text).
+    """
+    total = len(chunks)
+    results: List[Optional[EnrichmentResult]] = []
+
+    for idx, chunk in enumerate(chunks, start=1):
+        text = chunk.get("text", "").strip() if isinstance(chunk, dict) else ""
+
+        if not text:
+            results.append(None)
+        else:
+            result = await enrich_chunk(text, domain)
+            results.append(result)
+
+        if progress_callback is not None:
+            progress_callback(idx, total)
+
+    return results
