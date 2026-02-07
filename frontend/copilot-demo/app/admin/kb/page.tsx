@@ -40,6 +40,55 @@ function getAuthHeaders(): Record<string, string> {
   return { "admin-token": token };
 }
 
+function ImageThumb({ imageId, onClick }: { imageId: string; onClick: () => void }) {
+  const [src, setSrc] = useState<string>("");
+
+  useEffect(() => {
+    let revoke = "";
+    fetch(`${API_BASE}/admin/kb/images/${imageId}`, { headers: getAuthHeaders() })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        setSrc(url);
+        revoke = url;
+      })
+      .catch(() => {});
+    return () => { if (revoke) URL.revokeObjectURL(revoke); };
+  }, [imageId]);
+
+  if (!src) return <div className="w-20 h-20 rounded-lg bg-gray-100 animate-pulse" />;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-20 h-20 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors flex-shrink-0"
+    >
+      <img src={src} alt={imageId} className="w-full h-full object-cover" />
+    </button>
+  );
+}
+
+function ImageFull({ imageId }: { imageId: string }) {
+  const [src, setSrc] = useState<string>("");
+
+  useEffect(() => {
+    let revoke = "";
+    fetch(`${API_BASE}/admin/kb/images/${imageId}`, { headers: getAuthHeaders() })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        setSrc(url);
+        revoke = url;
+      })
+      .catch(() => {});
+    return () => { if (revoke) URL.revokeObjectURL(revoke); };
+  }, [imageId]);
+
+  if (!src) return <div className="w-64 h-64 bg-gray-800 animate-pulse rounded" />;
+
+  return <img src={src} alt={imageId} className="max-w-full max-h-[80vh] rounded-lg shadow-2xl" />;
+}
+
 export default function KBDashboardPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -59,6 +108,9 @@ export default function KBDashboardPage() {
   // Detail view
   const [detailDoc, setDetailDoc] = useState<string | null>(null);
   const [detailData, setDetailData] = useState<Record<string, unknown> | null>(null);
+
+  // Lightbox
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const fetchCollections = useCallback(async () => {
     try {
@@ -431,6 +483,17 @@ export default function KBDashboardPage() {
                     </a>
                   </div>
                 )}
+                {(() => {
+                  const chunks = (detailData as Record<string, unknown>).chunks as Array<Record<string, unknown>> || [];
+                  const totalImages = chunks.reduce((sum: number, c: Record<string, unknown>) =>
+                    sum + ((c.image_ids as string[] || []).length), 0);
+                  return totalImages > 0 ? (
+                    <div>
+                      <span className="text-gray-500">Images:</span>{" "}
+                      <span className="font-medium">{totalImages}</span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
 
               {/* Chunks */}
@@ -468,11 +531,43 @@ export default function KBDashboardPage() {
                         ) : null}
                       </div>
                       <p className="text-gray-800 whitespace-pre-wrap">{chunk.text as string}</p>
+                      {/* Image thumbnails */}
+                      {((chunk.image_ids as string[]) || []).length > 0 && (
+                        <div className="mt-2 flex gap-2 flex-wrap">
+                          {(chunk.image_ids as string[]).map((imgId: string) => (
+                            <ImageThumb
+                              key={imgId}
+                              imageId={imgId}
+                              onClick={() => setLightboxImage(imgId)}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image lightbox */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-8"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-gray-300"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <ImageFull imageId={lightboxImage} />
           </div>
         </div>
       )}

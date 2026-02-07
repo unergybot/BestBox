@@ -6,6 +6,8 @@ This module defines a FastAPI APIRouter that is mounted at /admin in agent_api.p
 All endpoints are protected by JWT authentication with role-based access control.
 """
 
+import base64
+import io
 import json
 import logging
 import os
@@ -26,7 +28,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -355,12 +357,16 @@ async def admin_upload_document(
                 uploaded_by=user.get("username", ""),
             )
         else:
-            # Generic hierarchical chunking
+            # Generic hierarchical chunking with image extraction
+            doc_id = str(uuid.uuid4())
+            images = _extract_and_save_images(docling_result, doc_id=doc_id)
             chunks = _hierarchical_chunk(
                 docling_result,
                 source_file=file.filename or saved_path.name,
                 domain=domain,
                 uploaded_by=user.get("username", ""),
+                images=images,
+                doc_id=doc_id,
             )
 
         # Step 3: Embed and index into Qdrant
@@ -816,6 +822,8 @@ async def admin_get_document(
                 "mold_id": payload.get("mold_id", ""),
                 "severity": payload.get("severity", ""),
                 "has_images": payload.get("has_images", False),
+                "image_ids": payload.get("image_ids", []),
+                "image_count": payload.get("image_count", 0),
                 "image_paths": payload.get("image_paths", []),
                 "chunk_type": payload.get("chunk_type", "original"),
                 "root_cause_category": payload.get("root_cause_category", ""),
@@ -1175,6 +1183,20 @@ async def admin_docling_health(
     return await client.health_check()
 
 
+@router.get("/kb/images/{image_id}")
+async def admin_get_image(
+    image_id: str,
+    user: Dict = Depends(require_permission("view")),
+):
+    """Serve an extracted document image."""
+    filepath = _resolve_image_path(image_id)
+    if not filepath:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    media_type = "image/jpeg" if filepath.suffix == ".jpg" else "application/octet-stream"
+    return FileResponse(filepath, media_type=media_type)
+
+
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
@@ -1186,13 +1208,16 @@ def _hierarchical_chunk(
     uploaded_by: str,
     max_chunk_size: int = 1000,
     overlap: int = 200,
+    images: Optional[List[Dict[str, str]]] = None,
+    doc_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Generic hierarchical chunking for non-Excel documents.
     Uses Docling's structured output to respect section boundaries.
+    Links images to chunks based on <!-- image --> placeholder positions.
     """
     doc = docling_result.get("document", docling_result)
-    doc_id = str(uuid.uuid4())
+    doc_id = doc_id or str(uuid.uuid4())
 
     # Try markdown first
     text = docling_result.get("md", "")
@@ -1207,6 +1232,31 @@ def _hierarchical_chunk(
     if not text:
         return []
 
+    # Map image placeholder positions to images
+    image_placeholder = "<!-- image -->"
+    placeholder_positions: List[int] = []
+    search_start = 0
+    while True:
+        pos = text.find(image_placeholder, search_start)
+        if pos == -1:
+            break
+        placeholder_positions.append(pos)
+        search_start = pos + len(image_placeholder)
+
+    # Build image-to-position mapping
+    image_positions: List[tuple] = []  # (char_offset, image_dict)
+    if images and placeholder_positions:
+        if len(placeholder_positions) == len(images):
+            # 1:1 mapping
+            for pos, img in zip(placeholder_positions, images):
+                image_positions.append((pos, img))
+        else:
+            # Fallback: all images attached to first chunk
+            image_positions = [(0, img) for img in images]
+    elif images and not placeholder_positions:
+        # No placeholders: all images to first chunk
+        image_positions = [(0, img) for img in images]
+
     # Simple sliding-window chunking
     chunks = []
     start = 0
@@ -1215,6 +1265,11 @@ def _hierarchical_chunk(
         end = min(start + max_chunk_size, len(text))
         chunk_text = text[start:end].strip()
         if chunk_text:
+            # Find images whose placeholder falls within [start, end)
+            chunk_images = [
+                img for pos, img in image_positions
+                if start <= pos < end
+            ]
             chunks.append({
                 "text": chunk_text,
                 "metadata": {
@@ -1226,7 +1281,9 @@ def _hierarchical_chunk(
                     "uploaded_by": uploaded_by,
                     "upload_date": datetime.now(timezone.utc).isoformat(),
                     "processing_method": "docling",
-                    "has_images": False,
+                    "has_images": len(chunk_images) > 0,
+                    "image_ids": [img["image_id"] for img in chunk_images],
+                    "image_count": len(chunk_images),
                 },
             })
             chunk_idx += 1
@@ -1237,6 +1294,91 @@ def _hierarchical_chunk(
         c["metadata"]["total_chunks"] = len(chunks)
 
     return chunks
+
+
+# Image storage directory
+IMAGE_DIR = UPLOAD_DIR / "images"
+
+
+def _extract_and_save_images(
+    docling_result: Dict[str, Any],
+    doc_id: str,
+    base_dir: Optional[Path] = None,
+) -> List[Dict[str, str]]:
+    """
+    Extract embedded images from Docling result, save as JPEG to disk.
+
+    Returns list of dicts: {"image_id": ..., "path": ..., "page": ...}
+    """
+    pictures = docling_result.get("pictures", [])
+    if not pictures:
+        return []
+
+    save_dir = (base_dir or IMAGE_DIR) / doc_id
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    images: List[Dict[str, str]] = []
+    for idx, pic in enumerate(pictures):
+        try:
+            uri = pic.get("image", {}).get("uri", "")
+            if not uri or "base64," not in uri:
+                continue
+
+            b64_data = uri.split("base64,", 1)[1]
+            raw_bytes = base64.b64decode(b64_data)
+
+            # Get page number from provenance
+            prov = pic.get("prov", [{}])
+            page_no = prov[0].get("page_no", 0) if prov else 0
+
+            image_id = f"{doc_id}_page{page_no}_img{idx}"
+            filename = f"page{page_no}_img{idx}.jpg"
+            filepath = save_dir / filename
+
+            # Convert to JPEG via Pillow
+            try:
+                from PIL import Image
+                img = Image.open(io.BytesIO(raw_bytes))
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
+                img.save(filepath, "JPEG", quality=90)
+            except Exception:
+                # Fallback: save raw bytes
+                filepath = save_dir / f"page{page_no}_img{idx}.bin"
+                filepath.write_bytes(raw_bytes)
+
+            images.append({
+                "image_id": image_id,
+                "path": str(filepath),
+                "page": str(page_no),
+            })
+
+        except Exception as e:
+            logger.warning(f"Skipping image {idx} in doc {doc_id}: {e}")
+            continue
+
+    return images
+
+
+def _resolve_image_path(image_id: str) -> Optional[Path]:
+    """Resolve an image_id like 'docid_page1_img0' to its file path."""
+    page_match = re.search(r"^(.+)_(page\d+_img\d+)$", image_id)
+    if not page_match:
+        return None
+
+    doc_id = page_match.group(1)
+    filename = page_match.group(2) + ".jpg"
+
+    filepath = IMAGE_DIR / doc_id / filename
+    if filepath.exists():
+        return filepath
+
+    # Try .bin fallback
+    bin_path = IMAGE_DIR / doc_id / (page_match.group(2) + ".bin")
+    if bin_path.exists():
+        return bin_path
+
+    return None
 
 
 async def _index_chunks(
@@ -1560,11 +1702,15 @@ async def _process_url_job(
                 uploaded_by=user.get("username", ""),
             )
         else:
+            doc_id = str(uuid.uuid4())
+            images = _extract_and_save_images(docling_result, doc_id=doc_id)
             chunks = _hierarchical_chunk(
                 docling_result,
                 source_file=filename,
                 domain=body.domain,
                 uploaded_by=user.get("username", ""),
+                images=images,
+                doc_id=doc_id,
             )
 
         # Inject source_url into all chunk metadata
