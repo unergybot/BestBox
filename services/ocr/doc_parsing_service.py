@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import tempfile
 import io
@@ -8,7 +9,6 @@ import httpx
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -17,9 +17,13 @@ logger = logging.getLogger("docling-service")
 
 app = FastAPI(title="Docling Parsing Service")
 
-# Configuration
 OCR_SERVICE_URL = os.environ.get("OCR_SERVICE_URL", "http://ocr-service:8084")
+GLM_OCR_URL = os.environ.get("GLM_OCR_URL", "http://glm-ocr-service:11434")
+GPU_SCHEDULER_URL = os.environ.get("GPU_SCHEDULER_URL", "http://gpu-scheduler:8086")
 OCR_MIN_TEXT_CHARS = int(os.environ.get("OCR_MIN_TEXT_CHARS", "50"))
+GARBAGE_THRESHOLD = float(os.environ.get("GARBAGE_THRESHOLD", "0.30"))
+ENABLE_QUALITY_GATE = os.environ.get("ENABLE_QUALITY_GATE", "true").lower() == "true"
+ENABLE_GLM_OCR_FALLBACK = os.environ.get("ENABLE_GLM_OCR_FALLBACK", "true").lower() == "true"
 
 
 class ParseResponse(BaseModel):
@@ -75,9 +79,71 @@ async def run_gpu_ocr_bytes(image_bytes: bytes, filename: str) -> str:
         return ""
 
 
+def check_quality_issues(text: str) -> dict:
+    """Check for quality issues in extracted text."""
+    issues = {
+        "empty_blocks": False,
+        "high_garbage_ratio": False,
+        "table_collapsed": False,
+        "very_short": False,
+        "garbage_ratio": 0.0
+    }
+    
+    if not text or len(text.strip()) == 0:
+        issues["empty_blocks"] = True
+        return issues
+    
+    if len(text) < OCR_MIN_TEXT_CHARS:
+        issues["very_short"] = True
+    
+    non_ascii_count = sum(1 for c in text if ord(c) > 127)
+    total_chars = len(text)
+    garbage_ratio = non_ascii_count / total_chars if total_chars > 0 else 0
+    issues["garbage_ratio"] = garbage_ratio
+    
+    if garbage_ratio > GARBAGE_THRESHOLD:
+        issues["high_garbage_ratio"] = True
+    
+    table_indicators = ['|', '───', '┌', '┐', '└', '┘', '├', '┤', '┬', '┴', '┼']
+    has_table_markers = any(marker in text for marker in table_indicators)
+    if has_table_markers and len(text) < 100:
+        issues["table_collapsed"] = True
+    
+    return issues
+
+
+async def run_glm_ocr_with_scheduling(image_bytes: bytes, filename: str, page_num: int) -> str:
+    """Run GLM-OCR with GPU scheduling for quality fallback."""
+    if not ENABLE_GLM_OCR_FALLBACK:
+        return ""
+    
+    worker_id = f"docling-page-{page_num}"
+    
+    try:
+        from glm_ocr_client import GLMOCRClient
+        
+        client = GLMOCRClient(
+            base_url=GLM_OCR_URL,
+            scheduler_url=GPU_SCHEDULER_URL
+        )
+        
+        text = await client.extract_text_bytes(
+            image_bytes=image_bytes,
+            filename=filename,
+            prompt="Extract all text from this document page. Preserve layout, tables, and formatting. Output as markdown.",
+            worker_id=worker_id
+        )
+        
+        await client.close()
+        return text
+        
+    except Exception as e:
+        logger.error(f"GLM-OCR fallback failed for page {page_num}: {e}")
+        return ""
+
+
 def get_page_text_lengths(doc) -> dict:
-    """Get the total text length extracted by Docling for each page."""
-    from docling_core.types.doc import TextItem
+    from docling_core.types.doc.document import TextItem
 
     page_text = {}
     for item, _level in doc.iterate_items():
@@ -104,17 +170,16 @@ async def parse_document(
     run_ocr: bool = True,
     domain: str = "mold"
 ):
-    """Parse a document using Docling and delegate OCR to the GPU service."""
+    """Parse a document using Docling with quality gate and OCR-VL escalation."""
     try:
         from docling.document_converter import DocumentConverter, PdfFormatOption
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
 
-        # Configure Docling: disable built-in OCR, enable page image generation
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = False
         pipeline_options.generate_page_images = True
-        pipeline_options.images_scale = 2.0  # 2x for good OCR quality
+        pipeline_options.images_scale = 2.0
 
         converter = DocumentConverter(
             format_options={
@@ -124,8 +189,8 @@ async def parse_document(
             }
         )
 
-        # Save uploaded file
-        suffix = Path(file.filename).suffix.lower()
+        filename = file.filename or "document.pdf"
+        suffix = Path(filename).suffix.lower()
         if suffix not in {'.pdf', '.docx', '.pptx'}:
             raise HTTPException(status_code=415, detail=f"Unsupported file type: {suffix}")
 
@@ -137,14 +202,13 @@ async def parse_document(
         try:
             logger.info(f"Parsing document: {file.filename}")
 
-            # 1. Convert with Docling (OCR disabled, page images enabled)
             result = converter.convert(str(tmp_path))
             text = result.document.export_to_markdown()
             logger.info(f"Docling extracted {len(text)} chars of text")
 
-            # 2. Find pages that need GPU OCR
             ocr_results = []
             pages_ocrd = 0
+            pages_escalated = 0
 
             if run_ocr and suffix == '.pdf':
                 page_text_lengths = get_page_text_lengths(result.document)
@@ -153,37 +217,70 @@ async def parse_document(
 
                 for page_no, page in result.document.pages.items():
                     chars_on_page = page_text_lengths.get(page_no, 0)
+                    page_needs_ocr = chars_on_page < OCR_MIN_TEXT_CHARS
+                    
+                    image_bytes = render_page_to_png(page)
+                    if not image_bytes:
+                        logger.warning(f"Page {page_no}: no image available for OCR")
+                        continue
 
-                    if chars_on_page < OCR_MIN_TEXT_CHARS:
+                    ocr_text = ""
+                    quality_failed = False
+                    
+                    if page_needs_ocr:
                         logger.info(
                             f"Page {page_no}: only {chars_on_page} chars, "
                             f"delegating to GPU OCR at {OCR_SERVICE_URL}"
                         )
-                        image_bytes = render_page_to_png(page)
-                        if image_bytes:
-                            ocr_text = await run_gpu_ocr_bytes(
-                                image_bytes, f"page_{page_no}.png"
-                            )
-                            if ocr_text:
-                                ocr_results.append({
-                                    "image_index": page_no,
-                                    "page": page_no,
-                                    "text": ocr_text
-                                })
-                                pages_ocrd += 1
-                        else:
-                            logger.warning(f"Page {page_no}: no image available for OCR")
+                        ocr_text = await run_gpu_ocr_bytes(
+                            image_bytes, f"page_{page_no}.png"
+                        )
+                        
+                        if ENABLE_QUALITY_GATE and ocr_text:
+                            quality = check_quality_issues(ocr_text)
+                            if any([
+                                quality["high_garbage_ratio"],
+                                quality["table_collapsed"],
+                                quality["empty_blocks"]
+                            ]):
+                                logger.warning(
+                                    f"Page {page_no}: quality check failed "
+                                    f"(garbage_ratio={quality['garbage_ratio']:.2f}), "
+                                    f"escalating to GLM-OCR"
+                                )
+                                quality_failed = True
+                    
+                    if quality_failed or (ENABLE_QUALITY_GATE and page_needs_ocr and not ocr_text):
+                        logger.info(f"Page {page_no}: escalating to GLM-OCR on RTX 3080")
+                        glm_text = await run_glm_ocr_with_scheduling(
+                            image_bytes, f"page_{page_no}.png", page_no
+                        )
+                        if glm_text:
+                            ocr_text = glm_text
+                            pages_escalated += 1
+                            logger.info(f"Page {page_no}: GLM-OCR extracted {len(glm_text)} chars")
+                    
+                    if ocr_text:
+                        ocr_results.append({
+                            "image_index": page_no,
+                            "page": page_no,
+                            "text": ocr_text,
+                            "source": "glm-ocr" if quality_failed or pages_escalated > 0 else "got-ocr"
+                        })
+                        pages_ocrd += 1
                     else:
                         logger.info(f"Page {page_no}: {chars_on_page} chars, skipping OCR")
 
-                logger.info(f"GPU OCR completed: {pages_ocrd}/{total_pages} pages processed")
+                logger.info(
+                    f"OCR complete: {pages_ocrd}/{total_pages} pages processed, "
+                    f"{pages_escalated} escalated to GLM-OCR"
+                )
 
-            # 3. Combine results
             combined_text = text
             if ocr_results:
                 combined_text += "\n\n## OCR Extracted Text\n\n"
                 for ocr_item in ocr_results:
-                    combined_text += f"### Page {ocr_item['page']}\n\n"
+                    combined_text += f"### Page {ocr_item['page']} ({ocr_item['source']})\n\n"
                     combined_text += f"{ocr_item['text']}\n\n"
 
             metadata = {
@@ -192,8 +289,11 @@ async def parse_document(
                 "domain": domain,
                 "image_count": pages_ocrd,
                 "ocr_count": len(ocr_results),
+                "pages_escalated": pages_escalated,
                 "total_pages": len(result.document.pages) if hasattr(result.document, 'pages') else 0,
-                "docling_text_length": len(text)
+                "docling_text_length": len(text),
+                "quality_gate_enabled": ENABLE_QUALITY_GATE,
+                "glm_ocr_fallback_enabled": ENABLE_GLM_OCR_FALLBACK
             }
 
             return ParseResponse(

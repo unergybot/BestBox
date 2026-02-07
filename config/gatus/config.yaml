@@ -1,0 +1,193 @@
+# Gatus Configuration for BestBox
+# Health monitoring dashboard for all BestBox services
+# Access at: http://localhost:8086
+
+endpoints:
+  # ==========================================================
+  # BestBox Core Services
+  # ==========================================================
+
+  - name: Agent API
+    group: BestBox Core
+    url: "http://host.docker.internal:8000/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].status == ok"
+      - "[RESPONSE_TIME] < 1000"
+
+  - name: LLM Server (llama.cpp)
+    group: BestBox Core
+    url: "http://host.docker.internal:8001/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Embeddings (External)
+    group: BestBox Core
+    url: "http://host.docker.internal:8004/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+      - "[BODY].status == ok"
+      - "[RESPONSE_TIME] < 2000"
+
+  - name: Reranker
+    group: BestBox Core
+    url: "http://host.docker.internal:8082/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 2000"
+
+  - name: S2S Gateway
+    group: BestBox Core
+    url: "http://host.docker.internal:8765/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 1000"
+
+  # ==========================================================
+  # Voice Services
+  # ==========================================================
+
+  - name: LiveKit Server
+    group: Voice Services
+    url: "http://livekit:7880"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+
+  # ==========================================================
+  # Infrastructure Services
+  # ==========================================================
+
+  - name: Qdrant Vector DB
+    group: Infrastructure
+    url: "http://qdrant:6333/healthz"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: PostgreSQL
+    group: Infrastructure
+    url: "tcp://postgres:5432"
+    interval: 30s
+    conditions:
+      - "[CONNECTED] == true"
+
+  - name: Redis Cache
+    group: Infrastructure
+    url: "tcp://redis:6379"
+    interval: 30s
+    conditions:
+      - "[CONNECTED] == true"
+
+  - name: MariaDB (ERPNext)
+    group: Infrastructure
+    url: "tcp://mariadb:3306"
+    interval: 30s
+    conditions:
+      - "[CONNECTED] == true"
+
+  # ==========================================================
+  # Document Processing
+  # ==========================================================
+
+  - name: Docling Serve
+    group: Document Processing
+    url: "http://docling-serve:5001/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+
+  # ==========================================================
+  # Frontend
+  # ==========================================================
+
+  - name: Frontend Dev Server
+    group: Frontend
+    url: "http://host.docker.internal:3000"
+    interval: 30s
+    conditions:
+      - "[STATUS] < 400"
+
+  - name: Next.js Health
+    group: Frontend
+    url: "http://host.docker.internal:3000/api/health"
+    interval: 30s
+    conditions:
+      - "[STATUS] == 200"
+
+# ==========================================================
+# Storage Configuration
+# ==========================================================
+
+storage:
+  type: sqlite
+  path: /data/gatus.db
+  caching: true
+
+# ==========================================================
+# Web Configuration
+# ==========================================================
+
+web:
+  address: 0.0.0.0
+  port: 8080
+
+# ==========================================================
+# UI Configuration
+# ==========================================================
+
+ui:
+  title: "BestBox Status"
+  header: "BestBox"
+  dashboard-heading: "BestBox Service Status"
+  dashboard-subheading: "Real-time monitoring of all BestBox services and infrastructure"
+  dark-mode: true
+  default-sort-by: group
+  buttons:
+    - name: "Admin Dashboard"
+      link: "http://localhost:3000/admin/system"
+    - name: "BestBox App"
+      link: "http://localhost:3000"
+
+# ==========================================================
+# Alerting Configuration (Optional)
+# Uncomment and configure to enable alerts
+# ==========================================================
+
+# alerting:
+#   slack:
+#     webhook-url: "$SLACK_WEBHOOK_URL"
+#     default-alert:
+#       failure-threshold: 3
+#       success-threshold: 2
+#       send-on-resolved: true
+#       description: "Service health check failed"
+
+#   discord:
+#     webhook-url: "$DISCORD_WEBHOOK_URL"
+#     default-alert:
+#       failure-threshold: 3
+#       success-threshold: 2
+#       send-on-resolved: true
+
+# ==========================================================
+# Metrics Configuration
+# ==========================================================
+
+metrics: true
+
+# ==========================================================
+# Maintenance Windows (Optional)
+# ==========================================================
+
+# maintenance:
+#   start: "02:00"
+#   duration: 1h
+#   timezone: "America/Los_Angeles"
+#   every: [Sunday]

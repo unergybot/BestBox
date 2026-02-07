@@ -1,5 +1,4 @@
 import createNextIntlPlugin from 'next-intl/plugin';
-import path from "path";
 import type { NextConfig } from "next";
 
 const withNextIntl = createNextIntlPlugin();
@@ -30,9 +29,6 @@ const nextConfig: NextConfig = {
     ...EXTRA_ALLOWED_DEV_ORIGINS,
   ],
 
-  turbopack: {
-    root: path.resolve(__dirname, "../../"),
-  },
   experimental: {
   },
   async rewrites() {

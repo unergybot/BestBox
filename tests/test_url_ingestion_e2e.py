@@ -145,3 +145,15 @@ def test_kb_document_detail_returns_chunks():
     assert len(data["chunks"]) > 0
     # Chunks should have text
     assert data["chunks"][0]["text"]
+
+
+def test_image_endpoint_returns_404_for_missing():
+    """GET /admin/kb/images/{nonexistent} should return 404."""
+    import os
+    token = os.getenv("ADMIN_TOKEN", "bestbox-admin-token")
+    resp = httpx.get(
+        f"{API_BASE}/admin/kb/images/nonexistent_page0_img0",
+        headers={"admin-token": token},
+        timeout=10,
+    )
+    assert resp.status_code == 404

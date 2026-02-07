@@ -89,6 +89,59 @@ function ImageFull({ imageId }: { imageId: string }) {
   return <img src={src} alt={imageId} className="max-w-full max-h-[80vh] rounded-lg shadow-2xl" />;
 }
 
+function InlineImage({ imageId, onClick }: { imageId: string; onClick: () => void }) {
+  const [src, setSrc] = useState<string>("");
+
+  useEffect(() => {
+    let revoke = "";
+    fetch(`${API_BASE}/admin/kb/images/${imageId}`, { headers: getAuthHeaders() })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        setSrc(url);
+        revoke = url;
+      })
+      .catch(() => {});
+    return () => { if (revoke) URL.revokeObjectURL(revoke); };
+  }, [imageId]);
+
+  if (!src) return <div className="w-full h-32 rounded-lg bg-gray-100 animate-pulse my-2" />;
+
+  return (
+    <button
+      onClick={onClick}
+      className="block w-full my-3 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors"
+    >
+      <img src={src} alt={imageId} className="w-full h-auto max-h-64 object-contain bg-gray-50" />
+    </button>
+  );
+}
+
+function ChunkContent({ text, imageIds, onImageClick }: { text: string; imageIds: string[]; onImageClick: (id: string) => void }) {
+  const placeholder = "<!-- image -->";
+  const parts = text.split(placeholder);
+
+  if (parts.length === 1 || imageIds.length === 0) {
+    return <p className="text-gray-800 whitespace-pre-wrap">{text}</p>;
+  }
+
+  return (
+    <div className="text-gray-800">
+      {parts.map((part, index) => (
+        <span key={index}>
+          {part && <span className="whitespace-pre-wrap">{part}</span>}
+          {index < parts.length - 1 && index < imageIds.length && (
+            <InlineImage
+              imageId={imageIds[index]}
+              onClick={() => onImageClick(imageIds[index])}
+            />
+          )}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function KBDashboardPage() {
   const [collections, setCollections] = useState<Collection[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -470,7 +523,7 @@ export default function KBDashboardPage() {
                       : "—"}
                   </span>
                 </div>
-                {(detailData as Record<string, unknown>).source_url && (
+                {(detailData as Record<string, unknown>).source_url ? (
                   <div className="col-span-2">
                     <span className="text-gray-500">Source URL:</span>{" "}
                     <a
@@ -482,7 +535,7 @@ export default function KBDashboardPage() {
                       {(detailData as Record<string, unknown>).source_url as string}
                     </a>
                   </div>
-                )}
+                ) : null}
                 {(() => {
                   const chunks = (detailData as Record<string, unknown>).chunks as Array<Record<string, unknown>> || [];
                   const totalImages = chunks.reduce((sum: number, c: Record<string, unknown>) =>
@@ -530,19 +583,11 @@ export default function KBDashboardPage() {
                           </span>
                         ) : null}
                       </div>
-                      <p className="text-gray-800 whitespace-pre-wrap">{chunk.text as string}</p>
-                      {/* Image thumbnails */}
-                      {((chunk.image_ids as string[]) || []).length > 0 && (
-                        <div className="mt-2 flex gap-2 flex-wrap">
-                          {(chunk.image_ids as string[]).map((imgId: string) => (
-                            <ImageThumb
-                              key={imgId}
-                              imageId={imgId}
-                              onClick={() => setLightboxImage(imgId)}
-                            />
-                          ))}
-                        </div>
-                      )}
+                      <ChunkContent
+                        text={chunk.text as string}
+                        imageIds={(chunk.image_ids as string[]) || []}
+                        onImageClick={setLightboxImage}
+                      />
                     </div>
                   )
                 )}

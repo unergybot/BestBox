@@ -193,7 +193,43 @@ services:
       - jaeger
     restart: unless-stopped
 
+  # ==========================================================
+  # Document Processing (Docling Serve)
+  # ==========================================================
+
+  docling-serve:
+    image: quay.io/docling-project/docling-serve
+    container_name: bestbox-docling-serve
+    ports:
+      - "5001:5001"
+    environment:
+      - DOCLING_SERVE_ENABLE_UI=1
+    volumes:
+      - docling-scratch:/tmp/docling
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  gatus:
+    image: ghcr.io/twin/gatus:stable
+    container_name: bestbox-gatus
+    ports:
+      - "8086:8080"
+    volumes:
+      - ./config/gatus/config.yaml:/config/config.yaml
+      - gatus-data:/data
+    environment:
+      - GATUS_CONFIG_PATH=/config/config.yaml
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
+  gatus-data:
+    name: bestbox-gatus-data
   qdrant-data:
     name: bestbox-qdrant-data
   postgres-data:
@@ -210,6 +246,8 @@ volumes:
     name: bestbox-prometheus-data
   grafana-data:
     name: bestbox-grafana-data
+  docling-scratch:
+    name: bestbox-docling-scratch
 
 # Note: LLM server (llama-server) runs natively for GPU access
 # Use scripts/start-llm.sh for Vulkan backend

@@ -271,12 +271,12 @@ async def _download_url(url: str) -> tuple[Path, str]:
 
 
 def _get_db_pool(request: Request):
-    """Retrieve the asyncpg pool from app state."""
-    pool = getattr(request.app, "_admin_db_pool", None)
+    """Retrieve the asyncpg pool from app state or agent_api global."""
+    # First try app state
+    pool = getattr(request.app.state, "db_pool", None)
     if pool is None:
-        # Fall back to the global db_pool from agent_api
-        import services.agent_api as api_mod
-        pool = getattr(api_mod, "db_pool", None)
+        # Try legacy _admin_db_pool attribute
+        pool = getattr(request.app, "_admin_db_pool", None)
     return pool
 
 
@@ -1751,16 +1751,161 @@ async def _process_url_job(
 
         job["completed"] = indexed
         job["status"] = "completed"
-        job["stage"] = "done"
-        logger.info(
-            f"URL job {job_id} completed: {indexed} chunks indexed from {filename}"
-        )
 
     except Exception as exc:
         logger.error(f"URL job {job_id} failed: {exc}", exc_info=True)
         job["status"] = "failed"
         job["error"] = str(exc)
-        job["failed"] = 1
+
+
+# ------------------------------------------------------------------
+# Service Management endpoints
+# ------------------------------------------------------------------
+
+
+@router.get("/services")
+async def admin_list_services(
+    user: Dict = Depends(require_permission("view")),
+):
+    """List all services with their current status."""
+    from services.service_manager import get_service_manager
+
+    manager = get_service_manager()
+    services = await manager.get_all_services()
+
+    return {
+        "services": [
+            {
+                "name": s.name,
+                "display_name": s.display_name,
+                "port": s.port,
+                "status": s.status.value,
+                "description": s.description,
+                "pid": s.pid,
+                "last_check": s.last_check.isoformat() if s.last_check else None,
+                "health_details": s.health_details,
+                "manageable": bool(s.process_pattern),
+            }
+            for s in services
+        ]
+    }
+
+
+@router.get("/services/{service_name}")
+async def admin_get_service(
+    service_name: str,
+    user: Dict = Depends(require_permission("view")),
+):
+    """Get detailed status of a specific service."""
+    from services.service_manager import get_service_manager
+
+    manager = get_service_manager()
+
+    try:
+        service = await manager.get_service_status(service_name)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Service '{service_name}' not found")
+
+    return {
+        "name": service.name,
+        "display_name": service.display_name,
+        "port": service.port,
+        "status": service.status.value,
+        "description": service.description,
+        "start_script": service.start_script,
+        "health_url": service.health_url,
+        "pid": service.pid,
+        "last_check": service.last_check.isoformat() if service.last_check else None,
+        "health_details": service.health_details,
+    }
+
+
+@router.post("/services/{service_name}/start")
+async def admin_start_service(
+    service_name: str,
+    user: Dict = Depends(require_permission("manage_services")),
+):
+    """Start a service."""
+    from services.service_manager import get_service_manager
+    from services.admin_auth import log_audit
+
+    manager = get_service_manager()
+
+    try:
+        service = await manager.start_service(service_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to start service {service_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start service: {e}")
+
+    return {
+        "name": service.name,
+        "status": service.status.value,
+        "port": service.port,
+        "pid": service.pid,
+        "message": f"Service '{service_name}' started successfully",
+    }
+
+
+@router.post("/services/{service_name}/stop")
+async def admin_stop_service(
+    service_name: str,
+    user: Dict = Depends(require_permission("manage_services")),
+):
+    """Stop a service."""
+    from services.service_manager import get_service_manager
+    from services.admin_auth import log_audit
+
+    manager = get_service_manager()
+
+    try:
+        service = await manager.stop_service(service_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to stop service {service_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop service: {e}")
+
+    return {
+        "name": service.name,
+        "status": service.status.value,
+        "message": f"Service '{service_name}' stopped successfully",
+    }
+
+
+@router.post("/services/{service_name}/restart")
+async def admin_restart_service(
+    service_name: str,
+    user: Dict = Depends(require_permission("manage_services")),
+):
+    """Restart a service."""
+    from services.service_manager import get_service_manager
+    from services.admin_auth import log_audit
+
+    manager = get_service_manager()
+
+    try:
+        service = await manager.restart_service(service_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to restart service {service_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to restart service: {e}")
+
+    return {
+        "name": service.name,
+        "status": service.status.value,
+        "port": service.port,
+        "pid": service.pid,
+        "message": f"Service '{service_name}' restarted successfully",
+    }
 
 
 async def _process_batch(

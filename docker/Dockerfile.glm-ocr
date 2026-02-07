@@ -1,0 +1,81 @@
+# GLM-OCR Vision-Language OCR Service
+# Uses Ollama for automatic model management and VRAM handling
+# Designed for RTX 3080 (12GB VRAM) - runs alongside Qwen LLM with mutual exclusion
+FROM ollama/ollama:latest
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    OLLAMA_HOST=0.0.0.0:11434 \
+    OLLAMA_MODELS=/root/.ollama/models \
+    CUDA_VISIBLE_DEVICES=0 \
+    NVIDIA_VISIBLE_DEVICES=0
+
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create startup script that pulls model and starts server
+COPY <<'EOF' /app/start-glm-ocr.sh
+#!/bin/bash
+set -e
+
+echo "==================================="
+echo "Starting GLM-OCR Service"
+echo "==================================="
+echo "Device: NVIDIA RTX 3080 (GPU 0)"
+echo "Port: 11434"
+echo "Model: glm-ocr (zai-org/GLM-OCR via Ollama)"
+echo ""
+
+# Start Ollama server in background
+echo "Starting Ollama server..."
+ollama serve &
+OLLAMA_PID=$!
+
+# Wait for server to be ready
+echo "Waiting for Ollama server to be ready..."
+for i in {1..30}; do
+    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+        echo "✅ Ollama server is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        echo "❌ Timeout waiting for Ollama server"
+        exit 1
+    fi
+    sleep 1
+done
+
+# Pull GLM-OCR model if not present
+echo "Checking for GLM-OCR model..."
+if ! ollama list | grep -q "glm-ocr"; then
+    echo "Pulling GLM-OCR model (this may take a few minutes)..."
+    ollama pull glm-ocr
+    echo "✅ GLM-OCR model pulled successfully"
+else
+    echo "✅ GLM-OCR model already present"
+fi
+
+echo ""
+echo "==================================="
+echo "GLM-OCR Service Ready"
+echo "==================================="
+echo "OCR-VL endpoint: http://localhost:11434/api/generate"
+echo ""
+
+# Keep container running
+wait $OLLAMA_PID
+EOF
+
+RUN chmod +x /app/start-glm-ocr.sh
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -f http://localhost:11434/api/tags || exit 1
+
+# Expose Ollama API port
+EXPOSE 11434
+
+WORKDIR /app
+
+CMD ["/app/start-glm-ocr.sh"]

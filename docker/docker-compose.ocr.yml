@@ -1,6 +1,18 @@
 version: '3.8'
 
+# OCR Services Configuration
+# P100: Classical OCR (GOT-OCR2.0) - always on
+# RTX 3080: OCR-VL (GLM-OCR via Ollama) - on demand with GPU scheduling
+#
+# GPU Assignment:
+#   - ocr-service (GOT-OCR2.0): NVIDIA GPU 0 (P100)
+#   - glm-ocr-service (GLM-OCR): NVIDIA GPU 1 (RTX 3080)
+#   - docling-service: CPU only
+#
+# Key Rule: OCR-VL never runs concurrently with LLM inference on RTX 3080
+
 services:
+  # P100: Classical OCR Service (GOT-OCR2.0)
   ocr-service:
     build:
       context: ..
@@ -11,20 +23,57 @@ services:
     environment:
       - OCR_PORT=8084
       - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: [ '0' ]
-              capabilities: [ gpu ]
+              device_ids: ['0']  # P100
+              capabilities: [gpu]
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8084/health" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - bestbox-ocr-network
 
+  # RTX 3080: OCR-VL Service (GLM-OCR via Ollama)
+  # Runs on GPU 1 (RTX 3080) with mutual exclusion to LLM
+  glm-ocr-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.glm-ocr
+    container_name: bestbox-glm-ocr
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - NVIDIA_VISIBLE_DEVICES=1
+      - CUDA_VISIBLE_DEVICES=1
+      - GPU_SCHEDULER_URL=http://gpu-scheduler:8086
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']  # RTX 3080
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - bestbox-ocr-network
+    depends_on:
+      - gpu-scheduler
+
+  # CPU: Docling Document Parsing with Quality Gate
   docling-service:
     build:
       context: ..
@@ -35,11 +84,51 @@ services:
     environment:
       - DOC_PORT=8085
       - OCR_SERVICE_URL=http://ocr-service:8084
+      - GLM_OCR_URL=http://glm-ocr-service:11434
+      - GPU_SCHEDULER_URL=http://gpu-scheduler:8086
+      - ENABLE_QUALITY_GATE=true
+      - OCR_MIN_TEXT_CHARS=50
+      - GARBAGE_THRESHOLD=0.30
+      - ENABLE_GLM_OCR_FALLBACK=true
     depends_on:
       - ocr-service
+      - glm-ocr-service
+      - gpu-scheduler
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8085/health" ]
+      test: ["CMD", "curl", "-f", "http://localhost:8085/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     restart: unless-stopped
+    networks:
+      - bestbox-ocr-network
+
+  # GPU Scheduler: Manages mutual exclusion between LLM and OCR-VL on RTX 3080
+  gpu-scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gpu-scheduler
+    container_name: bestbox-gpu-scheduler
+    ports:
+      - "8086:8086"
+    environment:
+      - SCHEDULER_PORT=8086
+      - LOCK_TIMEOUT=300
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - /tmp/gpu-locks:/tmp/gpu-locks
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - bestbox-ocr-network
+      - bestbox-network
+
+networks:
+  bestbox-ocr-network:
+    driver: bridge
+  bestbox-network:
+    external: true

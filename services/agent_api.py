@@ -112,6 +112,14 @@ except ImportError:
 
 app = FastAPI(title="BestBox Agent API")
 
+# Mount admin endpoints router (document management, KB, users, Docling proxy)
+try:
+    from services.admin_endpoints import router as admin_router
+    app.include_router(admin_router)
+    logger.info("✅ Admin endpoints router registered")
+except Exception as e:
+    logger.warning(f"⚠️  Admin endpoints router failed to load: {e}")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -167,7 +175,6 @@ async def startup():
     except Exception as e:
         logger.error(f"⚠️  Plugin HTTP route registration failed: {e}", exc_info=True)
 
-    # Initialize database connection pool
     try:
         db_pool = await asyncpg.create_pool(
             host=os.getenv('POSTGRES_HOST', 'localhost'),
@@ -178,10 +185,20 @@ async def startup():
             min_size=2,
             max_size=10
         )
+        app.state.db_pool = db_pool
         logger.info("✅ Database connection pool initialized")
+
+        try:
+            from services.admin_auth import init_admin_tables
+            await init_admin_tables(db_pool)
+            logger.info("✅ Admin RBAC tables initialized")
+        except Exception as e:
+            logger.warning(f"⚠️  Admin RBAC init failed: {e}")
+
     except Exception as e:
         logger.warning(f"⚠️  Database connection failed: {e}. Observability logging will be disabled.")
         db_pool = None
+        app.state.db_pool = None
 
     if os.getenv("SESSION_STORE_ENABLED", "true").lower() == "true":
         try:
@@ -442,128 +459,6 @@ async def admin_process_sample_troubleshooting_xlsx(
     except Exception as e:
         logger.error(f"Admin sample processing failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Sample processing failed: {str(e)}")
-
-
-# ==========================================================
-# Mold Document Upload Endpoint (PDF/DOCX/PPTX with OCR)
-# ==========================================================
-
-class DocumentUploadResponse(BaseModel):
-    """Response model for document upload."""
-    status: str
-    filename: str
-    file_type: str
-    title: str
-    text_length: int
-    image_count: int
-    ocr_count: int
-    indexed: bool
-    collection: Optional[str] = None
-
-
-@app.post("/admin/documents/upload", response_model=DocumentUploadResponse)
-async def admin_upload_document(
-    file: UploadFile = File(...),
-    index: bool = Query(True, description="If true, index into Qdrant"),
-    collection: str = Query("mold_reference_kb", description="Target Qdrant collection"),
-    domain: str = Query("mold", description="Domain classification"),
-    run_ocr: bool = Query(True, description="Run OCR on extracted images"),
-):
-    """
-    Admin endpoint to upload and process PDF/DOCX/PPTX documents for Mold KB.
-    
-    Uses Docling for document parsing and GOT-OCR2.0 for image text extraction.
-    Processed text is indexed into the specified Qdrant collection.
-    
-    Supported formats: .pdf, .docx, .pptx
-    Max file size: 50MB
-    """
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Missing filename")
-
-    safe_name = _safe_filename(file.filename)
-    ext = Path(safe_name).suffix.lower()
-    
-    allowed_extensions = {".pdf", ".docx", ".pptx"}
-    if ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported file type: {ext}. Allowed: {', '.join(allowed_extensions)}"
-        )
-
-    repo_root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    uploads_dir = repo_root / "data" / "mold_documents" / "uploads"
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-
-    saved_path = uploads_dir / f"{int(time.time())}_{uuid.uuid4().hex[:8]}_{safe_name}"
-
-    try:
-        content = await file.read()
-        if not content:
-            raise HTTPException(status_code=400, detail="Empty upload")
-        if len(content) > 50 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="File too large (max 50MB)")
-
-        saved_path.write_bytes(content)
-
-        # Import the MoldDocumentIngester
-        from services.rag_pipeline.mold_document_ingester import MoldDocumentIngester
-
-        ingester = MoldDocumentIngester()
-        try:
-            result = await ingester.ingest_document(
-                doc_path=saved_path,
-                domain=domain,
-                run_ocr=run_ocr
-            )
-        finally:
-            await ingester.close()
-
-        if not result:
-            raise HTTPException(status_code=500, detail="Document ingestion failed")
-
-        # Index into Qdrant if requested
-        indexed = False
-        if index and result.get("text"):
-            try:
-                from services.rag_pipeline.document_indexer import DocumentIndexer
-                
-                indexer = DocumentIndexer(
-                    qdrant_host=os.getenv("QDRANT_HOST", "localhost"),
-                    qdrant_port=int(os.getenv("QDRANT_PORT", "6333")),
-                    embeddings_url=os.getenv(
-                        "EMBEDDINGS_URL",
-                        os.getenv("EMBEDDINGS_BASE_URL", "http://localhost:8004"),
-                    ),
-                    collection_name=collection,
-                )
-                await indexer.index_document(
-                    text=result["text"],
-                    metadata=result["metadata"],
-                )
-                indexed = True
-            except ImportError:
-                logger.warning("DocumentIndexer not available, skipping indexing")
-            except Exception as e:
-                logger.error(f"Indexing failed: {e}", exc_info=True)
-
-        return DocumentUploadResponse(
-            status="ok",
-            filename=safe_name,
-            file_type=ext.lstrip("."),
-            title=result["metadata"].get("title", safe_name),
-            text_length=len(result.get("text", "")),
-            image_count=result.get("image_count", 0),
-            ocr_count=len(result.get("ocr_results", [])),
-            indexed=indexed,
-            collection=collection if indexed else None,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Document upload failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 # ==========================================================
 # Direct Troubleshooting Query Endpoint (Performance Optimization)
@@ -2004,4 +1899,4 @@ async def chat_completion_endpoint(
             active_sessions.dec()
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)  # Bind to all interfaces for Docker access
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("AGENT_API_PORT", "8000")))  # Bind to all interfaces for Docker access
