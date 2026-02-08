@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useTranslations } from "next-intl";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
@@ -38,57 +39,18 @@ const ROLE_COLORS: Record<string, string> = {
 };
 
 export default function UsersPage() {
+  const t = useTranslations("AdminNew.users");
+
   const [users, setUsers] = useState<User[]>([]);
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"users" | "audit">("users");
 
-  // Create user form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole] = useState("engineer");
   const [createError, setCreateError] = useState("");
-
-  // Login state (if not authenticated via JWT yet)
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState("");
-
-  useEffect(() => {
-    const token = localStorage.getItem("admin_jwt_token") || localStorage.getItem("admin_token");
-    if (token) setIsLoggedIn(true);
-  }, []);
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError("");
-    try {
-      const res = await fetch(`${API_BASE}/admin/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: "Login failed" }));
-        throw new Error(err.detail || "Login failed");
-      }
-      const data = await res.json();
-      localStorage.setItem("admin_jwt_token", data.token);
-      setIsLoggedIn(true);
-    } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "Login failed");
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("admin_jwt_token");
-    localStorage.removeItem("admin_token");
-    setIsLoggedIn(false);
-    setUsers([]);
-    setAuditLog([]);
-  };
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -105,9 +67,7 @@ export default function UsersPage() {
   const fetchAuditLog = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/admin/audit-log?limit=100`, {
-        headers: getAuthHeaders(),
-      });
+      const res = await fetch(`${API_BASE}/admin/audit-log?limit=100`, { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setAuditLog(data.entries || []);
@@ -120,10 +80,9 @@ export default function UsersPage() {
   }, []);
 
   useEffect(() => {
-    if (!isLoggedIn) return;
     if (activeTab === "users") fetchUsers();
     else fetchAuditLog();
-  }, [isLoggedIn, activeTab, fetchUsers, fetchAuditLog]);
+  }, [activeTab, fetchUsers, fetchAuditLog]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -174,64 +133,11 @@ export default function UsersPage() {
     }
   };
 
-  // Login screen
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Admin Login</h1>
-          <p className="text-sm text-gray-500 mb-6">Sign in with your admin credentials</p>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                type="text"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="admin"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="••••••••"
-                required
-              />
-            </div>
-            {loginError && (
-              <p className="text-sm text-red-600">{loginError}</p>
-            )}
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors font-medium"
-            >
-              Sign In
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-6">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
-          <p className="text-gray-600 mt-1">Manage admin users and view audit log</p>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          Logout
-        </button>
+    <div>
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">{t("title")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("subtitle")}</p>
       </header>
 
       {/* Tabs */}
@@ -239,22 +145,18 @@ export default function UsersPage() {
         <button
           onClick={() => setActiveTab("users")}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "users"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+            activeTab === "users" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          Users
+          {t("tabs.users")}
         </button>
         <button
           onClick={() => setActiveTab("audit")}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === "audit"
-              ? "border-blue-500 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
+            activeTab === "audit" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
           }`}
         >
-          Audit Log
+          {t("tabs.auditLog")}
         </button>
       </div>
 
@@ -266,53 +168,34 @@ export default function UsersPage() {
               onClick={() => setShowCreateForm(!showCreateForm)}
               className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
             >
-              {showCreateForm ? "Cancel" : "+ Create User"}
+              {showCreateForm ? t("actions.cancel") : t("actions.create")}
             </button>
           </div>
 
           {/* Create user form */}
           {showCreateForm && (
             <div className="bg-white rounded-lg border border-gray-200 p-5 mb-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Create New User</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-4">{t("modal.title")}</h3>
               <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Username</label>
-                  <input
-                    type="text"
-                    value={newUsername}
-                    onChange={(e) => setNewUsername(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                    required
-                  />
+                  <label className="block text-xs text-gray-500 mb-1">{t("table.username")}</label>
+                  <input type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" required />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                    required
-                  />
+                  <label className="block text-xs text-gray-500 mb-1">{t("modal.password")}</label>
+                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" required />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Role</label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value)}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
-                  >
-                    <option value="admin">Admin</option>
-                    <option value="engineer">Engineer</option>
-                    <option value="viewer">Viewer</option>
+                  <label className="block text-xs text-gray-500 mb-1">{t("table.role")}</label>
+                  <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    <option value="admin">{t("roles.admin")}</option>
+                    <option value="engineer">{t("roles.engineer")}</option>
+                    <option value="viewer">{t("roles.viewer")}</option>
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <button
-                    type="submit"
-                    className="w-full bg-green-600 text-white py-2 rounded-md text-sm hover:bg-green-700"
-                  >
-                    Create
+                  <button type="submit" className="w-full bg-green-600 text-white py-2 rounded-md text-sm hover:bg-green-700">
+                    {t("modal.save")}
                   </button>
                 </div>
               </form>
@@ -325,24 +208,18 @@ export default function UsersPage() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Username</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Created</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Last Login</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Actions</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">{t("table.username")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">{t("table.role")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">{t("table.created")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">{t("table.lastLogin")}</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">{t("table.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-400">Loading…</td>
-                  </tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Loading…</td></tr>
                 ) : users.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                      No users found.
-                    </td>
-                  </tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">{t("empty")}</td></tr>
                 ) : (
                   users.map((u) => (
                     <tr key={u.id} className="hover:bg-gray-50">
@@ -353,9 +230,9 @@ export default function UsersPage() {
                           onChange={(e) => handleUpdateRole(u.id, e.target.value)}
                           className={`px-2 py-1 rounded text-xs font-medium ${ROLE_COLORS[u.role] || "bg-gray-100"}`}
                         >
-                          <option value="admin">Admin</option>
-                          <option value="engineer">Engineer</option>
-                          <option value="viewer">Viewer</option>
+                          <option value="admin">{t("roles.admin")}</option>
+                          <option value="engineer">{t("roles.engineer")}</option>
+                          <option value="viewer">{t("roles.viewer")}</option>
                         </select>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-400">
@@ -365,11 +242,8 @@ export default function UsersPage() {
                         {u.last_login ? new Date(u.last_login).toLocaleString() : "Never"}
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => handleDeleteUser(u.id, u.username)}
-                          className="text-xs text-red-600 hover:text-red-800"
-                        >
-                          Delete
+                        <button onClick={() => handleDeleteUser(u.id, u.username)} className="text-xs text-red-600 hover:text-red-800">
+                          {t("actions.delete")}
                         </button>
                       </td>
                     </tr>
@@ -387,24 +261,18 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Time</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">User</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Action</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Resource</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Details</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">{t("audit.time")}</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">{t("audit.user")}</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">{t("audit.action")}</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">{t("audit.resource")}</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">{t("audit.details")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">Loading…</td>
-                </tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Loading…</td></tr>
               ) : auditLog.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-400">
-                    No audit entries found.
-                  </td>
-                </tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">{t("audit.empty")}</td></tr>
               ) : (
                 auditLog.map((entry) => (
                   <tr key={entry.id} className="hover:bg-gray-50">
@@ -413,13 +281,10 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-700">{entry.username || "system"}</td>
                     <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">
-                        {entry.action}
-                      </span>
+                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">{entry.action}</span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
-                      {entry.resource_type}
-                      {entry.resource_id && `: ${entry.resource_id.substring(0, 12)}…`}
+                      {entry.resource_type}{entry.resource_id && `: ${entry.resource_id.substring(0, 12)}…`}
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400 max-w-xs truncate">
                       {entry.details ? JSON.stringify(entry.details) : "—"}

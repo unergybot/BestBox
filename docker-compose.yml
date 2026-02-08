@@ -183,6 +183,7 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - GF_SECURITY_ALLOW_EMBEDDING=true
     volumes:
+      - ./config/grafana/grafana.ini:/etc/grafana/grafana.ini
       - ./config/grafana/provisioning:/etc/grafana/provisioning
       - ./config/grafana/dashboards:/etc/grafana/dashboards
       - grafana-data:/var/lib/grafana
@@ -212,6 +213,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Authelia - OIDC Identity Provider
+  authelia:
+    image: authelia/authelia:4.38
+    container_name: bestbox-authelia
+    ports:
+      - "9091:9091"
+    environment:
+      - AUTHELIA_JWT_SECRET_FILE=/config/secrets/jwt
+      - AUTHELIA_SESSION_SECRET_FILE=/config/secrets/session
+      - AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE=/config/secrets/storage
+    volumes:
+      - ./config/authelia:/config
+      - authelia-data:/var/lib/authelia
+    depends_on:
+      - redis
+    restart: unless-stopped
+    command: --config=/config/configuration.yml
 
   gatus:
     image: ghcr.io/twin/gatus:stable
@@ -246,6 +265,8 @@ volumes:
     name: bestbox-prometheus-data
   grafana-data:
     name: bestbox-grafana-data
+  authelia-data:
+    name: bestbox-authelia-data
   docling-scratch:
     name: bestbox-docling-scratch
 

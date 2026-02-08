@@ -103,7 +103,13 @@ try:
         llm_tokens_generated,
         tool_execution_success,
         user_satisfaction,
-        active_sessions
+        active_sessions,
+        feedback_total,
+        feedback_with_comment,
+        http_errors_total,
+        agent_response_seconds,
+        tokens_total,
+        tool_calls_total
     )
     PROMETHEUS_AVAILABLE = True
 except ImportError:
@@ -978,6 +984,131 @@ async def submit_feedback(request: FeedbackRequest):
     except Exception as e:
         logger.error(f"Failed to record feedback: {e}")
         return {"status": "success", "message": "Feedback recorded (metrics only)"}
+
+
+# ==========================================================
+# Enhanced Feedback API (Phase 3)
+# ==========================================================
+
+class DetailedFeedbackRequest(BaseModel):
+    session_id: str
+    message_id: Optional[str] = None
+    feedback_type: str  # 'positive' or 'negative'
+    comment: Optional[str] = None
+    agent_type: Optional[str] = None
+
+@app.post("/api/feedback")
+async def submit_detailed_feedback(request: DetailedFeedbackRequest):
+    """
+    Submit detailed feedback with optional comment.
+    Stores in PostgreSQL feedback table and updates Prometheus metrics.
+    """
+    if request.feedback_type not in ['positive', 'negative']:
+        raise HTTPException(status_code=400, detail="feedback_type must be 'positive' or 'negative'")
+
+    agent = request.agent_type or "unknown"
+
+    # Update Prometheus metrics
+    if PROMETHEUS_AVAILABLE:
+        feedback_total.labels(feedback_type=request.feedback_type, agent_type=agent).inc()
+        user_satisfaction.labels(rating=request.feedback_type).inc()
+        if request.comment:
+            feedback_with_comment.labels(feedback_type=request.feedback_type).inc()
+
+    if not db_pool:
+        return {"status": "success", "id": None, "message": "Feedback recorded (metrics only)"}
+
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                INSERT INTO feedback (session_id, message_id, feedback_type, comment, agent_type)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+            """, request.session_id, request.message_id, request.feedback_type,
+                request.comment, agent)
+            return {
+                "status": "success",
+                "id": row['id'],
+                "message": "Feedback recorded"
+            }
+    except Exception as e:
+        logger.error(f"Failed to store detailed feedback: {e}")
+        return {"status": "success", "id": None, "message": "Feedback recorded (metrics only)"}
+
+@app.get("/api/feedback/{session_id}")
+async def get_session_feedback(session_id: str):
+    """
+    Retrieve all feedback entries for a session.
+    """
+    if not db_pool:
+        return {"entries": [], "total": 0}
+
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT id, session_id, message_id, feedback_type, comment, agent_type, created_at
+                FROM feedback
+                WHERE session_id = $1
+                ORDER BY created_at DESC
+            """, session_id)
+            entries = [dict(r) for r in rows]
+            # Convert datetime objects to ISO strings
+            for entry in entries:
+                if entry.get('created_at'):
+                    entry['created_at'] = entry['created_at'].isoformat()
+            return {"entries": entries, "total": len(entries)}
+    except Exception as e:
+        logger.error(f"Failed to fetch feedback: {e}")
+        return {"entries": [], "total": 0}
+
+@app.get("/api/feedback")
+async def get_all_feedback(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    feedback_type: Optional[str] = Query(default=None),
+):
+    """
+    List all feedback entries with optional filtering.
+    Used by the admin dashboard feedback panel.
+    """
+    if not db_pool:
+        return {"entries": [], "total": 0}
+
+    try:
+        async with db_pool.acquire() as conn:
+            conditions = []
+            params: list = []
+            idx = 1
+
+            if feedback_type:
+                conditions.append(f"feedback_type = ${idx}")
+                params.append(feedback_type)
+                idx += 1
+
+            where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+            count_row = await conn.fetchrow(f"SELECT COUNT(*) FROM feedback {where}", *params)
+            total = count_row['count']
+
+            params.extend([limit, offset])
+            rows = await conn.fetch(f"""
+                SELECT id, session_id, message_id, feedback_type, comment, agent_type, created_at
+                FROM feedback
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ${idx} OFFSET ${idx + 1}
+            """, *params)
+
+            entries = [dict(r) for r in rows]
+            for entry in entries:
+                if entry.get('created_at'):
+                    entry['created_at'] = entry['created_at'].isoformat()
+
+            return {"entries": entries, "total": total}
+    except Exception as e:
+        logger.error(f"Failed to fetch feedback list: {e}")
+        return {"entries": [], "total": 0}
+
 
 @app.get("/v1/models")
 async def list_models():

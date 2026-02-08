@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration - Docker service URL
 DOC_SERVICE_URL = os.environ.get("DOC_SERVICE_URL", "http://localhost:8085")
-DOC_TIMEOUT = float(os.environ.get("DOC_TIMEOUT", "120.0"))
+DOC_TIMEOUT = float(os.environ.get("DOC_TIMEOUT", "600.0"))  # 10 minutes for GPU OCR processing
 
 
 class MoldDocumentIngester:

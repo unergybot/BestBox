@@ -143,6 +143,105 @@ def check_permission(role: str, permission: str) -> bool:
 
 
 # ------------------------------------------------------------------
+# OIDC integration (Authelia SSO)
+# ------------------------------------------------------------------
+
+OIDC_DISCOVERY_URL = os.getenv(
+    "OIDC_DISCOVERY_URL",
+    "http://localhost:9091/.well-known/openid-configuration",
+)
+OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID", "bestbox-admin")
+OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET", "bestbox-secret")
+
+_oidc_metadata_cache: Optional[Dict[str, Any]] = None
+_oidc_cache_time: float = 0
+
+
+async def get_oidc_metadata() -> Dict[str, Any]:
+    """Fetch OIDC discovery metadata (cached for 5 minutes)."""
+    global _oidc_metadata_cache, _oidc_cache_time
+    import time as _time
+    import aiohttp
+
+    now = _time.time()
+    if _oidc_metadata_cache and (now - _oidc_cache_time) < 300:
+        return _oidc_metadata_cache
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                OIDC_DISCOVERY_URL, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status == 200:
+                    _oidc_metadata_cache = await resp.json()
+                    _oidc_cache_time = now
+                    return _oidc_metadata_cache
+    except Exception as e:
+        logger.warning(f"Failed to fetch OIDC metadata: {e}")
+
+    return _oidc_metadata_cache or {}
+
+
+async def verify_oidc_token(token: str) -> Optional[Dict[str, Any]]:
+    """Verify an OIDC access/id token from Authelia.
+
+    Returns user claims ``{sub, username, role, groups, token_type}`` or ``None``.
+    """
+    try:
+        from authlib.jose import JsonWebToken, JsonWebKey
+        from authlib.jose.errors import JoseError
+    except ImportError:
+        logger.debug("authlib not installed – OIDC verification skipped")
+        return None
+
+    import aiohttp
+
+    try:
+        metadata = await get_oidc_metadata()
+        jwks_uri = metadata.get("jwks_uri")
+        if not jwks_uri:
+            logger.error("OIDC metadata missing jwks_uri")
+            return None
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                jwks_uri, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                jwks = await resp.json()
+
+        jwt = JsonWebToken(["RS256"])
+        claims = jwt.decode(token, JsonWebKey.import_key_set(jwks))
+        claims.validate()
+
+        username = claims.get("preferred_username") or claims.get("sub")
+        groups = claims.get("groups", [])
+
+        # Map Authelia groups → BestBox roles
+        role = "viewer"
+        if "admin" in groups:
+            role = "admin"
+        elif "engineer" in groups:
+            role = "engineer"
+
+        return {
+            "sub": claims["sub"],
+            "username": username,
+            "role": role,
+            "groups": groups,
+            "token_type": "oidc",
+        }
+
+    except JoseError as e:
+        logger.debug(f"OIDC token verification failed: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"OIDC verification error: {e}")
+        return None
+
+
+# ------------------------------------------------------------------
 # Database operations
 # ------------------------------------------------------------------
 

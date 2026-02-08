@@ -1,0 +1,42 @@
+server:
+  host: "0.0.0.0"
+  port: 5002
+  debug: false
+
+logging:
+  level: INFO
+
+pipeline:
+  maas:
+    enabled: false
+
+  ocr_api:
+    api_host: glm-ocr-service
+    api_port: 11434
+    model: glm-ocr
+    api_path: /v1/chat/completions
+    api_key: null
+    connect_timeout: 300
+    request_timeout: 300
+    connection_pool_size: 128
+
+  max_workers: 4
+  page_maxsize: 100
+  region_maxsize: 800
+
+  page_loader:
+    max_tokens: 4096
+    temperature: 0.01
+    image_format: JPEG
+    min_pixels: 12544
+    max_pixels: 71372800
+    pdf_dpi: 200
+
+  enable_layout: true
+  layout:
+    model_dir: PaddlePaddle/PP-DocLayout-V3_safetensors
+    threshold: 0.3
+    batch_size: 1
+    workers: 1
+    cuda_visible_devices: "" # Force CPU for layout to avoid GPU conflict
+    layout_nms: true

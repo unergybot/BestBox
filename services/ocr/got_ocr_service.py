@@ -9,7 +9,15 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Optional, List
+
+# Force disable bfloat16 for P100 compatibility before importing torch
+os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+
 import torch
+# Monkey patch to disable bfloat16 support check
+torch.cuda.is_bf16_supported = lambda: False
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
@@ -130,7 +138,9 @@ async def ocr(file: UploadFile = File(...), ocr_type: str = "ocr"):
         try:
             image_path = resize_image_if_needed(tmp_path)
             logger.info(f"Running GPU OCR (type={ocr_type})")
-            result = model.chat(tokenizer, str(image_path), ocr_type=ocr_type)
+            # Force float16 for P100 compatibility
+            with torch.autocast(device_type='cuda', dtype=torch.float16):
+                result = model.chat(tokenizer, str(image_path), ocr_type=ocr_type)
             return OCRResponse(text=result)
         finally:
             if tmp_path.exists(): tmp_path.unlink()

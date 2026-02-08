@@ -118,6 +118,63 @@ llm_errors = Counter(
 )
 
 # ==========================================================
+# Enhanced Feedback Metrics (Phase 3)
+# ==========================================================
+
+feedback_total = Counter(
+    'bestbox_feedback_total',
+    'Detailed feedback submissions',
+    ['feedback_type', 'agent_type']  # positive/negative × agent
+)
+
+feedback_with_comment = Counter(
+    'bestbox_feedback_with_comment_total',
+    'Feedback submissions that include a text comment',
+    ['feedback_type']
+)
+
+# ==========================================================
+# HTTP Error Tracking (Phase 3)
+# ==========================================================
+
+http_errors_total = Counter(
+    'bestbox_http_errors_total',
+    'HTTP errors by status code and endpoint',
+    ['status_code', 'endpoint']
+)
+
+# ==========================================================
+# Agent Response Time (more granular than agent_latency)
+# ==========================================================
+
+agent_response_seconds = Histogram(
+    'bestbox_agent_response_seconds',
+    'End-to-end response time including tool calls',
+    ['agent_type', 'has_tools'],
+    buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 60.0]
+)
+
+# ==========================================================
+# Token Usage Tracking (detailed)
+# ==========================================================
+
+tokens_total = Counter(
+    'bestbox_tokens_total',
+    'Token usage by direction and model',
+    ['direction', 'model']  # direction: input | output
+)
+
+# ==========================================================
+# Tool Call Tracking (detailed)
+# ==========================================================
+
+tool_calls_total = Counter(
+    'bestbox_tool_calls_total',
+    'Tool invocations by tool name and result',
+    ['tool_name', 'result']  # result: success | error | timeout
+)
+
+# ==========================================================
 # Usage Example
 # ==========================================================
 

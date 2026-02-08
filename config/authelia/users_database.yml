@@ -1,0 +1,22 @@
+---
+users:
+  admin:
+    displayname: "Administrator"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$bXlzZWNyZXRzYWx0$5F2L3x8zQ7yR9K1mN0pV4wX6hY8jZ2uI3oP7lM9nQ5cA"
+    email: admin@bestbox.local
+    groups:
+      - admin
+
+  engineer:
+    displayname: "Engineer User"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$bXlzZWNyZXRzYWx0$5F2L3x8zQ7yR9K1mN0pV4wX6hY8jZ2uI3oP7lM9nQ5cA"
+    email: engineer@bestbox.local
+    groups:
+      - engineer
+
+  viewer:
+    displayname: "Viewer User"
+    password: "$argon2id$v=19$m=65536,t=3,p=4$bXlzZWNyZXRzYWx0$5F2L3x8zQ7yR9K1mN0pV4wX6hY8jZ2uI3oP7lM9nQ5cA"
+    email: viewer@bestbox.local
+    groups:
+      - viewer

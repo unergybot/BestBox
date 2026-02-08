@@ -5,9 +5,7 @@ FROM ollama/ollama:latest
 
 ENV DEBIAN_FRONTEND=noninteractive \
     OLLAMA_HOST=0.0.0.0:11434 \
-    OLLAMA_MODELS=/root/.ollama/models \
-    CUDA_VISIBLE_DEVICES=0 \
-    NVIDIA_VISIBLE_DEVICES=0
+    OLLAMA_MODELS=/root/.ollama/models
 
 # Install curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -78,4 +76,4 @@ EXPOSE 11434
 
 WORKDIR /app
 
-CMD ["/app/start-glm-ocr.sh"]
+ENTRYPOINT ["/app/start-glm-ocr.sh"]

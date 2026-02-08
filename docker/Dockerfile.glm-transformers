@@ -1,0 +1,43 @@
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+# GLM-OCR service with Transformers + Layout Detection
+# Runs on RTX 3080 with full feature access
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    MODEL_NAME=zai-org/GLM-OCR \
+    GLM_OCR_PORT=11436 \
+    DEVICE=cuda:0 \
+    ENABLE_LAYOUT=true
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip3 install --no-cache-dir \
+    torch==2.5.1 \
+    accelerate==1.2.1 \
+    fastapi==0.115.6 \
+    uvicorn[standard]==0.34.0 \
+    pydantic==2.10.4 \
+    pillow==11.0.0 \
+    pymupdf==1.25.2 \
+    python-multipart \
+    && pip3 install --no-cache-dir git+https://github.com/huggingface/transformers.git
+
+WORKDIR /app
+
+# Copy service file
+COPY services/glm_ocr_service.py /app/glm_ocr_service.py
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=120s \
+    CMD curl -f http://localhost:${GLM_OCR_PORT}/health || exit 1
+
+EXPOSE ${GLM_OCR_PORT}
+
+CMD ["python3", "glm_ocr_service.py"]

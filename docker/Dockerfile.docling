@@ -29,10 +29,7 @@ RUN pip install --no-cache-dir \
 
 # Copy service code
 # We'll use the same directory structure for consistency
-RUN mkdir -p /app/services/ocr
-RUN touch /app/services/__init__.py
-COPY services/ocr/__init__.py /app/services/ocr/__init__.py
-COPY services/ocr/doc_parsing_service.py /app/services/ocr/doc_parsing_service.py
+COPY services/ocr /app/services/ocr
 
 # Expose port
 EXPOSE 8085

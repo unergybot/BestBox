@@ -96,7 +96,7 @@ async def get_current_user(
     authorization: Optional[str] = Header(None),
 ) -> Dict[str, Any]:
     """
-    Extract and verify JWT from Authorization header.
+    Extract and verify JWT or OIDC token from Authorization header.
     Falls back to legacy admin-token header for backward compatibility.
     In dev mode (ADMIN_DEV_MODE=true), auth is bypassed.
     """
@@ -104,7 +104,7 @@ async def get_current_user(
     if os.getenv("ADMIN_DEV_MODE", "").lower() in ("1", "true", "yes"):
         return {"sub": "dev", "username": "dev-admin", "role": "admin"}
 
-    from services.admin_auth import decode_jwt_token
+    from services.admin_auth import decode_jwt_token, verify_oidc_token
 
     token = None
 
@@ -115,8 +115,6 @@ async def get_current_user(
     else:
         legacy = request.headers.get("admin-token")
         if legacy:
-            # Legacy mode: verify against ADMIN_TOKEN env var, return a
-            # synthetic admin user to maintain backward compatibility.
             expected = os.getenv("ADMIN_TOKEN")
             if expected and legacy == expected:
                 return {
@@ -129,6 +127,12 @@ async def get_current_user(
     if not token:
         raise HTTPException(status_code=401, detail="Authorization required")
 
+    # Try OIDC verification first (Authelia tokens)
+    oidc_claims = await verify_oidc_token(token)
+    if oidc_claims:
+        return oidc_claims
+
+    # Fall back to self-issued JWT
     claims = decode_jwt_token(token)
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -307,6 +311,97 @@ async def admin_login(body: LoginRequest, request: Request):
     return result
 
 
+@router.post("/auth/oidc/callback")
+async def oidc_callback(request: Request):
+    """Handle OIDC authorization code callback from Authelia.
+
+    Exchanges the authorization code for tokens and returns user info.
+    """
+    from services.admin_auth import (
+        get_oidc_metadata,
+        OIDC_CLIENT_ID,
+        OIDC_CLIENT_SECRET,
+    )
+    import aiohttp
+
+    body = await request.json()
+    code = body.get("code")
+    locale = body.get("locale", "en")
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+
+    metadata = await get_oidc_metadata()
+    token_endpoint = metadata.get("token_endpoint")
+    userinfo_endpoint = metadata.get("userinfo_endpoint")
+
+    if not token_endpoint or not userinfo_endpoint:
+        raise HTTPException(status_code=500, detail="OIDC endpoints not available")
+
+    try:
+        redirect_uri = f"http://localhost:3000/{locale}/admin/callback"
+        async with aiohttp.ClientSession() as session:
+            # Exchange authorization code for tokens
+            async with session.post(
+                token_endpoint,
+                data={
+                    "grant_type": "authorization_code",
+                    "client_id": OIDC_CLIENT_ID,
+                    "client_secret": OIDC_CLIENT_SECRET,
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    detail = await resp.text()
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Token exchange failed: {detail}",
+                    )
+                token_data = await resp.json()
+
+            access_token = token_data.get("access_token")
+            id_token = token_data.get("id_token")
+
+            if not access_token:
+                raise HTTPException(status_code=400, detail="No access token received")
+
+            # Fetch user info
+            async with session.get(
+                userinfo_endpoint,
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail="Userinfo fetch failed")
+                userinfo = await resp.json()
+
+        username = userinfo.get("preferred_username") or userinfo.get("sub")
+        groups = userinfo.get("groups", [])
+
+        role = "viewer"
+        if "admin" in groups:
+            role = "admin"
+        elif "engineer" in groups:
+            role = "engineer"
+
+        return {
+            "access_token": access_token,
+            "id_token": id_token,
+            "user": {
+                "username": username,
+                "role": role,
+                "groups": groups,
+            },
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"OIDC callback error: {e}")
+        raise HTTPException(status_code=400, detail=f"Token exchange failed: {str(e)}")
+
+
 # ------------------------------------------------------------------
 # Document Processing endpoints
 # ------------------------------------------------------------------
@@ -334,17 +429,48 @@ async def admin_upload_document(
     pool = _get_db_pool(request)
 
     try:
-        # Step 1: Docling conversion
-        from services.docling_client import DoclingClient
+        # Step 1: Document conversion with GPU OCR for PDFs
+        # PDFs with images use GPU-accelerated pipeline: P100 (classical OCR) + RTX 3080 (GLM-OCR for quality fallback)
+        # Other formats use Docling Serve
+        
+        if ext == ".pdf":
+            # Route through GPU OCR service (P100 + RTX 3080 with quality gate)
+            from services.rag_pipeline.mold_document_ingester import MoldDocumentIngester
+            
+            ingester = MoldDocumentIngester()
+            try:
+                parse_result = await ingester.ingest_document(
+                    doc_path=saved_path,
+                    domain=domain,
+                    run_ocr=True
+                )
+                if not parse_result:
+                    raise RuntimeError("GPU OCR service returned no result")
+                
+                # Convert parse_result to docling_result format for compatibility
+                docling_result = {
+                    "md": parse_result.get("text", ""),
+                    "document": {
+                        "content": [{"text": parse_result.get("raw_text", "")}]
+                    },
+                    "pictures": [],  # Images handled separately by GPU OCR
+                    "metadata": parse_result.get("metadata", {})
+                }
+                logger.info(f"PDF processed via GPU OCR: {parse_result.get('image_count', 0)} images, {len(parse_result.get('ocr_results', []))} OCR results")
+            finally:
+                await ingester.close()
+        else:
+            # Non-PDF files: use Docling Serve (DOCX, PPTX, images, etc.)
+            from services.docling_client import DoclingClient
 
-        client = DoclingClient()
-        options = client.options_for_format(ext)
-        if force_ocr:
-            options["force_ocr"] = True
-        if ocr_engine != "easyocr":
-            options["ocr_engine"] = ocr_engine
+            client = DoclingClient()
+            options = client.options_for_format(ext)
+            if force_ocr:
+                options["force_ocr"] = True
+            if ocr_engine != "easyocr":
+                options["ocr_engine"] = ocr_engine
 
-        docling_result = await client.convert_file(str(saved_path), options)
+            docling_result = await client.convert_file(str(saved_path), options)
 
         # Step 2: Domain-specific extraction
         chunks: List[Dict[str, Any]] = []
@@ -391,6 +517,7 @@ async def admin_upload_document(
                 },
             )
 
+        processing_method = "gpu_ocr" if ext == ".pdf" else "docling"
         return {
             "status": "success",
             "filename": file.filename,
@@ -399,7 +526,7 @@ async def admin_upload_document(
             "chunks_indexed": indexed_count,
             "collection": collection,
             "domain": domain,
-            "processing_method": "docling",
+            "processing_method": processing_method,
         }
 
     except Exception as e:

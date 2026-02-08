@@ -31,18 +31,18 @@ RUN pip install --upgrade pip wheel "setuptools<70.0.0"
 RUN pip install \
     torch==2.1.2 \
     torchvision==0.16.2 \
-    fastapi>=0.109.0 \
-    uvicorn[standard]>=0.27.0 \
-    python-multipart>=0.0.9 \
-    transformers>=4.40.0 \
+    transformers==4.37.2 \
+    accelerate==0.27.2 \
     tiktoken \
     verovio \
-    accelerate>=0.26.0 \
     pillow>=10.0 \
     scipy \
     "numpy<2.0.0" \
     "protobuf>=3.20,<5" \
-    httpx
+    httpx \
+    fastapi>=0.109.0 \
+    uvicorn[standard]>=0.27.0 \
+    python-multipart>=0.0.9
 
 # Additional utilities for OCR service
 RUN pip install --no-cache-dir \
@@ -52,16 +52,7 @@ RUN pip install --no-cache-dir \
     pydantic \
     pydantic_settings
 
-# Pre-download GOT-OCR2.0 model to cache it in image
-# NOTE: Disabled due to PyTorch 2.1.2 compatibility issues with GOT-OCR2.0
-# The model will be downloaded on first service startup instead
-# This prevents downloading 1.4GB on every container start, but first start will be slower
-# RUN python -c "from transformers import AutoModel, AutoTokenizer; \
-#     AutoTokenizer.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True); \
-#     AutoModel.from_pretrained('stepfun-ai/GOT-OCR2_0', trust_remote_code=True)"
-
 # Copy OCR service code
-# We copy the specific file to matching directory structure expected by imports
 COPY services/ocr /app/services/ocr
 
 # Expose port
@@ -80,12 +71,11 @@ echo "  Model: stepfun-ai/GOT-OCR2_0"
 echo "  Device: cuda:0"
 echo "  Port: $OCR_PORT"
 
-# Run uvicorn directly
-# Note: we are inside /app, so module path services.ocr.got_ocr_service works
-# if we set PYTHONPATH or run from parent. 
-# Better: since we copied to /app/services/ocr, we can run module from /app
+# Ensure Python path includes /app
+export PYTHONPATH=/app:$PYTHONPATH
 
-export PYTHONPATH=/app
+# Diagnostic check
+python -c "import torch; import transformers; print(f'Torch: {torch.__version__}, CUDA: {torch.cuda.is_available()}'); print(f'Transformers: {transformers.__version__}')" || echo "Diagnostic check failed but continuing..."
 
 python -m uvicorn services.ocr.got_ocr_service:app \
     --host 0.0.0.0 \

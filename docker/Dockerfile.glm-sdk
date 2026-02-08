@@ -1,0 +1,32 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+# Use CPU-only torch to keep image small and avoid GPU compatibility issues for layout model
+RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install GLM-OCR with layout and pdf support from the main branch
+RUN pip install "git+https://github.com/zai-org/glm-ocr.git#egg=glmocr[layout,pdf]"
+
+# Ensure opencv-python-headless is used
+RUN pip install opencv-python-headless
+
+# Setup cache directory for Hugging Face models
+ENV HF_HOME=/root/.cache/huggingface
+RUN mkdir -p /root/.cache/huggingface
+
+EXPOSE 5002
+
+CMD ["python", "-m", "glmocr.server", "--config", "/app/config.yaml"]

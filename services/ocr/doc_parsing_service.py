@@ -120,7 +120,7 @@ async def run_glm_ocr_with_scheduling(image_bytes: bytes, filename: str, page_nu
     worker_id = f"docling-page-{page_num}"
     
     try:
-        from glm_ocr_client import GLMOCRClient
+        from services.ocr.glm_ocr_client import GLMOCRClient
         
         client = GLMOCRClient(
             base_url=GLM_OCR_URL,
