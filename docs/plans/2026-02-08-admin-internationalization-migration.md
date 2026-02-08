@@ -1,7 +1,11 @@
 # Admin Internationalization Migration
 
 **Date:** 2026-02-08
-**Status:** Approved for Implementation
+**Status:** ✅ Completed
+
+**Implementation Commits:**
+- `eb6020e` - feat: migrate status and system pages to internationalized admin structure
+- `bc3d76a` - chore: remove old non-internationalized admin directory
 
 ## Problem
 
