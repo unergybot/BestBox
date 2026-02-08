@@ -154,5 +154,204 @@
             "failed": "Upload failed.",
             "serviceDown": "Backend services are not running. Please start agent-api and embeddings services."
         }
+    },
+    "AdminNew": {
+        "header": {
+            "title": "BestBox Admin",
+            "subtitle": "Document & Knowledge Management"
+        },
+        "nav": {
+            "sessions": "Sessions",
+            "documents": "Documents",
+            "kb": "Knowledge Base",
+            "system": "System",
+            "status": "Status Page",
+            "users": "Users",
+            "grafana": "Grafana",
+            "backToApp": "Back to App"
+        },
+        "login": {
+            "title": "Admin Login",
+            "subtitle": "Sign in to manage documents and knowledge base",
+            "username": "Username",
+            "password": "Password",
+            "signIn": "Sign In",
+            "signingIn": "Signing in...",
+            "signInWithOIDC": "Sign in with SSO",
+            "errors": {
+                "invalidCredentials": "Invalid username or password",
+                "networkError": "Network error. Please try again.",
+                "unauthorized": "Unauthorized access"
+            }
+        },
+        "sessions": {
+            "title": "Session Review",
+            "subtitle": "View conversation history and ReAct traces",
+            "table": {
+                "id": "ID",
+                "query": "Query",
+                "agent": "Agent",
+                "timestamp": "Timestamp",
+                "actions": "Actions"
+            },
+            "view": "View",
+            "noSessions": "No sessions found",
+            "selectSession": "Select a session to view details.",
+            "rateGood": "Good",
+            "rateBad": "Bad"
+        },
+        "documents": {
+            "title": "Document Management",
+            "subtitle": "Upload and process documents for knowledge base",
+            "tabs": {
+                "upload": "Upload Files",
+                "urlImport": "Import from URL"
+            },
+            "upload": {
+                "dropzone": "Drag and drop files here, or click to select",
+                "selected": "file(s) selected",
+                "collection": "Collection",
+                "domain": "Domain",
+                "ocrEngine": "OCR Engine",
+                "chunking": "Chunking Strategy",
+                "options": {
+                    "indexToQdrant": "Index to Qdrant",
+                    "enableOCR": "Enable OCR",
+                    "enrichWithLLM": "Enrich with LLM"
+                },
+                "button": "Upload & Process",
+                "processing": "Processing..."
+            },
+            "urlImport": {
+                "urlLabel": "URL",
+                "urlPlaceholder": "https://example.com/document.pdf",
+                "button": "Import from URL",
+                "importing": "Importing..."
+            },
+            "table": {
+                "filename": "Filename",
+                "collection": "Collection",
+                "chunks": "Chunks",
+                "uploaded": "Uploaded",
+                "actions": "Actions"
+            },
+            "actions": {
+                "view": "View",
+                "reindex": "Reindex",
+                "delete": "Delete"
+            },
+            "confirmDelete": "Are you sure you want to delete this document?"
+        },
+        "kb": {
+            "title": "Knowledge Base",
+            "subtitle": "Browse and search vector database",
+            "search": {
+                "placeholder": "Search knowledge base...",
+                "button": "Search",
+                "searching": "Searching..."
+            },
+            "filters": {
+                "collection": "Collection",
+                "domain": "Domain",
+                "allCollections": "All Collections",
+                "allDomains": "All Domains"
+            },
+            "table": {
+                "content": "Content",
+                "metadata": "Metadata",
+                "score": "Score",
+                "actions": "Actions"
+            },
+            "viewDetails": "View Details",
+            "noResults": "No results found"
+        },
+        "users": {
+            "title": "User Management",
+            "subtitle": "Manage admin users and roles",
+            "addUser": "Add User",
+            "table": {
+                "username": "Username",
+                "role": "Role",
+                "created": "Created",
+                "lastLogin": "Last Login",
+                "actions": "Actions"
+            },
+            "roles": {
+                "admin": "Admin",
+                "engineer": "Engineer",
+                "viewer": "Viewer"
+            },
+            "actions": {
+                "changeRole": "Change Role",
+                "delete": "Delete"
+            },
+            "modal": {
+                "addUser": "Add New User",
+                "username": "Username",
+                "password": "Password",
+                "role": "Role",
+                "cancel": "Cancel",
+                "save": "Save",
+                "saving": "Saving..."
+            },
+            "confirmDelete": "Are you sure you want to delete this user?"
+        },
+        "feedback": {
+            "thumbUp": "Helpful",
+            "thumbDown": "Not helpful",
+            "addComment": "Add a comment...",
+            "commentPlaceholder": "What could be improved?",
+            "submitted": "Feedback submitted"
+        },
+        "status": {
+            "title": "Status Page",
+            "subtitle": "Real-time monitoring of all BestBox services and infrastructure",
+            "openNewTab": "Open in New Tab",
+            "unavailable": "Status Page Unavailable",
+            "unavailableMsg": "Could not load the Gatus status dashboard.",
+            "loadingMsg": "Loading status dashboard...",
+            "makeRunning": "Make sure Gatus is running:",
+            "retry": "Retry"
+        },
+        "system": {
+            "title": "System",
+            "subtitle": "Manage BestBox services and monitor health",
+            "refresh": "Refresh",
+            "totalServices": "Total Services",
+            "running": "Running",
+            "stopped": "Stopped",
+            "errors": "Errors",
+            "lastUpdated": "Last updated:",
+            "autoRefresh": "Auto-refreshing every 5 seconds",
+            "advancedMonitoring": "Advanced Monitoring",
+            "advancedMonitoringDesc": "For detailed health checks, uptime history, response times, and alerting, visit the Gatus status page.",
+            "openStatusPage": "Open Status Page",
+            "externalService": "External service - managed externally",
+            "accessDenied": "Access denied. Please log in with admin credentials.",
+            "port": "Port",
+            "pid": "PID",
+            "start": "Start",
+            "stop": "Stop",
+            "restart": "Restart"
+        },
+        "serviceStatus": {
+            "running": "Running",
+            "stopped": "Stopped",
+            "error": "Error",
+            "starting": "Starting",
+            "stopping": "Stopping",
+            "unknown": "Unknown"
+        },
+        "common": {
+            "loading": "Loading...",
+            "error": "Error",
+            "success": "Success",
+            "save": "Save",
+            "cancel": "Cancel",
+            "delete": "Delete",
+            "confirm": "Confirm",
+            "close": "Close",
+            "logout": "Logout"
+        }
     }
 }

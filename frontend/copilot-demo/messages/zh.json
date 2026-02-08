@@ -154,5 +154,204 @@
             "failed": "上传失败。",
             "serviceDown": "后端服务未运行。请启动 agent-api 和 embeddings 服务。"
         }
+    },
+    "AdminNew": {
+        "header": {
+            "title": "BestBox 管理后台",
+            "subtitle": "文档与知识库管理"
+        },
+        "nav": {
+            "sessions": "会话记录",
+            "documents": "文档管理",
+            "kb": "知识库",
+            "system": "系统设置",
+            "status": "状态页面",
+            "users": "用户管理",
+            "grafana": "Grafana",
+            "backToApp": "返回应用"
+        },
+        "login": {
+            "title": "管理员登录",
+            "subtitle": "登录以管理文档和知识库",
+            "username": "用户名",
+            "password": "密码",
+            "signIn": "登录",
+            "signingIn": "登录中...",
+            "signInWithOIDC": "使用SSO登录",
+            "errors": {
+                "invalidCredentials": "用户名或密码错误",
+                "networkError": "网络错误，请重试",
+                "unauthorized": "未授权访问"
+            }
+        },
+        "sessions": {
+            "title": "会话审查",
+            "subtitle": "查看对话历史和ReAct追踪",
+            "table": {
+                "id": "ID",
+                "query": "查询",
+                "agent": "代理",
+                "timestamp": "时间戳",
+                "actions": "操作"
+            },
+            "view": "查看",
+            "noSessions": "未找到会话",
+            "selectSession": "选择一个会话查看详情。",
+            "rateGood": "好",
+            "rateBad": "差"
+        },
+        "documents": {
+            "title": "文档管理",
+            "subtitle": "上传并处理知识库文档",
+            "tabs": {
+                "upload": "上传文件",
+                "urlImport": "从URL导入"
+            },
+            "upload": {
+                "dropzone": "拖放文件到此处，或点击选择",
+                "selected": "个文件已选择",
+                "collection": "集合",
+                "domain": "领域",
+                "ocrEngine": "OCR引擎",
+                "chunking": "分块策略",
+                "options": {
+                    "indexToQdrant": "索引到Qdrant",
+                    "enableOCR": "启用OCR",
+                    "enrichWithLLM": "使用LLM增强"
+                },
+                "button": "上传并处理",
+                "processing": "处理中..."
+            },
+            "urlImport": {
+                "urlLabel": "URL",
+                "urlPlaceholder": "https://example.com/document.pdf",
+                "button": "从URL导入",
+                "importing": "导入中..."
+            },
+            "table": {
+                "filename": "文件名",
+                "collection": "集合",
+                "chunks": "分块",
+                "uploaded": "上传时间",
+                "actions": "操作"
+            },
+            "actions": {
+                "view": "查看",
+                "reindex": "重新索引",
+                "delete": "删除"
+            },
+            "confirmDelete": "确定要删除此文档吗？"
+        },
+        "kb": {
+            "title": "知识库",
+            "subtitle": "浏览和搜索向量数据库",
+            "search": {
+                "placeholder": "搜索知识库...",
+                "button": "搜索",
+                "searching": "搜索中..."
+            },
+            "filters": {
+                "collection": "集合",
+                "domain": "领域",
+                "allCollections": "所有集合",
+                "allDomains": "所有领域"
+            },
+            "table": {
+                "content": "内容",
+                "metadata": "元数据",
+                "score": "分数",
+                "actions": "操作"
+            },
+            "viewDetails": "查看详情",
+            "noResults": "未找到结果"
+        },
+        "users": {
+            "title": "用户管理",
+            "subtitle": "管理管理员用户和角色",
+            "addUser": "添加用户",
+            "table": {
+                "username": "用户名",
+                "role": "角色",
+                "created": "创建时间",
+                "lastLogin": "最后登录",
+                "actions": "操作"
+            },
+            "roles": {
+                "admin": "管理员",
+                "engineer": "工程师",
+                "viewer": "查看者"
+            },
+            "actions": {
+                "changeRole": "更改角色",
+                "delete": "删除"
+            },
+            "modal": {
+                "addUser": "添加新用户",
+                "username": "用户名",
+                "password": "密码",
+                "role": "角色",
+                "cancel": "取消",
+                "save": "保存",
+                "saving": "保存中..."
+            },
+            "confirmDelete": "确定要删除此用户吗？"
+        },
+        "feedback": {
+            "thumbUp": "有帮助",
+            "thumbDown": "没帮助",
+            "addComment": "添加评论...",
+            "commentPlaceholder": "有什么可以改进的？",
+            "submitted": "反馈已提交"
+        },
+        "status": {
+            "title": "状态页面",
+            "subtitle": "实时监控所有 BestBox 服务和基础设施",
+            "openNewTab": "在新标签页中打开",
+            "unavailable": "状态页面不可用",
+            "unavailableMsg": "无法加载 Gatus 状态仪表板。",
+            "loadingMsg": "正在加载状态仪表板...",
+            "makeRunning": "请确保 Gatus 正在运行：",
+            "retry": "重试"
+        },
+        "system": {
+            "title": "系统",
+            "subtitle": "管理 BestBox 服务并监控健康状态",
+            "refresh": "刷新",
+            "totalServices": "服务总数",
+            "running": "运行中",
+            "stopped": "已停止",
+            "errors": "错误",
+            "lastUpdated": "最后更新：",
+            "autoRefresh": "每 5 秒自动刷新",
+            "advancedMonitoring": "高级监控",
+            "advancedMonitoringDesc": "有关详细的健康检查、正常运行时间历史记录、响应时间和警报，请访问 Gatus 状态页面。",
+            "openStatusPage": "打开状态页面",
+            "externalService": "外部服务 - 外部管理",
+            "accessDenied": "访问被拒绝。请使用管理员凭据登录。",
+            "port": "端口",
+            "pid": "进程ID",
+            "start": "启动",
+            "stop": "停止",
+            "restart": "重启"
+        },
+        "serviceStatus": {
+            "running": "运行中",
+            "stopped": "已停止",
+            "error": "错误",
+            "starting": "启动中",
+            "stopping": "停止中",
+            "unknown": "未知"
+        },
+        "common": {
+            "loading": "加载中...",
+            "error": "错误",
+            "success": "成功",
+            "save": "保存",
+            "cancel": "取消",
+            "delete": "删除",
+            "confirm": "确认",
+            "close": "关闭",
+            "logout": "退出登录"
+        }
     }
 }
