@@ -1535,12 +1535,22 @@ def build_tool_calls_from_trace(reasoning_trace: List[Dict[str, Any]]) -> List[D
 async def chat_legacy_endpoint(
     request: ChatRequest,
     user_id: str = Header(default="anonymous", alias="x-user-id"),
+    openclaw_session: Optional[str] = Header(None, alias="X-OpenClaw-Session"),
+    openclaw_channel: Optional[str] = Header(None, alias="X-OpenClaw-Channel"),
+    bbx_session: Optional[str] = Header(None, alias="X-BBX-Session"),
 ):
     """Legacy compatibility endpoint.
 
     Some clients post to `/chat`; route them to the OpenAI-compatible handler.
+    FastAPI will extract these headers from the HTTP request, then we forward to the main handler.
     """
-    return await chat_completion_endpoint(request=request, user_id=user_id)
+    return await chat_completion_endpoint(
+        request=request,
+        user_id=user_id,
+        openclaw_session=openclaw_session,
+        openclaw_channel=openclaw_channel,
+        bbx_session=bbx_session,
+    )
 
 
 @app.post("/chat/react")
