@@ -35,26 +35,20 @@ class OCRResponse(BaseModel):
     processing_time: float
 
 
-@app.on_event("startup")
-async def load_model():
-    global processor, model
-    
-    print(f"Loading GLM-OCR: {MODEL_NAME} on {DEVICE}")
-    
-    processor = AutoProcessor.from_pretrained(MODEL_NAME)
-    model = AutoModelForImageTextToText.from_pretrained(
-        MODEL_NAME,
-        torch_dtype="auto",
-        device_map=DEVICE
-    )
-    
-    print(f"✅ Model ready on {DEVICE}")
+# Global Model Initialization
+print(f"Loading GLM-OCR: {MODEL_NAME} on {DEVICE}")
+processor = AutoProcessor.from_pretrained(MODEL_NAME, trust_remote_code=True)
+model = AutoModelForImageTextToText.from_pretrained(
+    MODEL_NAME,
+    torch_dtype="auto",
+    device_map=DEVICE,
+    trust_remote_code=True
+)
+print(f"✅ Model ready on {DEVICE}")
 
 
 @app.get("/health")
 async def health():
-    if model is None:
-        raise HTTPException(503, "Model not loaded")
     return {"status": "healthy", "model": MODEL_NAME, "device": DEVICE}
 
 
@@ -109,6 +103,119 @@ async def ocr(request: OCRRequest):
         
     except Exception as e:
         raise HTTPException(500, f"OCR failed: {e}")
+
+
+@app.post("/v1/chat/completions")
+async def chat_completions(request: dict):
+    """Ollama/OpenAI compatible endpoint for GLM-SDK."""
+    import time
+    start = time.time()
+    
+    try:
+        messages = request.get("messages", [])
+        last_msg = messages[-1] if messages else {}
+        prompt = "Text Recognition:"
+        image = None
+        
+        # 1. Try to find prompt
+        content = last_msg.get("content", "")
+        if isinstance(content, str):
+            prompt = content
+        elif isinstance(content, list):
+            for item in content:
+                if item.get("type") == "text":
+                    prompt = item.get("text", prompt)
+
+        # 2. Try to find image in standard locations
+        # OpenAI style
+        if isinstance(content, list):
+            for item in content:
+                if item.get("type") == "image_url":
+                    url = item.get("image_url", {}).get("url", "")
+                    if "," in url:
+                        image_data = url.split(",")[1]
+                        image = Image.open(io.BytesIO(base64.b64decode(image_data))).convert("RGB")
+                    elif len(url) > 1000: # Direct base64
+                        image = Image.open(io.BytesIO(base64.b64decode(url))).convert("RGB")
+
+        # Ollama style
+        if image is None:
+            ollama_images = last_msg.get("images", []) or request.get("images", []) or []
+            if ollama_images:
+                img_data = ollama_images[0]
+                if "," in img_data: img_data = img_data.split(",")[1]
+                image = Image.open(io.BytesIO(base64.b64decode(img_data))).convert("RGB")
+
+        # 3. Recursive search (Deep dive)
+        if image is None:
+            def find_base64_recursively(obj):
+                if isinstance(obj, str) and len(obj) > 1000:
+                    try:
+                        # Try to decode and open as image
+                        data = obj.split(",")[1] if "," in obj else obj
+                        return Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")
+                    except: return None
+                elif isinstance(obj, dict):
+                    for v in obj.values():
+                        res = find_base64_recursively(v)
+                        if res: return res
+                elif isinstance(obj, list):
+                    for v in obj:
+                        res = find_base64_recursively(v)
+                        if res: return res
+                return None
+            
+            image = find_base64_recursively(request)
+
+        if image is None:
+            # Health check test request - return success for connection validation
+            print(f"INFO: Health check request (no image). Keys: {list(request.keys())}")
+            return {
+                "choices": [{
+                    "message": {"role": "assistant", "content": "Service is healthy"},
+                    "finish_reason": "stop",
+                    "index": 0
+                }],
+                "usage": {"total_tokens": 0}
+            }
+            
+        print(f"Processing image for prompt: {prompt[:50]}...")
+            
+        # Prepare for Transformers
+        inputs = processor.apply_chat_template(
+            [{"role": "user", "content": [{"type": "image", "image": image}, {"type": "text", "text": prompt}]}],
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt"
+        ).to(model.device)
+        
+        inputs.pop("token_type_ids", None)
+        
+        with torch.no_grad():
+            generated_ids = model.generate(
+                **inputs,
+                max_new_tokens=request.get("max_tokens", 8192)
+            )
+            
+        output_text = processor.decode(
+            generated_ids[0][inputs["input_ids"].shape[1]:],
+            skip_special_tokens=True
+        )
+        
+        duration = time.time() - start
+        print(f"COMPLETED chat_completions in {duration:.2f}s")
+        
+        return {
+            "choices": [{"message": {"role": "assistant", "content": output_text}, "finish_reason": "stop", "index": 0}],
+            "usage": {"total_tokens": generated_ids.shape[1]}
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in chat_completions: {e}")
+        traceback.print_exc()
+        raise HTTPException(500, f"Chat completion failed: {e}")
 
 
 @app.post("/v1/ocr/pdf")
