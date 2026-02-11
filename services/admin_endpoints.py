@@ -1252,7 +1252,7 @@ async def admin_search_test(
         async with httpx.AsyncClient(timeout=30.0) as http_client:
             resp = await http_client.post(
                 f"{embeddings_url}/embed",
-                json={"texts": [body.query]},
+                json={"inputs": [body.query]},  # Fixed: API expects 'inputs' not 'texts'
             )
             resp.raise_for_status()
             embeddings = resp.json().get("embeddings", [])
@@ -1733,7 +1733,7 @@ async def _index_chunks(
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{embeddings_url}/embed",
-                json={"texts": texts},
+                json={"inputs": texts},  # Fixed: API expects 'inputs' not 'texts'
             )
             resp.raise_for_status()
             embeddings = resp.json().get("embeddings", [])
@@ -1841,7 +1841,7 @@ async def _index_chunks_with_enrichment(
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{embeddings_url}/embed",
-                json={"texts": texts},
+                json={"inputs": texts},  # Fixed: API expects 'inputs' not 'texts'
             )
             resp.raise_for_status()
             embeddings = resp.json().get("embeddings", [])
