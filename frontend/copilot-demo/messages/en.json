@@ -164,6 +164,7 @@
             "sessions": "Sessions",
             "documents": "Documents",
             "kb": "Knowledge Base",
+            "workflows": "Workflows",
             "system": "System",
             "status": "Status Page",
             "users": "Users",
@@ -213,6 +214,7 @@
                 "collection": "Collection",
                 "domain": "Domain",
                 "ocrEngine": "OCR Engine",
+                "glmOcrHint": "Runs GLM-OCR with GPU layout detection (tables, images, headers).",
                 "chunking": "Chunking Strategy",
                 "options": {
                     "indexToQdrant": "Index to Qdrant",
@@ -220,7 +222,14 @@
                     "enrichWithLLM": "Enrich with LLM"
                 },
                 "button": "Upload & Process",
-                "processing": "Processing..."
+                "processing": "Processing...",
+                "layout": {
+                    "title": "Layout detected",
+                    "tables": "Tables",
+                    "images": "Images",
+                    "headers": "Headers",
+                    "processingTime": "Processing time"
+                }
             },
             "urlImport": {
                 "urlLabel": "URL",
@@ -245,7 +254,10 @@
         "kb": {
             "title": "Knowledge Base",
             "subtitle": "Browse and search vector database",
+            "empty": "No documents found",
             "search": {
+                "title": "Search Test",
+                "description": "Run a quick semantic search against the selected collection.",
                 "placeholder": "Search knowledge base...",
                 "button": "Search",
                 "searching": "Searching..."
@@ -254,16 +266,121 @@
                 "collection": "Collection",
                 "domain": "Domain",
                 "allCollections": "All Collections",
-                "allDomains": "All Domains"
+                "allDomains": "All Domains",
+                "allTypes": "All Types"
             },
             "table": {
+                "filename": "Filename",
+                "type": "Type",
+                "domain": "Domain",
+                "chunks": "Chunks",
+                "uploaded": "Uploaded",
                 "content": "Content",
                 "metadata": "Metadata",
                 "score": "Score",
                 "actions": "Actions"
             },
+            "actions": {
+                "view": "View",
+                "delete": "Delete"
+            },
             "viewDetails": "View Details",
             "noResults": "No results found"
+        },
+        "workflows": {
+            "dashboard": {
+                "title": "Workflows",
+                "subtitle": "Dashboard overview, metrics, and execution tracking",
+                "actions": {
+                    "create": "Create New Workflow"
+                },
+                "cards": {
+                    "totalWorkflows": "Total Workflows",
+                    "executions24h": "Executions (24h)",
+                    "successRate7d": "Success Rate (7d)",
+                    "avgDuration": "Avg Duration"
+                },
+                "table": {
+                    "title": "Workflows",
+                    "hint": "Edit or view details",
+                    "empty": "No workflows found",
+                    "columns": {
+                        "name": "Workflow name",
+                        "lastExecuted": "Last executed",
+                        "status": "Status",
+                        "count": "Execution count",
+                        "actions": "Actions"
+                    },
+                    "actions": {
+                        "edit": "Edit",
+                        "view": "View Details",
+                        "delete": "Delete"
+                    }
+                },
+                "deleteConfirm": "Are you sure you want to delete workflow \"{name}\"?",
+                "charts": {
+                    "timeline": "Executions Timeline",
+                    "timelineHint": "Last 7 days (success vs failed)",
+                    "popular": "Popular Workflows",
+                    "popularHint": "Top 5 by execution count",
+                    "success": "Success:",
+                    "failed": "Failed:",
+                    "noData": "No data"
+                }
+            },
+            "designer": {
+                "breadcrumbs": {
+                    "admin": "Admin",
+                    "workflows": "Workflows",
+                    "designer": "Designer",
+                    "edit": "Edit"
+                }
+            },
+            "detail": {
+                "subtitle": "Workflow details and execution history",
+                "breadcrumbs": {
+                    "admin": "Admin",
+                    "workflows": "Workflows",
+                    "detail": "Details"
+                },
+                "actions": {
+                    "edit": "Edit",
+                    "saveName": "Save name",
+                    "saving": "Saving…"
+                },
+                "tabs": {
+                    "overview": "Overview",
+                    "executions": "Execution History",
+                    "metrics": "Metrics",
+                    "configuration": "Configuration"
+                },
+                "overview": {
+                    "title": "Overview",
+                    "noDescription": "No description",
+                    "thumbnailHint": "Canvas thumbnail preview (planned)"
+                },
+                "executions": {
+                    "title": "Execution History",
+                    "refresh": "Refresh",
+                    "empty": "No executions yet",
+                    "columns": {
+                        "time": "Time",
+                        "status": "Status",
+                        "duration": "Duration",
+                        "input": "Input",
+                        "output": "Output"
+                    }
+                },
+                "metrics": {
+                    "title": "Metrics",
+                    "hint": "Execution trend chart and comparisons (planned)"
+                },
+                "configuration": {
+                    "title": "Configuration",
+                    "hint": "Compiled LangGraph code (read-only)",
+                    "noCode": "No compiled code yet"
+                }
+            }
         },
         "users": {
             "title": "User Management",

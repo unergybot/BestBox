@@ -164,6 +164,7 @@
             "sessions": "会话记录",
             "documents": "文档管理",
             "kb": "知识库",
+            "workflows": "工作流",
             "system": "系统设置",
             "status": "状态页面",
             "users": "用户管理",
@@ -213,6 +214,7 @@
                 "collection": "集合",
                 "domain": "领域",
                 "ocrEngine": "OCR引擎",
+                "glmOcrHint": "使用GLM-OCR进行GPU版面检测（表格、图片、标题）。",
                 "chunking": "分块策略",
                 "options": {
                     "indexToQdrant": "索引到Qdrant",
@@ -220,7 +222,14 @@
                     "enrichWithLLM": "使用LLM增强"
                 },
                 "button": "上传并处理",
-                "processing": "处理中..."
+                "processing": "处理中...",
+                "layout": {
+                    "title": "检测到版面结构",
+                    "tables": "表格",
+                    "images": "图片",
+                    "headers": "标题",
+                    "processingTime": "处理耗时"
+                }
             },
             "urlImport": {
                 "urlLabel": "URL",
@@ -245,7 +254,10 @@
         "kb": {
             "title": "知识库",
             "subtitle": "浏览和搜索向量数据库",
+            "empty": "暂无文档",
             "search": {
+                "title": "搜索测试",
+                "description": "对所选集合进行快速语义搜索。",
                 "placeholder": "搜索知识库...",
                 "button": "搜索",
                 "searching": "搜索中..."
@@ -254,16 +266,121 @@
                 "collection": "集合",
                 "domain": "领域",
                 "allCollections": "所有集合",
-                "allDomains": "所有领域"
+                "allDomains": "所有领域",
+                "allTypes": "所有类型"
             },
             "table": {
+                "filename": "文件名",
+                "type": "类型",
+                "domain": "领域",
+                "chunks": "分块",
+                "uploaded": "上传时间",
                 "content": "内容",
                 "metadata": "元数据",
                 "score": "分数",
                 "actions": "操作"
             },
+            "actions": {
+                "view": "查看",
+                "delete": "删除"
+            },
             "viewDetails": "查看详情",
             "noResults": "未找到结果"
+        },
+        "workflows": {
+            "dashboard": {
+                "title": "工作流",
+                "subtitle": "仪表盘概览、指标与执行记录",
+                "actions": {
+                    "create": "新建工作流"
+                },
+                "cards": {
+                    "totalWorkflows": "工作流总数",
+                    "executions24h": "执行次数（24小时）",
+                    "successRate7d": "成功率（7天）",
+                    "avgDuration": "平均耗时"
+                },
+                "table": {
+                    "title": "工作流",
+                    "hint": "编辑或查看详情",
+                    "empty": "暂无工作流",
+                    "columns": {
+                        "name": "工作流名称",
+                        "lastExecuted": "最近执行",
+                        "status": "状态",
+                        "count": "执行次数",
+                        "actions": "操作"
+                    },
+                    "actions": {
+                        "edit": "编辑",
+                        "view": "查看详情",
+                        "delete": "删除"
+                    }
+                },
+                "deleteConfirm": "确定要删除工作流 \"{name}\" 吗？",
+                "charts": {
+                    "timeline": "执行时间线",
+                    "timelineHint": "最近7天（成功 vs 失败）",
+                    "popular": "热门工作流",
+                    "popularHint": "按执行次数排名前5",
+                    "success": "成功：",
+                    "failed": "失败：",
+                    "noData": "暂无数据"
+                }
+            },
+            "designer": {
+                "breadcrumbs": {
+                    "admin": "管理后台",
+                    "workflows": "工作流",
+                    "designer": "设计器",
+                    "edit": "编辑"
+                }
+            },
+            "detail": {
+                "subtitle": "工作流详情与执行历史",
+                "breadcrumbs": {
+                    "admin": "管理后台",
+                    "workflows": "工作流",
+                    "detail": "详情"
+                },
+                "actions": {
+                    "edit": "编辑",
+                    "saveName": "保存名称",
+                    "saving": "保存中…"
+                },
+                "tabs": {
+                    "overview": "概览",
+                    "executions": "执行历史",
+                    "metrics": "指标",
+                    "configuration": "配置"
+                },
+                "overview": {
+                    "title": "概览",
+                    "noDescription": "暂无描述",
+                    "thumbnailHint": "画布缩略图预览（计划中）"
+                },
+                "executions": {
+                    "title": "执行历史",
+                    "refresh": "刷新",
+                    "empty": "暂无执行记录",
+                    "columns": {
+                        "time": "时间",
+                        "status": "状态",
+                        "duration": "耗时",
+                        "input": "输入",
+                        "output": "输出"
+                    }
+                },
+                "metrics": {
+                    "title": "指标",
+                    "hint": "执行趋势图与对比（计划中）"
+                },
+                "configuration": {
+                    "title": "配置",
+                    "hint": "编译后的 LangGraph 代码（只读）",
+                    "noCode": "尚无编译代码"
+                }
+            }
         },
         "users": {
             "title": "用户管理",

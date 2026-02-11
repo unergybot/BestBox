@@ -274,6 +274,135 @@ async def _download_url(url: str) -> tuple[Path, str]:
     return saved_path, original_filename
 
 
+def _extract_layout_stats(markdown: str) -> Dict[str, int]:
+    """Extract layout statistics from GLM-OCR markdown output.
+
+    GLM-OCR uses specific formats:
+    - Images: ![](page=N,bbox=[x1,y1,x2,y2])
+    - Tables: HTML <table> tags or markdown pipes
+    - Headers: Standard markdown ## format
+    """
+    # Tables: check both HTML and markdown formats
+    html_tables = len(re.findall(r"<table\b", markdown, flags=re.IGNORECASE))
+    md_tables = len(re.findall(r"^\|.+\|$", markdown, flags=re.MULTILINE))
+    tables = html_tables + md_tables
+
+    # Images: GLM-SDK uses ![](page=N,bbox=[...]) format
+    images = len(re.findall(r"!\[\]\(page=\d+,bbox=", markdown))
+
+    # Headers: Standard markdown format
+    headers = len(re.findall(r"^#{1,6}\s+.+", markdown, flags=re.MULTILINE))
+
+    return {
+        "tables": tables,
+        "images": images,
+        "headers": headers,
+    }
+
+
+async def _process_with_glm_ocr(
+    pdf_path: Path,
+    domain: str,
+) -> tuple[Dict[str, Any], Dict[str, int], float]:
+    import httpx
+
+    start_time = time.monotonic()
+    glm_url = os.getenv("GLM_SDK_URL", "http://localhost:5002").rstrip("/")
+
+    # Configurable timeouts for large PDFs
+    glm_timeout = int(os.getenv("GLM_OCR_TIMEOUT", "300"))
+    glm_connect_timeout = int(os.getenv("GLM_OCR_CONNECT_TIMEOUT", "10"))
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(glm_timeout, connect=glm_connect_timeout)
+    ) as client:
+        try:
+            response = await client.post(
+                f"{glm_url}/glmocr/parse",
+                json={"images": [str(pdf_path)]},
+            )
+        except httpx.ConnectError as exc:
+            raise RuntimeError("glm_ocr_unavailable") from exc
+
+    if response.status_code != 200:
+        body_text = response.text or ""
+        if response.status_code >= 500 and "out of memory" in body_text.lower():
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "GPU memory exceeded. Please split the PDF into smaller files "
+                    "(max 50 pages recommended)."
+                ),
+            )
+        raise RuntimeError(
+            f"glm_ocr_failed_{response.status_code}: {body_text[:200]}"
+        )
+
+    result = response.json()
+    markdown = result.get("markdown_result", "")
+    if not markdown or len(markdown.strip()) < 10:
+        logger.error(
+            f"GLM-OCR returned empty/invalid markdown for {pdf_path.name}. "
+            f"Response keys: {list(result.keys())}, markdown length: {len(markdown)}"
+        )
+        raise RuntimeError("glm_ocr_empty_result")
+
+    layout_stats = _extract_layout_stats(markdown)
+    processing_time = time.monotonic() - start_time
+    
+    logger.info(
+        f"GLM-OCR extracted {len(markdown)} chars from {pdf_path.name}: "
+        f"{layout_stats['tables']} tables, {layout_stats['images']} images, "
+        f"{layout_stats['headers']} headers"
+    )
+
+    docling_result = {
+        "md": markdown,
+        "document": {"content": [{"text": markdown}]},
+        "pictures": [],
+        "metadata": {
+            "domain": domain,
+            "source": str(pdf_path),
+        },
+    }
+
+    return docling_result, layout_stats, processing_time
+
+
+async def _process_with_quality_gate(
+    pdf_path: Path,
+    domain: str,
+) -> Dict[str, Any]:
+    from services.rag_pipeline.mold_document_ingester import MoldDocumentIngester
+
+    ingester = MoldDocumentIngester()
+    try:
+        parse_result = await ingester.ingest_document(
+            doc_path=pdf_path,
+            domain=domain,
+            run_ocr=True,
+        )
+        if not parse_result:
+            raise RuntimeError("GPU OCR service returned no result")
+
+        docling_result = {
+            "md": parse_result.get("text", ""),
+            "document": {
+                "content": [{"text": parse_result.get("raw_text", "")}]
+            },
+            "pictures": [],
+            "metadata": parse_result.get("metadata", {}),
+        }
+        logger.info(
+            "PDF processed via GPU OCR: %s images, %s OCR results",
+            parse_result.get("image_count", 0),
+            len(parse_result.get("ocr_results", [])),
+        )
+        return docling_result
+    finally:
+        await ingester.close()
+
+
 def _get_db_pool(request: Request):
     """Retrieve the asyncpg pool from app state or agent_api global."""
     # First try app state
@@ -412,7 +541,7 @@ async def admin_upload_document(
     file: UploadFile = File(...),
     collection: str = Query("mold_reference_kb", description="Target Qdrant collection"),
     domain: str = Query("mold", description="Domain classification"),
-    ocr_engine: str = Query("easyocr", description="OCR engine: easyocr, tesseract, rapidocr"),
+    ocr_engine: str = Query("easyocr", description="OCR engine: easyocr, tesseract, rapidocr, glm-ocr"),
     chunking: str = Query("auto", description="Chunking strategy: auto, case, hierarchical"),
     force_ocr: bool = Query(False, description="Force OCR even on text-rich documents"),
     user: Dict = Depends(require_permission("upload")),
@@ -428,37 +557,33 @@ async def admin_upload_document(
     ext = saved_path.suffix.lower()
     pool = _get_db_pool(request)
 
+    layout_stats: Optional[Dict[str, int]] = None
+    processing_time: Optional[float] = None
+
     try:
         # Step 1: Document conversion with GPU OCR for PDFs
         # PDFs with images use GPU-accelerated pipeline: P100 (classical OCR) + RTX 3080 (GLM-OCR for quality fallback)
         # Other formats use Docling Serve
         
         if ext == ".pdf":
-            # Route through GPU OCR service (P100 + RTX 3080 with quality gate)
-            from services.rag_pipeline.mold_document_ingester import MoldDocumentIngester
-            
-            ingester = MoldDocumentIngester()
-            try:
-                parse_result = await ingester.ingest_document(
-                    doc_path=saved_path,
-                    domain=domain,
-                    run_ocr=True
-                )
-                if not parse_result:
-                    raise RuntimeError("GPU OCR service returned no result")
-                
-                # Convert parse_result to docling_result format for compatibility
-                docling_result = {
-                    "md": parse_result.get("text", ""),
-                    "document": {
-                        "content": [{"text": parse_result.get("raw_text", "")}]
-                    },
-                    "pictures": [],  # Images handled separately by GPU OCR
-                    "metadata": parse_result.get("metadata", {})
-                }
-                logger.info(f"PDF processed via GPU OCR: {parse_result.get('image_count', 0)} images, {len(parse_result.get('ocr_results', []))} OCR results")
-            finally:
-                await ingester.close()
+            if ocr_engine == "glm-ocr":
+                try:
+                    docling_result, layout_stats, processing_time = await _process_with_glm_ocr(
+                        saved_path, domain
+                    )
+                    processing_method = "glm-ocr"
+                    logger.info(
+                        f"GLM-OCR processed {file.filename}: "
+                        f"{layout_stats['tables']} tables, {layout_stats['images']} images, "
+                        f"{layout_stats['headers']} headers, {processing_time:.1f}s"
+                    )
+                except RuntimeError as exc:
+                    logger.warning(f"GLM-OCR failed, falling back to quality gate: {exc}")
+                    docling_result = await _process_with_quality_gate(saved_path, domain)
+                    processing_method = "fallback-quality-gate"
+            else:
+                docling_result = await _process_with_quality_gate(saved_path, domain)
+                processing_method = "gpu_ocr"
         else:
             # Non-PDF files: use Docling Serve (DOCX, PPTX, images, etc.)
             from services.docling_client import DoclingClient
@@ -467,10 +592,16 @@ async def admin_upload_document(
             options = client.options_for_format(ext)
             if force_ocr:
                 options["force_ocr"] = True
-            if ocr_engine != "easyocr":
+            if ocr_engine in {"tesseract", "rapidocr"}:
                 options["ocr_engine"] = ocr_engine
+            elif ocr_engine == "glm-ocr":
+                logger.warning(
+                    f"GLM-OCR selected for {ext} file ({file.filename}), "
+                    "but GLM-OCR only supports PDFs. Falling back to EasyOCR."
+                )
 
             docling_result = await client.convert_file(str(saved_path), options)
+            processing_method = "docling"
 
         # Step 2: Domain-specific extraction
         chunks: List[Dict[str, Any]] = []
@@ -494,11 +625,43 @@ async def admin_upload_document(
                 images=images,
                 doc_id=doc_id,
             )
+        
+        # Validate chunks were created
+        if not chunks:
+            logger.error(
+                f"Chunking failed for {file.filename}: no chunks extracted. "
+                f"Processing method: {processing_method}, domain: {domain}, ext: {ext}"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Failed to extract text chunks from {file.filename}. "
+                    "The document may be empty, corrupted, or in an unsupported format."
+                ),
+            )
+        
+        logger.info(f"Extracted {len(chunks)} chunks from {file.filename}")
 
         # Step 3: Embed and index into Qdrant
-        indexed_count = 0
-        if chunks:
-            indexed_count = await _index_chunks(chunks, collection)
+        indexed_count = await _index_chunks(chunks, collection)
+        if indexed_count == 0:
+            logger.error(
+                f"Indexing returned 0 for {file.filename} ({len(chunks)} chunks). "
+                "Embeddings or Qdrant likely down."
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"Indexing failed for {len(chunks)} chunks. "
+                    "Please verify embeddings service (port 8004) and Qdrant (port 6333) "
+                    "are running, then retry the upload."
+                ),
+            )
+        
+        logger.info(
+            f"Successfully indexed {indexed_count} chunks from {file.filename} "
+            f"to collection '{collection}'"
+        )
 
         # Audit log
         if pool:
@@ -517,8 +680,7 @@ async def admin_upload_document(
                 },
             )
 
-        processing_method = "gpu_ocr" if ext == ".pdf" else "docling"
-        return {
+        response_data: Dict[str, Any] = {
             "status": "success",
             "filename": file.filename,
             "file_type": ext.lstrip("."),
@@ -529,6 +691,15 @@ async def admin_upload_document(
             "processing_method": processing_method,
         }
 
+        if ocr_engine == "glm-ocr" and layout_stats:
+            response_data["layout_detected"] = layout_stats
+            if processing_time is not None:
+                response_data["processing_time"] = processing_time
+
+        return response_data
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Document upload failed: {e}", exc_info=True)
 
@@ -1357,6 +1528,12 @@ def _hierarchical_chunk(
         text = "\n\n".join(parts)
 
     if not text:
+        logger.warning(
+            f"No text extracted from {source_file}. "
+            f"docling_result keys: {list(docling_result.keys())}, "
+            f"md field: {bool(docling_result.get('md'))}, "
+            f"content items: {len(doc.get('content', []))}"
+        )
         return []
 
     # Map image placeholder positions to images
