@@ -305,24 +305,53 @@ async def _process_with_glm_ocr(
     domain: str,
 ) -> tuple[Dict[str, Any], Dict[str, int], float]:
     import httpx
+    import subprocess
+    import uuid
 
     start_time = time.monotonic()
     glm_url = os.getenv("GLM_SDK_URL", "http://localhost:5002").rstrip("/")
+
+    # Copy PDF to shared volume for GLM-SDK container access
+    unique_filename = f"{uuid.uuid4().hex[:8]}_{pdf_path.name}"
+    container_path = f"/app/shared/{unique_filename}"
+
+    try:
+        # Copy file to GLM-SDK container's shared volume
+        subprocess.run(
+            ["docker", "cp", str(pdf_path), f"bestbox-glm-sdk:{container_path}"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to copy PDF to GLM-SDK container: {e.stderr}")
+        raise RuntimeError("glm_sdk_file_copy_failed") from e
 
     # Configurable timeouts for large PDFs
     glm_timeout = int(os.getenv("GLM_OCR_TIMEOUT", "300"))
     glm_connect_timeout = int(os.getenv("GLM_OCR_CONNECT_TIMEOUT", "10"))
 
-    async with httpx.AsyncClient(
-        timeout=httpx.Timeout(glm_timeout, connect=glm_connect_timeout)
-    ) as client:
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(glm_timeout, connect=glm_connect_timeout)
+        ) as client:
+            try:
+                response = await client.post(
+                    f"{glm_url}/glmocr/parse",
+                    json={"images": [container_path]},
+                )
+            except httpx.ConnectError as exc:
+                raise RuntimeError("glm_ocr_unavailable") from exc
+    finally:
+        # Cleanup: remove temporary file from container
         try:
-            response = await client.post(
-                f"{glm_url}/glmocr/parse",
-                json={"images": [str(pdf_path)]},
+            subprocess.run(
+                ["docker", "exec", "bestbox-glm-sdk", "rm", "-f", container_path],
+                check=False,  # Don't fail if cleanup fails
+                capture_output=True
             )
-        except httpx.ConnectError as exc:
-            raise RuntimeError("glm_ocr_unavailable") from exc
+        except Exception:
+            pass  # Ignore cleanup errors
 
     if response.status_code != 200:
         body_text = response.text or ""
