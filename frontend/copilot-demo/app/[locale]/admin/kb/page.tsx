@@ -73,16 +73,16 @@ function ImageFull({ imageId }: { imageId: string }) {
   return <img src={src} alt={imageId} className="max-w-full max-h-[80vh] rounded-lg shadow-2xl" />;
 }
 
-function InlineImage({ imageId, onClick }: { imageId: string; onClick: () => void }) {
+function InlineImage({ imageId, collection, docId, onClick }: { imageId: string; collection: string; docId: string; onClick: () => void }) {
   const [src, setSrc] = useState<string>("");
   useEffect(() => {
     let revoke = "";
-    fetch(`${API_BASE}/admin/kb/images/${imageId}`, { headers: getAuthHeaders() })
+    fetch(`${API_BASE}/admin/kb/images/${collection}/${docId}/${imageId}`, { headers: getAuthHeaders() })
       .then((r) => r.blob())
       .then((blob) => { const url = URL.createObjectURL(blob); setSrc(url); revoke = url; })
       .catch(() => {});
     return () => { if (revoke) URL.revokeObjectURL(revoke); };
-  }, [imageId]);
+  }, [imageId, collection, docId]);
   if (!src) return <div className="w-full h-32 rounded-lg bg-gray-100 animate-pulse my-2" />;
   return (
     <button onClick={onClick} className="block w-full my-3 rounded-lg overflow-hidden border border-gray-200 hover:border-blue-400 transition-colors">
@@ -91,22 +91,36 @@ function InlineImage({ imageId, onClick }: { imageId: string; onClick: () => voi
   );
 }
 
-function ChunkContent({ text, imageIds, onImageClick }: { text: string; imageIds: string[]; onImageClick: (id: string) => void }) {
-  const placeholder = "<!-- image -->";
-  const parts = text.split(placeholder);
-  if (parts.length === 1 || imageIds.length === 0) {
+function ChunkContent({ text, imageIds, collection, docId, onImageClick }: { text: string; imageIds: string[]; collection: string; docId: string; onImageClick: (id: string) => void }) {
+  // Parse new format: <!-- image:p3_img0 -->
+  const imagePlaceholder = /<!-- image:([^ ]+) -->/g;
+  const parts = text.split(imagePlaceholder);
+
+  // If no images found, render as plain text
+  if (parts.length === 1) {
     return <p className="text-gray-800 whitespace-pre-wrap">{text}</p>;
   }
+
+  // Render mixed text and images
   return (
     <div className="text-gray-800">
-      {parts.map((part, index) => (
-        <span key={index}>
-          {part && <span className="whitespace-pre-wrap">{part}</span>}
-          {index < parts.length - 1 && index < imageIds.length && (
-            <InlineImage imageId={imageIds[index]} onClick={() => onImageClick(imageIds[index])} />
-          )}
-        </span>
-      ))}
+      {parts.map((part, index) => {
+        // Even indices are text, odd indices are image IDs
+        if (index % 2 === 0) {
+          return <span key={index} className="whitespace-pre-wrap">{part}</span>;
+        } else {
+          const imageId = part;
+          return (
+            <InlineImage
+              key={index}
+              imageId={imageId}
+              collection={collection}
+              docId={docId}
+              onClick={() => onImageClick(imageId)}
+            />
+          );
+        }
+      })}
     </div>
   );
 }
@@ -415,7 +429,13 @@ export default function KBDashboardPage() {
                         {chunk.severity ? <span className="px-1.5 py-0.5 bg-yellow-50 text-yellow-700 rounded">{String(chunk.severity)}</span> : null}
                         {chunk.chunk_type === "enriched" ? <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">AI enriched</span> : null}
                       </div>
-                      <ChunkContent text={chunk.text as string} imageIds={(chunk.image_ids as string[]) || []} onImageClick={setLightboxImage} />
+                      <ChunkContent
+                        text={chunk.text as string}
+                        imageIds={(chunk.image_ids as string[]) || []}
+                        collection={selectedCollection}
+                        docId={detailDoc || ""}
+                        onImageClick={setLightboxImage}
+                      />
                     </div>
                   )
                 )}
