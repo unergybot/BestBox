@@ -31,6 +31,11 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
+try:
+    import fitz  # PyMuPDF
+except Exception:  # pragma: no cover
+    fitz = None
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -300,9 +305,224 @@ def _extract_layout_stats(markdown: str) -> Dict[str, int]:
     }
 
 
+def _is_glm_image_element(elem: Dict[str, Any]) -> bool:
+    """Return True for image/chart elements only (precision-first)."""
+    elem_type = str(elem.get("type") or "").lower()
+    raw_label = elem.get("label")
+
+    # Explicit type signal.
+    if elem_type in {"image", "chart"}:
+        return True
+
+    # Normalize PP-DocLayoutV3 labels (string or numeric id).
+    label_id_map = {3: "chart", 14: "image"}
+    label = ""
+    if isinstance(raw_label, (int, float)):
+        label = label_id_map.get(int(raw_label), "")
+    elif isinstance(raw_label, str):
+        label = raw_label.strip().lower()
+        if label.isdigit():
+            label = label_id_map.get(int(label), label)
+
+    if label in {"chart", "image"}:
+        return True
+
+    reject_labels = {
+        "header",
+        "footer",
+        "figure_title",
+        "doc_title",
+        "paragraph_title",
+        "text",
+        "content",
+        "abstract",
+        "reference_content",
+        "table",  # Tables have their own extraction path, don't extract as images
+    }
+    if label in reject_labels:
+        return False
+
+    # Fallback: only accept if bbox exists and no conflicting label.
+    return "bbox_2d" in elem
+
+
+def _normalize_bbox(bbox: Any) -> Optional[List[float]]:
+    if bbox is None:
+        return None
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        try:
+            return [float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])]
+        except Exception:
+            return None
+    if isinstance(bbox, dict):
+        keys = ["x1", "y1", "x2", "y2"]
+        if all(k in bbox for k in keys):
+            try:
+                return [float(bbox["x1"]), float(bbox["y1"]), float(bbox["x2"]), float(bbox["y2"])]
+            except Exception:
+                return None
+    return None
+
+
+async def _extract_images_from_pdf(
+    pdf_path: Path,
+    json_result: List[List[Dict[str, Any]]],
+    doc_id: str,
+    collection: str,
+    base_dir: Optional[Path] = None,
+    dpi: int = 200,
+) -> Dict[str, Dict[str, Any]]:
+    """Extract image regions from *pdf_path* using GLM-OCR bbox data.
+
+    Stores PNG crops under: data/uploads/images/{collection}/{doc_id}/p{page}_img{index}.png
+
+    Returns a manifest keyed by image_id (e.g. 'p0_img0').
+    """
+    if fitz is None:
+        raise RuntimeError("pymupdf_not_installed")
+
+    # Basic path safety: keep within IMAGE_DIR
+    safe_collection = re.sub(r"[^A-Za-z0-9._\-]", "_", collection)
+    safe_doc_id = re.sub(r"[^A-Za-z0-9._\-]", "_", doc_id)
+
+    root_dir = base_dir or IMAGE_DIR
+    image_dir = root_dir / safe_collection / safe_doc_id
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest: Dict[str, Dict[str, Any]] = {}
+    bbox_to_id: Dict[tuple[int, tuple[int, int, int, int]], str] = {}
+    rejected_count = 0
+
+    pdf = fitz.open(str(pdf_path))
+    try:
+        for page_idx, page_elements in enumerate(json_result or []):
+            if page_idx >= len(pdf):
+                continue
+
+            page = pdf[page_idx]
+            page_rect = page.rect
+            img_idx = 0
+
+            for elem in page_elements or []:
+                if not _is_glm_image_element(elem):
+                    if elem.get("bbox_2d") or elem.get("bbox"):
+                        rejected_count += 1
+                    continue
+                # GLM-SDK uses "bbox_2d" not "bbox"
+                bbox = _normalize_bbox(elem.get("bbox_2d") or elem.get("bbox"))
+                if not bbox:
+                    continue
+
+                x1, y1, x2, y2 = bbox
+                # Normalize ordering and clamp to page bounds
+                x0 = max(min(x1, x2), page_rect.x0)
+                y0 = max(min(y1, y2), page_rect.y0)
+                x1c = min(max(x1, x2), page_rect.x1)
+                y1c = min(max(y1, y2), page_rect.y1)
+                if x1c - x0 < 1 or y1c - y0 < 1:
+                    continue
+
+                rect = fitz.Rect(x0, y0, x1c, y1c)
+                image_id = f"p{page_idx}_img{img_idx}"
+                out_path = image_dir / f"{image_id}.png"
+
+                try:
+                    pix = page.get_pixmap(clip=rect, dpi=dpi)
+                    pix.save(str(out_path))
+                except Exception as exc:
+                    logger.warning(
+                        f"Failed to crop image {image_id} from {pdf_path.name}: {exc}"
+                    )
+                    continue
+
+                bbox_key = (page_idx, tuple(int(round(v)) for v in bbox))
+                bbox_to_id[bbox_key] = image_id
+                manifest[image_id] = {
+                    "image_id": image_id,
+                    "page": page_idx,
+                    "bbox": bbox,
+                    "path": str(out_path),
+                }
+                img_idx += 1
+
+        if manifest:
+            heights = [img["bbox"][3] - img["bbox"][1] for img in manifest.values()]
+            avg_height = sum(heights) / len(heights)
+        else:
+            avg_height = 0.0
+        logger.info(
+            "Image extraction stats for %s: detected=%s images, avg_height=%.0fpt, rejected_text_blocks=%s",
+            pdf_path.name,
+            len(manifest),
+            avg_height,
+            rejected_count,
+        )
+
+        # Persist manifest to disk for debugging/cleanup
+        try:
+            (image_dir / "metadata.json").write_text(
+                json.dumps({"images": manifest}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+        # Store lookup mapping (used by placeholder replacement)
+        manifest["__bbox_to_id__"] = {  # type: ignore[assignment]
+            "data": {
+                f"{p}:{b[0]},{b[1]},{b[2]},{b[3]}": image_id
+                for (p, b), image_id in bbox_to_id.items()
+            }
+        }
+        return manifest
+    finally:
+        pdf.close()
+
+
+def _replace_image_placeholders(markdown: str, manifest: Dict[str, Dict[str, Any]]) -> str:
+    """Replace GLM-OCR bbox placeholders with image IDs.
+
+    Converts: ![](page=N,bbox=[x1, y1, x2, y2])
+    Into:     <!-- image:pN_imgX -->
+
+    If no matching image is found in the manifest, the placeholder is left unchanged.
+    """
+    if not markdown:
+        return markdown
+
+    bbox_map: Dict[str, str] = {}
+    bbox_blob = manifest.get("__bbox_to_id__", {}).get("data") if isinstance(manifest.get("__bbox_to_id__"), dict) else None
+    if isinstance(bbox_blob, dict):
+        bbox_map = {str(k): str(v) for k, v in bbox_blob.items()}
+
+    pattern = re.compile(
+        r"!\[\]\(page=(\d+),bbox=\[\s*([\d.\-]+)\s*,\s*([\d.\-]+)\s*,\s*([\d.\-]+)\s*,\s*([\d.\-]+)\s*\]\)"
+    )
+
+    def _key(page: int, x1: float, y1: float, x2: float, y2: float) -> str:
+        vals = [int(round(v)) for v in (x1, y1, x2, y2)]
+        return f"{page}:{vals[0]},{vals[1]},{vals[2]},{vals[3]}"
+
+    def replace_match(m: re.Match[str]) -> str:
+        page = int(m.group(1))
+        x1 = float(m.group(2))
+        y1 = float(m.group(3))
+        x2 = float(m.group(4))
+        y2 = float(m.group(5))
+        image_id = bbox_map.get(_key(page, x1, y1, x2, y2))
+        if image_id:
+            return f"<!-- image:{image_id} -->"
+        return m.group(0)
+
+    return pattern.sub(replace_match, markdown)
+
+
 async def _process_with_glm_ocr(
     pdf_path: Path,
     domain: str,
+    *,
+    doc_id: Optional[str] = None,
+    collection: Optional[str] = None,
 ) -> tuple[Dict[str, Any], Dict[str, int], float]:
     import httpx
     import subprocess
@@ -369,12 +589,26 @@ async def _process_with_glm_ocr(
 
     result = response.json()
     markdown = result.get("markdown_result", "")
+    json_result = result.get("json_result", [])
     if not markdown or len(markdown.strip()) < 10:
         logger.error(
             f"GLM-OCR returned empty/invalid markdown for {pdf_path.name}. "
             f"Response keys: {list(result.keys())}, markdown length: {len(markdown)}"
         )
         raise RuntimeError("glm_ocr_empty_result")
+
+    # Optional: extract image crops + replace placeholders
+    if collection and doc_id and json_result:
+        try:
+            manifest = await _extract_images_from_pdf(
+                pdf_path=pdf_path,
+                json_result=json_result,
+                doc_id=doc_id,
+                collection=collection,
+            )
+            markdown = _replace_image_placeholders(markdown, manifest)
+        except Exception as exc:
+            logger.warning(f"GLM image extraction skipped: {exc}")
 
     layout_stats = _extract_layout_stats(markdown)
     processing_time = time.monotonic() - start_time
@@ -392,6 +626,8 @@ async def _process_with_glm_ocr(
         "metadata": {
             "domain": domain,
             "source": str(pdf_path),
+            "ocr_engine": "glm-ocr",
+            "json_result": json_result,
         },
     }
 
@@ -586,6 +822,9 @@ async def admin_upload_document(
     ext = saved_path.suffix.lower()
     pool = _get_db_pool(request)
 
+    # One doc_id for the entire ingestion flow (indexing + image storage)
+    doc_id = str(uuid.uuid4())
+
     layout_stats: Optional[Dict[str, int]] = None
     processing_time: Optional[float] = None
 
@@ -598,7 +837,10 @@ async def admin_upload_document(
             if ocr_engine == "glm-ocr":
                 try:
                     docling_result, layout_stats, processing_time = await _process_with_glm_ocr(
-                        saved_path, domain
+                        saved_path,
+                        domain,
+                        doc_id=doc_id,
+                        collection=collection,
                     )
                     processing_method = "glm-ocr"
                     logger.info(
@@ -644,7 +886,6 @@ async def admin_upload_document(
             )
         else:
             # Generic hierarchical chunking with image extraction
-            doc_id = str(uuid.uuid4())
             images = _extract_and_save_images(docling_result, doc_id=doc_id)
             chunks = _hierarchical_chunk(
                 docling_result,
@@ -653,6 +894,7 @@ async def admin_upload_document(
                 uploaded_by=user.get("username", ""),
                 images=images,
                 doc_id=doc_id,
+                processing_method=processing_method,
             )
         
         # Validate chunks were created
@@ -1524,6 +1766,29 @@ async def admin_get_image(
     return FileResponse(filepath, media_type=media_type)
 
 
+@router.get("/kb/images/{collection}/{doc_id}/{image_id}")
+async def admin_get_glm_image(
+    collection: str,
+    doc_id: str,
+    image_id: str,
+    user: Dict = Depends(require_permission("view")),
+):
+    """Serve GLM-OCR extracted PNG crops by collection/doc_id/image_id."""
+    # Tight validation to prevent path traversal
+    if not re.fullmatch(r"[A-Za-z0-9._\-]+", collection):
+        raise HTTPException(status_code=400, detail="Invalid collection")
+    if not re.fullmatch(r"[A-Za-z0-9._\-]+", doc_id):
+        raise HTTPException(status_code=400, detail="Invalid doc_id")
+    if not re.fullmatch(r"p\d+_img\d+", image_id):
+        raise HTTPException(status_code=400, detail="Invalid image_id")
+
+    filepath = IMAGE_DIR / collection / doc_id / f"{image_id}.png"
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(filepath, media_type="image/png")
+
+
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
@@ -1537,11 +1802,12 @@ def _hierarchical_chunk(
     overlap: int = 200,
     images: Optional[List[Dict[str, str]]] = None,
     doc_id: Optional[str] = None,
+    processing_method: str = "docling",
 ) -> List[Dict[str, Any]]:
     """
     Generic hierarchical chunking for non-Excel documents.
     Uses Docling's structured output to respect section boundaries.
-    Links images to chunks based on <!-- image --> placeholder positions.
+    Links images to chunks based on <!-- image --> and <!-- image:ID --> placeholders.
     """
     doc = docling_result.get("document", docling_result)
     doc_id = doc_id or str(uuid.uuid4())
@@ -1565,30 +1831,31 @@ def _hierarchical_chunk(
         )
         return []
 
-    # Map image placeholder positions to images
-    image_placeholder = "<!-- image -->"
-    placeholder_positions: List[int] = []
+    # 1) New placeholders: <!-- image:ID -->
+    inline_image_positions: List[tuple[int, str]] = []
+    for m in re.finditer(r"<!--\s*image:([^\s]+)\s*-->", text):
+        inline_image_positions.append((m.start(), m.group(1)))
+
+    # 2) Legacy placeholder: <!-- image --> mapped to extracted images list
+    legacy_placeholder = "<!-- image -->"
+    legacy_positions: List[int] = []
     search_start = 0
     while True:
-        pos = text.find(image_placeholder, search_start)
+        pos = text.find(legacy_placeholder, search_start)
         if pos == -1:
             break
-        placeholder_positions.append(pos)
-        search_start = pos + len(image_placeholder)
+        legacy_positions.append(pos)
+        search_start = pos + len(legacy_placeholder)
 
-    # Build image-to-position mapping
-    image_positions: List[tuple] = []  # (char_offset, image_dict)
-    if images and placeholder_positions:
-        if len(placeholder_positions) == len(images):
-            # 1:1 mapping
-            for pos, img in zip(placeholder_positions, images):
-                image_positions.append((pos, img))
+    legacy_image_positions: List[tuple[int, Dict[str, str]]] = []
+    if images and legacy_positions:
+        if len(legacy_positions) == len(images):
+            for pos, img in zip(legacy_positions, images):
+                legacy_image_positions.append((pos, img))
         else:
-            # Fallback: all images attached to first chunk
-            image_positions = [(0, img) for img in images]
-    elif images and not placeholder_positions:
-        # No placeholders: all images to first chunk
-        image_positions = [(0, img) for img in images]
+            legacy_image_positions = [(0, img) for img in images]
+    elif images and not legacy_positions:
+        legacy_image_positions = [(0, img) for img in images]
 
     # Simple sliding-window chunking
     chunks = []
@@ -1599,10 +1866,19 @@ def _hierarchical_chunk(
         chunk_text = text[start:end].strip()
         if chunk_text:
             # Find images whose placeholder falls within [start, end)
-            chunk_images = [
-                img for pos, img in image_positions
+            chunk_image_ids: List[str] = []
+            # Inline IDs
+            chunk_image_ids.extend([
+                image_id for pos, image_id in inline_image_positions
                 if start <= pos < end
-            ]
+            ])
+            # Legacy mapped images
+            chunk_image_ids.extend([
+                img.get("image_id", "") for pos, img in legacy_image_positions
+                if start <= pos < end
+            ])
+            chunk_image_ids = [i for i in chunk_image_ids if i]
+
             chunks.append({
                 "text": chunk_text,
                 "metadata": {
@@ -1613,10 +1889,10 @@ def _hierarchical_chunk(
                     "chunk_index": chunk_idx,
                     "uploaded_by": uploaded_by,
                     "upload_date": datetime.now(timezone.utc).isoformat(),
-                    "processing_method": "docling",
-                    "has_images": len(chunk_images) > 0,
-                    "image_ids": [img["image_id"] for img in chunk_images],
-                    "image_count": len(chunk_images),
+                    "processing_method": processing_method,
+                    "has_images": len(chunk_image_ids) > 0,
+                    "image_ids": list(dict.fromkeys(chunk_image_ids)),
+                    "image_count": len(list(dict.fromkeys(chunk_image_ids))),
                 },
             })
             chunk_idx += 1
@@ -2013,15 +2289,29 @@ async def _process_url_job(
     job = _batch_jobs[job_id]
 
     try:
+        # Stable doc_id for this URL document
+        doc_id = str(uuid.uuid4())
+
         # ----- Stage 1: converting -----
         job["stage"] = "converting"
         ext = saved_path.suffix.lower()
-        client = DoclingClient()
-        options = client.options_for_format(ext)
-        if body.ocr_engine != "easyocr":
-            options["ocr_engine"] = body.ocr_engine
+        processing_method = "docling"
 
-        docling_result = await client.convert_file(str(saved_path), options)
+        if ext == ".pdf" and body.ocr_engine == "glm-ocr":
+            docling_result, _, _ = await _process_with_glm_ocr(
+                saved_path,
+                body.domain,
+                doc_id=doc_id,
+                collection=body.collection,
+            )
+            processing_method = "glm-ocr"
+        else:
+            client = DoclingClient()
+            options = client.options_for_format(ext)
+            if body.ocr_engine != "easyocr":
+                options["ocr_engine"] = body.ocr_engine
+
+            docling_result = await client.convert_file(str(saved_path), options)
 
         # ----- Stage 2: chunking -----
         job["stage"] = "chunking"
@@ -2035,7 +2325,6 @@ async def _process_url_job(
                 uploaded_by=user.get("username", ""),
             )
         else:
-            doc_id = str(uuid.uuid4())
             images = _extract_and_save_images(docling_result, doc_id=doc_id)
             chunks = _hierarchical_chunk(
                 docling_result,
@@ -2044,6 +2333,7 @@ async def _process_url_job(
                 uploaded_by=user.get("username", ""),
                 images=images,
                 doc_id=doc_id,
+                processing_method=processing_method,
             )
 
         # Inject source_url into all chunk metadata
