@@ -45,7 +45,7 @@ pipeline:
   enable_layout: true
   layout:
     model_dir: PaddlePaddle/PP-DocLayoutV3_safetensors
-    threshold: 0.3
+    threshold: 0.55
     batch_size: 1
     workers: 1
     # cuda_visible_devices: "" # CPU override removed for GPU support
