@@ -205,4 +205,4 @@ bin/
 *.pcm
 *.wav
 
-*.jpg
+*.jpg.worktrees/
