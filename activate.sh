@@ -22,6 +22,15 @@ export PYTORCH_ROCM_ARCH=gfx1100
 # LLM Backend (vLLM)
 export LLM_BASE_URL="http://localhost:8001/v1"
 
+# Model paths (use ModelScope cache)
+export HF_HOME="$HOME/.cache/modelscope/hub/models"
+export TRANSFORMERS_CACHE="$HOME/.cache/modelscope/hub/models"
+export SENTENCE_TRANSFORMERS_HOME="$HOME/.cache/modelscope/hub/models"
+
+# Embeddings & Reranker models
+export EMBEDDINGS_MODEL_NAME="BAAI/bge-m3"
+export RERANKER_MODEL_NAME="BAAI/bge-reranker-v2-m3"
+
 # Optional: Enable ROCm debugging
 # export AMD_LOG_LEVEL=3
 # export HIP_VISIBLE_DEVICES=0
