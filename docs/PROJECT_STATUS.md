@@ -80,22 +80,43 @@
 - GPU detected: AMD Radeon 8060S with 96GB memory
 - Environment activation: `source ~/BestBox/activate.sh`
 
-### AI Inference Stack (100% Complete) ✅
+### AI Inference Stack - llama.cpp (100% Complete) ✅ [ARCHIVED]
 - [x] Deploy llama.cpp with Vulkan backend (Qwen2.5-14B-Instruct)
 - [x] Test inference API (OpenAI-compatible)
 - [x] Deploy BGE-M3 embeddings service
 - [x] Verify embedding generation (1024 dims, ~60ms latency)
 - [x] Configure GPU memory allocation
 
-**Status:** ✅ COMPLETE  
-**Time Taken:** 2 hours  
-**Report:** See `docs/VULKAN_VALIDATION_REPORT.md`
+**Status:** ✅ COMPLETE (Archived 2026-02-12)
+**Time Taken:** 2 hours
+**Report:** See `docs/archive/llama-cpp/docs/VULKAN_VALIDATION_REPORT.md`
 
 **Results:**
 - Vulkan backend: pp512 527 tok/s, tg128 24 tok/s
 - Key discovery: `--no-direct-io --mmap` flags required for gfx1151
 - Embeddings: BGE-M3 at http://127.0.0.1:8081/embed
-- Startup script: `scripts/start-llm.sh`
+- Archived: `docs/archive/llama-cpp/`
+
+### vLLM Migration (100% Complete) ✅
+- [x] Archive llama.cpp setup
+- [x] Integrate vLLM with Qwen3-30B model
+- [x] Configure Docker Compose with ROCm support
+- [x] Update all documentation and scripts
+- [x] Test and validate migration
+
+**Status:** ✅ COMPLETE
+**Date:** 2026-02-12
+**Model:** Qwen3-30B-A3B-Instruct-2507 (FP16)
+**Port:** 8001
+**Performance:** 16-76 tok/s (stability-first profile)
+**Startup:** `./scripts/start-vllm.sh`
+
+**Results:**
+- vLLM with ROCm 7.2 in Docker
+- Model loaded from ModelScope cache
+- Stability-first configuration (`--enforce-eager`)
+- Multi-user batching support
+- OpenAI-compatible API
 
 ### Database Infrastructure (100% Complete) ✅
 - [x] Setup PostgreSQL 16 (Docker)
