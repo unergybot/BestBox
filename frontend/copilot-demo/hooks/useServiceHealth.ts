@@ -55,9 +55,8 @@ const getBaseUrl = () => {
 };
 
 // Service endpoint configurations
-// Service endpoint configurations
 const SERVICE_ENDPOINTS = {
-  llm: { path: '/api/proxy/llm/health', name: 'LLM (Qwen2.5-14B)' },
+  llm: { path: '/api/proxy/llm/health', name: 'LLM (Qwen3-30B)' },
   embeddings: { path: '/api/proxy/embeddings/health', name: 'Embeddings (BGE-M3)' },
   reranker: { path: '/api/proxy/reranker/health', name: 'Reranker (BGE-reranker)' },
   s2s: { path: '/api/proxy/s2s/health', name: 'S2S Gateway' },

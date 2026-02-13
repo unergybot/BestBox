@@ -37,7 +37,7 @@ def get_llm(temperature: float = 0.7, max_tokens: int = 4096):
     return ChatOpenAI(
         base_url=LLM_BASE_URL,
         api_key="sk-no-key-required",  # Local server doesn't need real API key
-        model=os.environ.get("LLM_MODEL", "qwen3-30b-a3b"),
+        model=os.environ.get("LLM_MODEL", "qwen3-30b"),
         temperature=temperature,
         streaming=True,
         max_retries=2,  # Retry on transient failures

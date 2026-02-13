@@ -79,8 +79,8 @@
             }
         },
         "footer": {
-            "poweredBy": "Powered by Qwen3-4B-Instruct + vLLM + CopilotKit",
-            "specs": "NVIDIA RTX 3080 + Tesla P100 • CUDA 12.8 • Ubuntu 24.04"
+            "poweredBy": "Powered by Qwen3-30B-A3B (MoE) + vLLM ROCm + CopilotKit",
+            "specs": "AMD Strix Halo (Ryzen AI Max+ 395, Radeon 8060S) • ROCm 7.2 • Ubuntu 24.04"
         },
         "tip": "💡 使用右侧的聊天窗口与 AI 助手互动",
         "sampleQueries": {

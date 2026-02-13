@@ -316,7 +316,9 @@ services:
           --max-num-batched-tokens 4096 \
           --enforce-eager \
           --trust-remote-code \
-          --disable-log-requests
+          --disable-log-requests \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes
 
     # Health check
     healthcheck:
@@ -327,6 +329,102 @@ services:
       start_period: 180s  # 3 minutes for model loading
 
     # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Embeddings Service (BGE-M3)
+  embeddings:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-embeddings
+    restart: unless-stopped
+
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    ports:
+      - "8081:8081"
+
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/embeddings:/app:ro
+
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HF_HOME=/models
+      - TRANSFORMERS_CACHE=/models
+      - SENTENCE_TRANSFORMERS_HOME=/models
+      - EMBEDDINGS_MODEL_NAME=BAAI/bge-m3
+      - EMBEDDINGS_DEVICE=cuda
+
+    working_dir: /app
+
+    command:
+      - bash
+      - -c
+      - |
+        pip install -q --no-cache-dir fastapi uvicorn 'sentence-transformers<3' && \
+        uvicorn main:app --host 0.0.0.0 --port 8081
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Reranker Service (BGE-reranker-v2-m3)
+  reranker:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-reranker
+    restart: unless-stopped
+
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    ports:
+      - "8082:8082"
+
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/rag_pipeline:/app:ro
+
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HF_HOME=/models
+      - TRANSFORMERS_CACHE=/models
+      - SENTENCE_TRANSFORMERS_HOME=/models
+      - RERANKER_MODEL_NAME=BAAI/bge-reranker-v2-m3
+      - RERANKER_DEVICE=cuda
+
+    working_dir: /app
+
+    command:
+      - bash
+      - -c
+      - |
+        pip install -q --no-cache-dir fastapi uvicorn 'sentence-transformers<3' && \
+        python reranker.py
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
     logging:
       driver: "json-file"
       options:

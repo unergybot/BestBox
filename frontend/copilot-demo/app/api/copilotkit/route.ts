@@ -35,9 +35,9 @@ const runtime = new CopilotRuntime({
           framework: "LangGraph (Python)",
           agents: ["Router", "ERP", "CRM", "IT Ops", "OA"],
           status: "connected",
-          model: "Qwen3-4B-Instruct",
-          backend: "vLLM (CUDA)",
-          gpu: "NVIDIA RTX 3080 + Tesla P100",
+          model: "Qwen3-30B-A3B-Instruct (MoE)",
+          backend: "vLLM (ROCm 7.2)",
+          gpu: "AMD Strix Halo (Ryzen AI Max+ 395, Radeon 8060S)",
         };
       },
     },

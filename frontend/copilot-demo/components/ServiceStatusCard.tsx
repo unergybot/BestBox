@@ -7,7 +7,7 @@ import { useTranslations } from 'next-intl';
  * ServiceStatusCard - Displays real-time health status of all BestBox services
  *
  * Shows color-coded indicators for:
- * - LLM (Qwen2.5-14B)
+ * - LLM (Qwen3-30B)
  * - Embeddings (BGE-M3)
  * - Reranker (BGE-reranker-v2-m3)
  * - S2S Gateway (ASR/TTS)
@@ -75,7 +75,7 @@ export function ServiceStatusCard() {
           <div className="flex items-center justify-between">
             <div className="flex-1">
               <div className="text-xs font-medium text-gray-600 mb-1">LLM</div>
-              <div className="text-sm font-bold text-gray-900">Qwen2.5-14B</div>
+              <div className="text-sm font-bold text-gray-900">Qwen3-30B</div>
             </div>
             <div className="text-2xl">{getStatusIndicator(health.llm.status).emoji}</div>
           </div>
