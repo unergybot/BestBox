@@ -246,6 +246,93 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # ==========================================================
+  # vLLM Server (LLM Inference)
+  # ==========================================================
+
+  vllm:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: vllm-server
+    restart: unless-stopped
+
+    # ROCm device access
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    # Security and capabilities
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+
+    # User/group permissions
+    group_add:
+      - video
+      - render
+
+    # IPC and shared memory
+    ipc: host
+    shm_size: 16G
+
+    # Port mapping
+    ports:
+      - "8001:8001"
+
+    # Volume mounts
+    volumes:
+      # ModelScope cache (primary)
+      - ${HOME}/.cache/modelscope/hub/models:/models:ro
+      # HuggingFace cache (fallback)
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface:ro
+
+    # Environment variables
+    environment:
+      # ROCm configuration
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_ENABLE_SDMA=1
+
+      # Model paths
+      - MODELSCOPE_CACHE=/models
+      - HF_HOME=/root/.cache/huggingface
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface/hub
+
+    # vLLM command (stability-first profile)
+    command: >
+      bash -c "
+      pip install vllm amdsmi==7.0.2 &&
+      vllm serve /models/Qwen/Qwen3-30B-A3B-Instruct-2507
+        --host 0.0.0.0
+        --port 8001
+        --served-model-name qwen3-30b
+        --dtype float16
+        --gpu-memory-utilization 0.90
+        --max-model-len 2048
+        --max-num-seqs 8
+        --max-num-batched-tokens 4096
+        --enforce-eager
+        --trust-remote-code
+        --disable-log-requests
+      "
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s  # 3 minutes for model loading
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   gatus-data:
     name: bestbox-gatus-data
@@ -270,5 +357,5 @@ volumes:
   docling-scratch:
     name: bestbox-docling-scratch
 
-# Note: LLM server (llama-server) runs natively for GPU access
-# Use scripts/start-llm.sh for Vulkan backend
+# Note: vLLM server runs in Docker with ROCm GPU access
+# Use scripts/start-vllm.sh to start the LLM server
