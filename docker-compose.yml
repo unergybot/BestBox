@@ -251,7 +251,7 @@ services:
   # ==========================================================
 
   vllm:
-    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    image: rocm/vllm-dev:rocm7.2_navi_ubuntu24.04_py3.12_pytorch_2.9_vllm_0.14.0rc0
     container_name: vllm-server
     restart: unless-stopped
 
@@ -266,10 +266,10 @@ services:
     security_opt:
       - seccomp=unconfined
 
-    # User/group permissions
-    group_add:
-      - video
-      - render
+    # User/group permissions (removed - not needed with device access)
+    # group_add:
+    #   - video
+    #   - render
 
     # IPC and shared memory
     ipc: host
@@ -301,22 +301,22 @@ services:
       - TRANSFORMERS_CACHE=/root/.cache/huggingface/hub
 
     # vLLM command (stability-first profile)
-    command: >
-      bash -c "
-      pip install vllm amdsmi==7.0.2 &&
-      vllm serve /models/Qwen/Qwen3-30B-A3B-Instruct-2507
-        --host 0.0.0.0
-        --port 8001
-        --served-model-name qwen3-30b
-        --dtype float16
-        --gpu-memory-utilization 0.90
-        --max-model-len 2048
-        --max-num-seqs 8
-        --max-num-batched-tokens 4096
-        --enforce-eager
-        --trust-remote-code
-        --disable-log-requests
-      "
+    command:
+      - bash
+      - -c
+      - |
+        vllm serve /models/Qwen/Qwen3-30B-A3B-Instruct-2507 \
+          --host 0.0.0.0 \
+          --port 8001 \
+          --served-model-name qwen3-30b \
+          --dtype float16 \
+          --gpu-memory-utilization 0.90 \
+          --max-model-len 2048 \
+          --max-num-seqs 8 \
+          --max-num-batched-tokens 4096 \
+          --enforce-eager \
+          --trust-remote-code \
+          --disable-log-requests
 
     # Health check
     healthcheck:

@@ -7,7 +7,7 @@ echo "🚨 Emergency Rollback to llama.cpp"
 echo "===================================="
 
 # 1. Stop vLLM
-docker-compose stop vllm
+docker compose stop vllm
 echo "✅ vLLM stopped"
 
 # 2. Restore llama.cpp scripts
@@ -50,4 +50,4 @@ echo "✅ Rollback complete"
 echo "System is running on llama.cpp again"
 echo ""
 echo "To investigate vLLM issues:"
-echo "  docker-compose logs vllm > vllm-failure.log"
+echo "  docker compose logs vllm > vllm-failure.log"

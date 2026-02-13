@@ -9,7 +9,7 @@ while true; do
 
   # Container status
   echo "Container Status:"
-  docker-compose ps vllm | tail -1
+  docker compose ps vllm | tail -1
   echo ""
 
   # Health endpoint
@@ -29,12 +29,12 @@ while true; do
 
   # Request count (from logs)
   echo "Recent Requests (last minute):"
-  docker-compose logs --since 1m vllm 2>/dev/null | grep -c "POST /v1/chat/completions" || echo "0"
+  docker compose logs --since 1m vllm 2>/dev/null | grep -c "POST /v1/chat/completions" || echo "0"
   echo ""
 
   # Errors
   echo "Recent Errors:"
-  docker-compose logs --since 5m vllm 2>/dev/null | grep -i error | tail -3 || echo "None"
+  docker compose logs --since 5m vllm 2>/dev/null | grep -i error | tail -3 || echo "None"
 
   sleep 5
 done

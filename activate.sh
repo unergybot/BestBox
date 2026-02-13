@@ -19,6 +19,9 @@ export HIP_PLATFORM=amd
 export HSA_OVERRIDE_GFX_VERSION=11.0.0
 export PYTORCH_ROCM_ARCH=gfx1100
 
+# LLM Backend (vLLM)
+export LLM_BASE_URL="http://localhost:8001/v1"
+
 # Optional: Enable ROCm debugging
 # export AMD_LOG_LEVEL=3
 # export HIP_VISIBLE_DEVICES=0
