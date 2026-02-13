@@ -311,7 +311,7 @@ services:
           --served-model-name qwen3-30b \
           --dtype float16 \
           --gpu-memory-utilization 0.90 \
-          --max-model-len 2048 \
+          --max-model-len 4096 \
           --max-num-seqs 8 \
           --max-num-batched-tokens 4096 \
           --enforce-eager \
