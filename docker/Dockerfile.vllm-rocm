@@ -1,0 +1,129 @@
+# syntax=docker/dockerfile:1.4
+FROM fedora:43
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+ARG ROCM_INDEX_URL=https://rocm.nightlies.amd.com/v2/gfx1151/
+
+WORKDIR /opt/vllm-build
+RUN uv venv --python 3.13
+ENV VIRTUAL_ENV=/opt/vllm-build/.venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Install system dependencies
+RUN dnf install -y \
+    wget \
+    curl \
+    git \
+    gcc \
+    gcc-c++ \
+    make \
+    cmake \
+    python3-pip \
+    python3-devel \
+    openssl-devel \
+    libffi-devel \
+    ca-certificates \
+    tar \
+    gzip \
+    libatomic \
+    numactl-libs \
+    && dnf clean all
+
+# Install ROCm dependencies from TheRock nightly builds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --index-url ${ROCM_INDEX_URL} "rocm[libraries,devel]" && \
+    uv pip install --index-url ${ROCM_INDEX_URL} --pre torch torchaudio torchvision
+
+# Download and extract TheRock ROCm tarball
+RUN --mount=type=cache,target=/var/cache/rocm-downloads \
+    ROCM_VERSION=$(uv pip show torch | grep Version | awk -F'+rocm' '{print $2}') && \
+    echo "Detected ROCm Version: $ROCM_VERSION" && \
+    TARBALL="therock-dist-linux-gfx1151-${ROCM_VERSION}.tar.gz" && \
+    if [ -f "/var/cache/rocm-downloads/${TARBALL}" ]; then \
+        echo "Using cached ROCm tarball" && \
+        ln -s "/var/cache/rocm-downloads/${TARBALL}" . ; \
+    else \
+        echo "Downloading ROCm tarball" && \
+        curl -#LO "https://therock-nightly-tarball.s3.amazonaws.com/${TARBALL}" && \
+        cp "${TARBALL}" "/var/cache/rocm-downloads/${TARBALL}" ; \
+    fi && \
+    echo "Extracting ROCm from ${TARBALL}" && \
+    mkdir -p rocm-${ROCM_VERSION} && \
+    tar xzf ${TARBALL} -C rocm-${ROCM_VERSION} && \
+    rm ${TARBALL} && \
+    echo "${ROCM_VERSION}" > /opt/rocm_version.txt && \
+    ln -s /opt/vllm-build/rocm-${ROCM_VERSION} /opt/rocm-current
+
+ENV ROCM_PATH=/opt/rocm-current
+ENV LD_LIBRARY_PATH=$ROCM_PATH/lib:$LD_LIBRARY_PATH
+ENV DEVICE_LIB_PATH=$ROCM_PATH/llvm/amdgcn/bitcode
+ENV HIP_DEVICE_LIB_PATH=$ROCM_PATH/llvm/amdgcn/bitcode
+ENV PYTORCH_ROCM_ARCH="gfx1151"
+ENV CUDA_HOME=/opt/rocm-current
+ENV FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"
+
+# Validate ROCm installation
+RUN $ROCM_PATH/bin/amd-smi
+
+# Clone vLLM
+RUN --mount=type=cache,target=/root/.cache/git \
+    git clone https://github.com/vllm-project/vllm.git
+
+WORKDIR /opt/vllm-build/vllm
+
+# Patch vLLM to fix amdsmi crash - CRITICAL for Strix Halo
+RUN sed -i '/from \.version import __version__/a import amdsmi' vllm/__init__.py && \
+    echo "vLLM patched for amdsmi compatibility"
+
+# Build vLLM
+RUN --mount=type=cache,target=/root/.cache/uv \
+    export ROCM_PATH=/opt/rocm-current && \
+    export LD_LIBRARY_PATH=/opt/rocm-current/lib && \
+    export DEVICE_LIB_PATH=/opt/rocm-current/llvm/amdgcn/bitcode && \
+    export HIP_DEVICE_LIB_PATH=/opt/rocm-current/llvm/amdgcn/bitcode && \
+    # Remove amdsmi to avoid crash during build
+    uv pip uninstall amdsmi && \
+    uv pip install "numpy<2" && \
+    python use_existing_torch.py && \
+    uv pip install --upgrade numba scipy huggingface-hub[cli,hf_transfer] setuptools_scm && \
+    uv pip install -r requirements/rocm.txt && \
+    python setup.py develop && \
+    # Reinstall amdsmi from ROCm
+    uv pip install ${ROCM_PATH}/share/amd_smi && \
+    echo "vLLM build complete."
+
+# Clone and install flash-attention for ROCm
+RUN --mount=type=cache,target=/root/.cache/git \
+    cd /opt/vllm-build && \
+    git clone https://github.com/ROCm/flash-attention.git && \
+    cd flash-attention && \
+    git checkout main_perf
+
+WORKDIR /opt/vllm-build/flash-attention
+
+# Patch flash-attention for ROCm compatibility
+RUN sed -i '/from wheel.bdist_wheel import bdist_wheel/a import amdsmi' setup.py && \
+    sed -i '1i import amdsmi' flash_attn/__init__.py && \
+    echo "Flash attention patched for ROCm"
+
+ENV FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"
+RUN python setup.py develop
+
+WORKDIR /opt/vllm-build
+
+# Create run script
+RUN echo '#!/bin/bash' > /run.sh && \
+    echo 'source .venv/bin/activate' >> /run.sh && \
+    echo 'export ROCM_PATH=/opt/rocm-current' >> /run.sh && \
+    echo 'export LD_LIBRARY_PATH=$ROCM_PATH/lib:$LD_LIBRARY_PATH' >> /run.sh && \
+    echo 'export DEVICE_LIB_PATH=$ROCM_PATH/llvm/amdgcn/bitcode' >> /run.sh && \
+    echo 'export HIP_DEVICE_LIB_PATH=$ROCM_PATH/llvm/amdgcn/bitcode' >> /run.sh && \
+    echo 'export FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE"' >> /run.sh && \
+    echo 'export PYTORCH_ROCM_ARCH="gfx1151"' >> /run.sh && \
+    echo 'cd /opt/vllm-build/vllm' >> /run.sh && \
+    echo 'exec "$@"' >> /run.sh && \
+    chmod +x /run.sh
+
+CMD ["/run.sh", "/bin/bash"]

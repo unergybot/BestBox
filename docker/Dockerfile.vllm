@@ -1,0 +1,77 @@
+FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+
+# Install basics
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential cmake python3-dev python3-pip python3-venv curl && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTORCH_ROCM_ARCH=gfx1151
+ENV FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+ENV HSA_OVERRIDE_GFX_VERSION=11.5.1
+# Disable HIP Graphs - unstable on gfx1151 (vllm#32180)
+ENV VLLM_USE_TRITON_FLASH_ATTN=1
+
+# Install Python deps
+RUN pip install --upgrade pip setuptools wheel
+
+# Build and install Flash-Attention (ROCm) - shallow clone for faster download
+RUN git clone --depth 1 --branch v2.7.3-cktile https://github.com/ROCm/flash-attention.git /opt/flash-attention && \
+    cd /opt/flash-attention && python setup.py install
+
+# Install vllm - use shallow clone and build with ROCm
+RUN git clone --depth 1 https://github.com/vllm-project/vllm.git /opt/vllm && \
+    cd /opt/vllm && \
+    pip install -r requirements/rocm.txt && \
+    python3 setup.py install
+
+# Useful tools
+RUN pip install huggingface-hub amdsmi==7.0.2
+
+# Compatibility shim: some vLLM ROCm codepaths expect older amdsmi APIs.
+# We intentionally do NOT rely on `sitecustomize.py`, because Ubuntu ships one
+# in /usr/lib/python3.12 that shadows ours. Instead, use a `.pth` startup hook.
+RUN mkdir -p /opt/venv/lib/python3.12/site-packages && \
+    cat > /opt/venv/lib/python3.12/site-packages/amdsmi_shim.py <<'PY'
+"""amdsmi compatibility shim for vLLM on ROCm.
+
+Some vLLM builds call `amdsmi.amdsmi_get_gpu_memory_info(handle, AmdSmiMemoryType.VRAM)`.
+python `amdsmi==7.x` exposes VRAM usage via `amdsmi_get_gpu_vram_usage` instead.
+This module patches the missing function if needed.
+"""
+
+try:
+    import amdsmi  # type: ignore
+
+    if (not hasattr(amdsmi, "amdsmi_get_gpu_memory_info")
+            and hasattr(amdsmi, "amdsmi_get_gpu_vram_usage")
+            and hasattr(amdsmi, "AmdSmiMemoryType")):
+
+        def amdsmi_get_gpu_memory_info(handle, mem_type):  # noqa: N802
+            vram_type = getattr(getattr(amdsmi, "AmdSmiMemoryType", object()), "VRAM", None)
+            if vram_type is not None and mem_type != vram_type:
+                raise NotImplementedError(
+                    "amdsmi_get_gpu_memory_info shim only supports AmdSmiMemoryType.VRAM"
+                )
+
+            usage = amdsmi.amdsmi_get_gpu_vram_usage(handle)
+            total = usage.get("vram_total")
+            used = usage.get("vram_used")
+            free = None
+            if isinstance(total, (int, float)) and isinstance(used, (int, float)):
+                free = total - used
+            return {"total": total, "used": used, "free": free}
+
+        amdsmi.amdsmi_get_gpu_memory_info = amdsmi_get_gpu_memory_info  # type: ignore[attr-defined]
+
+except Exception:
+    # Never block startup due to optional compatibility shims.
+    pass
+PY
+
+RUN printf '%s\n' 'import amdsmi_shim' > /opt/venv/lib/python3.12/site-packages/zz_amdsmi_shim.pth && \
+    test -f /opt/venv/lib/python3.12/site-packages/zz_amdsmi_shim.pth && \
+    test -f /opt/venv/lib/python3.12/site-packages/amdsmi_shim.py
+
+WORKDIR /workspace
+CMD ["/bin/bash"]
