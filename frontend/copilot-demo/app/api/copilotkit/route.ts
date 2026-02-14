@@ -48,6 +48,10 @@ export const POST = async (req: NextRequest) => {
   const uiSessionId = getOrCreateUiSessionId(req);
   const baseURL = getAgentApiBaseUrl();
 
+  console.log("[CopilotKit] OpenAI adapter initialized");
+  console.log("[CopilotKit] Base URL:", baseURL);
+  console.log("[CopilotKit] Streaming enabled: true (OpenAI adapter default)");
+
   // Send the raw cookie value; the Python backend adds the "ui-" prefix
   // to match what the proxy injects on tool-results fetches.
   const openai = new OpenAI({

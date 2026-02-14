@@ -210,6 +210,13 @@ function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKit
   const copilotId = message?.id;
   const messageTimestamp = message?.timestamp || message?.createdAt;
 
+  // Debug: Log content updates to see if streaming is progressive
+  React.useEffect(() => {
+    if (content) {
+      console.log(`[STREAMING DEBUG] Content update - length: ${content.length}, first 50 chars: "${content.substring(0, 50)}..."`);
+    }
+  }, [content]);
+
   // Generate STABLE message ID that doesn't change during streaming
   // Use CopilotKit's ID if available, otherwise generate once on first render
   const [stableMessageId] = useState(() => {

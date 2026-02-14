@@ -431,6 +431,187 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # ==========================================================
+  # Audio Services (ASR + TTS + S2S Gateway)
+  # ==========================================================
+
+  # Qwen3-ASR Service (Speech-to-Text)
+  qwen3-asr:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-qwen3-asr
+    restart: unless-stopped
+
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    ports:
+      - "8003:8003"
+
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/asr:/app:ro
+
+    environment:
+      # ROCm configuration
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+      # Model cache
+      - MODELSCOPE_CACHE=/models
+
+      # ASR configuration
+      - ASR_MODEL=/models/Qwen/Qwen3-ASR-0___6B
+      - ASR_DEVICE=cuda
+      - ASR_PORT=8003
+
+    working_dir: /app
+
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Installing Qwen3-ASR dependencies..."
+        pip install -q --no-cache-dir \
+          qwen-asr \
+          fastapi uvicorn \
+          httpx \
+          || exit 1
+
+        echo "Starting Qwen3-ASR service on port 8003..."
+        python3 main.py
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Qwen3-TTS Service (Text-to-Speech)
+  qwen3-tts:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-qwen3-tts
+    restart: unless-stopped
+
+    devices:
+      - /dev/kfd
+      - /dev/dri
+
+    ports:
+      - "8004:8004"
+
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/tts:/app:ro
+
+    environment:
+      # ROCm configuration
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+      # Model cache
+      - MODELSCOPE_CACHE=/models
+
+      # TTS configuration
+      - TTS_MODEL=/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base
+      - TTS_DEVICE=cuda
+      - TTS_PORT=8004
+
+    working_dir: /app
+
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Installing Qwen3-TTS dependencies..."
+        pip install -q --no-cache-dir \
+          qwen-tts \
+          fastapi uvicorn \
+          soundfile \
+          || exit 1
+
+        echo "Starting Qwen3-TTS service on port 8004..."
+        python3 main.py
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # S2S Gateway (WebSocket bridge for Speech-to-Speech)
+  s2s-gateway:
+    image: python:3.12-slim
+    container_name: bestbox-s2s-gateway
+    restart: unless-stopped
+
+    ports:
+      - "8765:8765"
+
+    volumes:
+      - ./services/s2s-gateway:/app:ro
+
+    environment:
+      # Service URLs
+      - ASR_URL=http://bestbox-qwen3-asr:8003
+      - TTS_URL=http://bestbox-qwen3-tts:8004
+      - AGENT_API_URL=http://host.docker.internal:8000
+      - S2S_PORT=8765
+
+    working_dir: /app
+
+    depends_on:
+      qwen3-asr:
+        condition: service_healthy
+      qwen3-tts:
+        condition: service_healthy
+
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Installing S2S Gateway dependencies..."
+        pip install -q --no-cache-dir \
+          fastapi uvicorn websockets \
+          httpx \
+          || exit 1
+
+        echo "Starting S2S Gateway on port 8765..."
+        python3 main.py
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8765/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   gatus-data:
     name: bestbox-gatus-data

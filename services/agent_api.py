@@ -83,6 +83,7 @@ import uvicorn
 import json
 import time
 import uuid
+import asyncio
 import asyncpg
 import jwt
 from datetime import datetime, timedelta
@@ -1151,6 +1152,13 @@ async def create_response(
     OpenAI Responses API endpoint for CopilotKit v1.50+.
     Uses the new event-based streaming format.
     """
+    logger.info("=" * 60)
+    logger.info("[STREAMING CHECK] Request received (/v1/responses)")
+    logger.info(f"[STREAMING CHECK] stream flag: {request.stream}")
+    logger.info(f"[STREAMING CHECK] model: {request.model}")
+    logger.info(f"[STREAMING CHECK] messages: {len(request.messages or [])}")
+    logger.info("=" * 60)
+
     session_id_override: Optional[str] = None
     if bbx_session:
         session_id_override = f"ui-{bbx_session}"
@@ -1163,6 +1171,16 @@ async def create_response(
 
 async def responses_api_stream(request: ChatRequest, session_id_override: Optional[str] = None):
     """Stream the response using OpenAI Responses API format for CopilotKit"""
+    stream_start_time = time.time()
+    stream_metrics = {
+        "total_tokens": 0,
+        "total_chunks": 0,
+        "ttft_ms": 0,
+        "duration_ms": 0,
+        "errors": 0,
+        "first_token_sent": False,
+    }
+
     async def generate():
         response_id = f"resp_{uuid.uuid4().hex[:24]}"
         item_id = f"msg_{uuid.uuid4().hex[:24]}"
@@ -1251,7 +1269,26 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
             session_id = session_id_override or request.thread_id or str(uuid.uuid4())
             token = BESTBOX_TOOL_RESULTS_SESSION_ID.set(session_id)
             try:
-                result = await agent_app.ainvoke(cast(AgentState, inputs))
+                stream_timeout = max(1, int(os.environ.get("STREAMING_TIMEOUT_SECONDS", "60")))
+            except ValueError:
+                stream_timeout = 60
+
+            try:
+                async with asyncio.timeout(stream_timeout):
+                    result = await agent_app.ainvoke(cast(AgentState, inputs))
+            except asyncio.TimeoutError:
+                logger.error(f"[STREAMING ERROR] Stream timeout after {stream_timeout}s")
+                stream_metrics["errors"] += 1
+                error_event = {
+                    "type": "response.error",
+                    "error": {
+                        "type": "timeout_error",
+                        "message": f"Stream timeout after {stream_timeout}s"
+                    }
+                }
+                yield f"data: {json.dumps(error_event)}\\n\\n"
+                yield "data: [DONE]\\n\\n"
+                return
             finally:
                 BESTBOX_TOOL_RESULTS_SESSION_ID.reset(token)
             last_msg = result["messages"][-1]
@@ -1281,10 +1318,33 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
                     logger.warning(f"Response validation failed in stream: {e}")
 
             # 3. Stream the content using response.output_text.delta events
-            # Split content into chunks for a more natural streaming effect
-            chunk_size = 20  # characters per chunk
-            for i in range(0, len(content), chunk_size):
-                chunk_text = content[i:i+chunk_size]
+            # Configurable chunk size (default 1 token/word for responsiveness)
+            try:
+                chunk_size = max(1, int(os.environ.get("STREAMING_CHUNK_SIZE", "1")))
+            except ValueError:
+                chunk_size = 1
+
+            token_chunks = re.findall(r"\S+\s*", content)
+            if len(token_chunks) <= 1 and content:
+                token_chunks = list(content)
+
+            logger.info(f"[STREAMING] Response length: {len(content)} chars, {len(token_chunks)} chunks-candidates")
+            logger.info(f"[STREAMING] Chunk size: {chunk_size}")
+
+            for i in range(0, len(token_chunks), chunk_size):
+                chunk_text = "".join(token_chunks[i:i+chunk_size])
+
+                if not stream_metrics["first_token_sent"]:
+                    stream_metrics["ttft_ms"] = int((time.time() - stream_start_time) * 1000)
+                    stream_metrics["first_token_sent"] = True
+                    logger.info(f"[STREAMING METRICS] TTFT: {stream_metrics['ttft_ms']}ms")
+
+                if i < chunk_size * 3:
+                    logger.info(f"[STREAMING] Sending chunk {i // chunk_size + 1}: '{chunk_text[:120]}'")
+
+                stream_metrics["total_chunks"] += 1
+                stream_metrics["total_tokens"] += len(re.findall(r"\S+", chunk_text))
+
                 delta_event = {
                     "type": "response.output_text.delta",
                     "item_id": item_id,
@@ -1293,6 +1353,10 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
                     "delta": chunk_text
                 }
                 yield f"data: {json.dumps(delta_event)}\n\n"
+
+                # Small delay to force frontend to flush buffer and display progressively
+                # This works around CopilotKit 1.51+ buffering behavior
+                await asyncio.sleep(0.05)  # 50ms delay between chunks
             
             # 4. Send response.output_item.done event
             output_item_done = {
@@ -1330,9 +1394,22 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
             }
             yield f"data: {json.dumps(completed_event)}\n\n"
             yield "data: [DONE]\n\n"
+
+            stream_metrics["duration_ms"] = int((time.time() - stream_start_time) * 1000)
+            duration_seconds = max(stream_metrics["duration_ms"] / 1000, 0.001)
+            logger.info("=" * 60)
+            logger.info("[STREAMING METRICS] Stream completed")
+            logger.info(f"  TTFT: {stream_metrics['ttft_ms']}ms")
+            logger.info(f"  Duration: {stream_metrics['duration_ms']}ms")
+            logger.info(f"  Total chunks: {stream_metrics['total_chunks']}")
+            logger.info(f"  Total tokens: {stream_metrics['total_tokens']}")
+            logger.info(f"  Tokens/second: {stream_metrics['total_tokens'] / duration_seconds:.1f}")
+            logger.info(f"  Errors: {stream_metrics['errors']}")
+            logger.info("=" * 60)
             
         except Exception as e:
             logger.error(f"Responses API streaming error: {e}")
+            stream_metrics["errors"] += 1
             error_event = {
                 "type": "error",
                 "sequence_number": 0,
@@ -1343,6 +1420,10 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
             }
             yield f"data: {json.dumps(error_event)}\n\n"
             yield "data: [DONE]\n\n"
+        finally:
+            if stream_metrics["duration_ms"] == 0:
+                stream_metrics["duration_ms"] = int((time.time() - stream_start_time) * 1000)
+            logger.info(f"[STREAMING METRICS] Stream ended - errors: {stream_metrics['errors']}")
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -1846,6 +1927,13 @@ async def chat_completion_endpoint(
 
     Now includes full observability instrumentation.
     """
+    logger.info("=" * 60)
+    logger.info("[STREAMING CHECK] Request received (/v1/chat/completions)")
+    logger.info(f"[STREAMING CHECK] stream flag: {request.stream}")
+    logger.info(f"[STREAMING CHECK] model: {request.model}")
+    logger.info(f"[STREAMING CHECK] messages: {len(request.messages or [])}")
+    logger.info("=" * 60)
+
     # If streaming is requested, use the streaming handler
     if request.stream:
         session_id_override: Optional[str] = None

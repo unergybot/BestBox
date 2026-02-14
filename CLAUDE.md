@@ -155,6 +155,41 @@ Client → Server: Binary (PCM16 16kHz) or JSON control
 Server → Client: JSON (asr_partial, llm_token) or Binary (PCM16 24kHz)
 ```
 
+## Streaming Responses
+
+The chat stack supports progressive streaming responses for a more responsive UX.
+
+### Streaming Configuration
+Set environment variables in `.env` or shell:
+
+```bash
+STREAMING_CHUNK_SIZE=1
+STREAMING_TIMEOUT_SECONDS=60
+```
+
+### Streaming Path
+```
+CopilotKit → Agent API (/v1/chat/completions or /v1/responses)
+  → responses_api_stream() → SSE response.output_text.delta events
+  → CopilotChat progressive rendering
+```
+
+### Monitoring
+```bash
+tail -f ~/BestBox/logs/agent_api.log | grep "STREAMING METRICS" -A 7
+tail -f ~/BestBox/logs/agent_api.log | grep "STREAMING CHECK"
+```
+
+### Performance Targets
+- TTFT (time to first token): < 500ms
+- Smooth progressive chunk display during generation
+
+### Troubleshooting
+1. Verify stream flag logs show `stream flag: True`
+2. Verify `STREAMING_CHUNK_SIZE` and `STREAMING_TIMEOUT_SECONDS`
+3. Restart Agent API after env changes
+4. Check `[STREAMING ERROR]` and `[STREAMING METRICS]` logs
+
 ## Adding a New Agent
 
 1. Create agent file: `agents/new_agent.py` (follow pattern from existing agents)

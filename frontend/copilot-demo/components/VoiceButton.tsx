@@ -10,6 +10,36 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useS2S } from '@/hooks/useS2S';
 
+/**
+ * Play a beep sound for audio feedback
+ * @param frequency - Frequency in Hz (e.g., 800 for high beep)
+ * @param duration - Duration in ms
+ * @param volume - Volume 0-1
+ */
+function playBeep(frequency: number, duration: number, volume: number = 0.3) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+
+    oscillator.frequency.value = frequency;
+    oscillator.type = 'sine';
+
+    gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration / 1000);
+
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + duration / 1000);
+  } catch (err) {
+    console.error('Failed to play beep:', err);
+  }
+}
+
 interface VoiceButtonProps {
   /** S2S server URL */
   serverUrl?: string;
@@ -135,6 +165,8 @@ export function VoiceButton({
     onAsrFinal: (text) => {
       console.log('VoiceButton: onAsrFinal', text);
       onTranscript?.(text);
+      // Play a subtle beep to indicate transcription received
+      playBeep(800, 100, 0.1);
     },
     onLlmToken: (token) => {
       onToken?.(token);
@@ -143,9 +175,18 @@ export function VoiceButton({
       const finalResponse = responseRef.current;
       console.log('VoiceButton: onResponseEnd', finalResponse);
       onResponse?.(finalResponse);
+      // Play completion beep
+      playBeep(600, 150, 0.15);
     },
     onError: (err) => {
       console.error('S2S Error:', err);
+    },
+    onConnectionChange: (connected) => {
+      if (connected) {
+        console.log('VoiceButton: Connected to S2S');
+        // Play greeting beep when connected
+        playBeep(1000, 200, 0.2);
+      }
     },
   });
 
@@ -166,12 +207,22 @@ export function VoiceButton({
       // Stop listening
       stopListening();
     } else {
-      // Start listening
+      // Start listening - connect first if not connected
       clear();
       setFullResponse('');
-      startListening();
+      if (!isConnected) {
+        console.log('[VoiceButton] Connecting to S2S server...');
+        connect();
+        // Wait a moment for connection, then start listening
+        setTimeout(() => {
+          console.log('[VoiceButton] Starting listening after connect...');
+          startListening();
+        }, 1000);
+      } else {
+        startListening();
+      }
     }
-  }, [disabled, isResponding, isListening, interrupt, stopListening, startListening, clear]);
+  }, [disabled, isResponding, isListening, isConnected, interrupt, stopListening, startListening, connect, clear]);
 
   // Size classes
   const sizeClasses = {

@@ -85,12 +85,31 @@ export interface S2SControls {
 
 // Get default server URL
 const getDefaultServerUrl = () => {
-  if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    return `${protocol}//${host}/api/proxy/s2s/ws/s2s`;
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:8765/ws/s2s';
   }
-  return 'ws://localhost:8765/ws/s2s';
+
+  // Check for explicit S2S server URL environment variable
+  const envUrl = process.env.NEXT_PUBLIC_S2S_SERVER_URL;
+  if (envUrl) {
+    console.log('[useS2S] Using NEXT_PUBLIC_S2S_SERVER_URL:', envUrl);
+    return envUrl;
+  }
+
+  // Build URL from current location
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const hostname = window.location.hostname;
+  const port = process.env.NEXT_PUBLIC_S2S_PORT || '8765';
+  const url = `${protocol}//${hostname}:${port}/ws/s2s`;
+
+  console.log('[useS2S] Generated WebSocket URL:', url, {
+    protocol,
+    hostname,
+    port,
+    location: window.location.href
+  });
+
+  return url;
 };
 
 export function useS2S({

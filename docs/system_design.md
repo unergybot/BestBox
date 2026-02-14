@@ -614,6 +614,39 @@ Agent Flow:
 | Agent API | localhost:3001/api/agent | 3001 | LangGraph runtime |
 | Frontend | localhost:3000 | 3000 | CopilotKit UI |
 
+### 5.4 Streaming Response Configuration
+
+The Agent API supports progressive SSE streaming for CopilotKit-compatible chat endpoints.
+
+**Environment variables:**
+
+```bash
+STREAMING_CHUNK_SIZE=1
+STREAMING_TIMEOUT_SECONDS=60
+```
+
+**Runtime flow:**
+
+```
+CopilotKit OpenAIAdapter
+  → /v1/chat/completions or /v1/responses
+  → responses_api_stream()
+  → response.output_text.delta SSE events
+  → token/chunk-by-chunk rendering in chat UI
+```
+
+**Observability:**
+- Streaming request verification logs via `[STREAMING CHECK]`
+- TTFT, duration, total chunks, token throughput via `[STREAMING METRICS]`
+- Timeout and stream failures via `[STREAMING ERROR]`
+
+**Monitoring commands:**
+
+```bash
+tail -f ~/BestBox/logs/agent_api.log | grep "STREAMING CHECK"
+tail -f ~/BestBox/logs/agent_api.log | grep "STREAMING METRICS" -A 7
+```
+
 ---
 
 ## 6. Risk Assessment & Mitigation
