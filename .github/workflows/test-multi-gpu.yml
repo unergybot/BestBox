@@ -1,0 +1,54 @@
+name: Multi-GPU Configuration Tests
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-rocm-config:
+    name: Test ROCm Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create local venv
+        run: python3 -m venv venv
+      - name: Validate ROCm activation path
+        run: |
+          export BESTBOX_GPU_BACKEND=rocm
+          source activate.sh
+          test "$BESTBOX_GPU_BACKEND" = "rocm"
+      - name: Validate ROCm compose overlay
+        run: docker compose -f docker-compose.yml -f docker-compose.rocm.yml config --quiet
+
+  test-cuda-config:
+    name: Test CUDA Configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create local venv
+        run: python3 -m venv venv
+      - name: Validate CUDA activation path
+        run: |
+          export BESTBOX_GPU_BACKEND=cuda
+          source activate.sh
+          test "$BESTBOX_GPU_BACKEND" = "cuda"
+      - name: Validate CUDA compose overlay
+        run: docker compose -f docker-compose.yml -f docker-compose.cuda.yml config --quiet
+
+  test-priority-chain:
+    name: Test Detection Priority
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create local venv
+        run: python3 -m venv venv
+      - name: Run GPU detection tests
+        run: |
+          chmod +x tests/test_gpu_detection.sh
+          ./tests/test_gpu_detection.sh
+      - name: Run compose integration tests
+        run: |
+          chmod +x tests/test_docker_compose.sh
+          ./tests/test_docker_compose.sh

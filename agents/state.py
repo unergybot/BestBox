@@ -28,6 +28,16 @@ class PluginContext(TypedDict, total=False):
     hook_data: Dict[str, Any]
 
 
+class UserContext(TypedDict, total=False):
+    """
+    Per-request authenticated user context for tool authorization.
+    """
+    user_id: str
+    roles: List[str]
+    org_id: str
+    permissions: List[str]
+
+
 class AgentState(TypedDict):
     """
     Shared state for the BestBox LangGraph agents.
@@ -61,3 +71,6 @@ class AgentState(TypedDict):
 
     # Session ID for persistence (optional)
     session_id: Optional[str]
+
+    # Authenticated user context for RBAC-aware tool calls (optional)
+    user_context: Optional[UserContext]

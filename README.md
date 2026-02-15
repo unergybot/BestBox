@@ -370,6 +370,55 @@ hipconfig --full
 rocminfo | grep -A 10 "Agent 2"
 ```
 
+## LLM Configuration
+
+BestBox supports multiple LLM providers configurable through the Admin UI.
+
+### Supported Providers
+
+- **Local vLLM** (default): On-premise inference with AMD ROCm or NVIDIA CUDA
+- **NVIDIA API**: Cloud inference via NVIDIA's API catalog
+- **OpenRouter**: Unified access to models through a single API
+
+### Configuration Methods
+
+1. **Admin UI (Recommended)**
+
+  Navigate to `/{locale}/admin/settings` to:
+  - Select provider (local vLLM, NVIDIA API, OpenRouter)
+  - Choose model from dropdown or enter a custom model
+  - Enter API key (encrypted at rest)
+  - Test connection before saving
+  - Apply changes immediately for new chat sessions
+
+2. **Environment Variables (Override DB settings)**
+
+```bash
+# Required encryption key
+ENCRYPTION_KEY=<generate-with-fernet>
+
+# Optional provider overrides
+NVIDIA_API_KEY=nvapi-xxx
+OPENROUTER_API_KEY=sk-or-xxx
+
+# Optional local override
+LLM_BASE_URL=http://localhost:8001/v1
+LLM_MODEL=qwen3-30b
+```
+
+Generate encryption key:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### Hot Reload and Security
+
+- New chat sessions use updated LLM settings immediately without service restart
+- Existing active sessions continue with their current provider
+- API keys are encrypted at rest and masked in API responses
+- `manage_settings` permission is required to update LLM configuration
+
 ### Troubleshooting
 
 If you encounter GPU access issues:
@@ -429,8 +478,8 @@ For questions or issues, refer to the documentation or contact the BestBox devel
     
 === ERPNext Ready ===
 URL: http://localhost:8002
-Username: Administrator
-Password: admin
+Username: ${ERP_ADMIN_USERNAME}
+Password: ${ERP_ADMIN_PASSWORD}
 
 
 /home/unergy/BestBox/restart-agent.sh
@@ -441,10 +490,10 @@ USE_LIVEKIT=true ./scripts/start-all-services.sh
 cd frontend/copilot-demo
 npm run dev
 
-Nvidia API Key
+NVIDIA API Key
 API RateLimit: up to 40rpm
 
-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
+Set via environment variable: ${NVIDIA_API_KEY}
 
 URL: https://integrate.api.nvidia.com Endpoint: POST /v1/chat/completions minimaxai/minimax-m2
 

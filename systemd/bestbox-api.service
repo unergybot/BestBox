@@ -1,0 +1,15 @@
+[Unit]
+Description=BestBox Agent API
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/BestBox
+EnvironmentFile=%h/BestBox/.env
+ExecStart=%h/BestBox/venv/bin/python %h/BestBox/services/agent_api.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

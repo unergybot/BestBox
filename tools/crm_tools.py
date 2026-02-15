@@ -1,14 +1,15 @@
-"""
-CRM Tools for BestBox AI Agent
+"""CRM tools with ERPNext-backed integration and demo fallback."""
 
-Tools for sales, leads, customers, and churn prediction.
-Demo data is loaded from data/demo/demo_data.json.
-"""
-from langchain_core.tools import tool
-from typing import Optional, List
-import os
-import json
+from datetime import datetime
 from functools import lru_cache
+import json
+import os
+from typing import Any, Dict, List, Optional
+
+from langchain_core.tools import tool
+
+from services.customer_config import get_integration_config
+from services.erpnext_client import ERPNextClient
 
 DEMO_DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "demo", "demo_data.json")
 
@@ -27,8 +28,62 @@ def get_demo_data():
     return load_demo_data()
 
 
+_crm_client: Optional[ERPNextClient] = None
+
+
+def get_crm_backend() -> str:
+    cfg = get_integration_config("crm")
+    backend = os.getenv("CRM_BACKEND") or cfg.get("backend") or "demo"
+    return str(backend).lower()
+
+
+def get_crm_client() -> ERPNextClient:
+    global _crm_client
+    if _crm_client is None:
+        cfg = get_integration_config("crm")
+        _crm_client = ERPNextClient(
+            url=os.getenv("CRM_URL") or cfg.get("base_url") or os.getenv("ERPNEXT_URL"),
+            api_key=os.getenv("CRM_API_KEY") or os.getenv("ERPNEXT_API_KEY"),
+            api_secret=os.getenv("CRM_API_SECRET") or os.getenv("ERPNEXT_API_SECRET"),
+            site=os.getenv("CRM_SITE") or os.getenv("ERPNEXT_SITE", "bestbox.local"),
+        )
+    return _crm_client
+
+
+def _normalize_lead(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": row.get("name", ""),
+        "company": row.get("company_name") or row.get("lead_name") or "Unknown",
+        "tier": row.get("customer_group") or "Unknown",
+        "status": (row.get("status") or "Open").lower(),
+        "score": int(row.get("score") or 60),
+        "stage": row.get("status") or "Open",
+        "source": row.get("source") or "unknown",
+    }
+
+
+def _get_leads_from_erpnext(status: str, tier: Optional[str], limit: int) -> Optional[List[Dict[str, Any]]]:
+    client = get_crm_client()
+    if get_crm_backend() not in {"erpnext", "erpnext_crm"} or not client.is_available():
+        return None
+
+    filters: Dict[str, Any] = {}
+    if status and status.lower() != "all":
+        filters["status"] = ["=", status.title()]
+
+    fields = ["name", "lead_name", "company_name", "status", "source"]
+    leads = client.get_list("Lead", fields=fields, filters=filters, limit=limit, order_by="modified desc")
+    if leads is None:
+        return None
+
+    normalized = [_normalize_lead(lead) for lead in leads]
+    if tier:
+        normalized = [lead for lead in normalized if str(lead.get("tier", "")).lower() == tier.lower()]
+    return normalized[:limit]
+
+
 @tool
-def get_leads(status: str = "active", tier: Optional[str] = None, limit: int = 10):
+def get_leads(status: str = "active", tier: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
     """
     Get a list of sales leads/customers with their current score and status.
     
@@ -40,6 +95,10 @@ def get_leads(status: str = "active", tier: Optional[str] = None, limit: int = 1
     Returns:
         List of leads with scoring and activity information
     """
+    erp_results = _get_leads_from_erpnext(status=status, tier=tier, limit=limit)
+    if erp_results is not None:
+        return erp_results
+
     data = get_demo_data()
     customers = data.get("customers", []) if data else []
     sales = data.get("sales_orders", []) if data else []
@@ -84,7 +143,7 @@ def get_leads(status: str = "active", tier: Optional[str] = None, limit: int = 1
 
 
 @tool
-def predict_churn(customer_id: str):
+def predict_churn(customer_id: str) -> Dict[str, Any]:
     """
     Predict the churn probability for a specific customer using ML models.
     
@@ -94,6 +153,28 @@ def predict_churn(customer_id: str):
     Returns:
         Churn probability, risk level, and contributing factors
     """
+    client = get_crm_client()
+    if get_crm_backend() in {"erpnext", "erpnext_crm"} and client.is_available():
+        customer = client.get_doc("Customer", customer_id)
+        if customer:
+            outstanding = float(customer.get("outstanding_amount") or 0)
+            disabled = int(customer.get("disabled") or 0)
+            churn_prob = 0.75 if disabled else (0.6 if outstanding > 0 else 0.2)
+            risk_level = "HIGH" if churn_prob >= 0.7 else "MEDIUM" if churn_prob >= 0.4 else "LOW"
+            return {
+                "customer_id": customer_id,
+                "customer_name": customer.get("customer_name") or customer.get("name"),
+                "tier": customer.get("customer_group") or "Unknown",
+                "churn_probability": round(churn_prob, 2),
+                "risk_level": risk_level,
+                "key_factors": [
+                    f"Outstanding amount: {outstanding}",
+                    f"Account disabled: {'yes' if disabled else 'no'}",
+                ],
+                "recommendation": "Immediate outreach required" if risk_level == "HIGH" else "Schedule check-in call",
+                "source": "erpnext",
+            }
+
     data = get_demo_data()
     customers = data.get("customers", []) if data else []
     sales = data.get("sales_orders", []) if data else []
@@ -150,7 +231,7 @@ def predict_churn(customer_id: str):
 
 
 @tool
-def get_customer_360(customer_id: str):
+def get_customer_360(customer_id: str) -> Dict[str, Any]:
     """
     Get a complete 360-degree view of a customer.
     
@@ -160,6 +241,33 @@ def get_customer_360(customer_id: str):
     Returns:
         Complete customer profile with orders, value, and engagement
     """
+    client = get_crm_client()
+    if get_crm_backend() in {"erpnext", "erpnext_crm"} and client.is_available():
+        customer = client.get_doc("Customer", customer_id)
+        if customer:
+            invoices = client.get_list(
+                "Sales Invoice",
+                fields=["name", "grand_total", "outstanding_amount", "posting_date", "status"],
+                filters={"customer": customer.get("name")},
+                limit=50,
+                order_by="posting_date desc",
+            ) or []
+
+            total_spend = sum(float(inv.get("grand_total") or 0) for inv in invoices)
+            return {
+                "id": customer_id,
+                "name": customer.get("customer_name") or customer.get("name"),
+                "tier": customer.get("customer_group") or "Unknown",
+                "territory": customer.get("territory") or "Unknown",
+                "currency": customer.get("default_currency") or "CNY",
+                "total_spend": round(total_spend, 2),
+                "total_orders": len(invoices),
+                "completed_orders": len([inv for inv in invoices if str(inv.get("status", "")).lower() == "paid"]),
+                "last_order_date": invoices[0].get("posting_date") if invoices else None,
+                "recent_orders": invoices[:3],
+                "source": "erpnext",
+            }
+
     data = get_demo_data()
     customers = data.get("customers", []) if data else []
     sales = data.get("sales_orders", []) if data else []
@@ -195,7 +303,7 @@ def get_customer_360(customer_id: str):
 
 
 @tool
-def get_high_churn_customers(threshold: float = 0.5, limit: int = 10):
+def get_high_churn_customers(threshold: float = 0.5, limit: int = 10) -> Dict[str, Any]:
     """
     Get list of customers with high churn risk.
     
@@ -206,6 +314,36 @@ def get_high_churn_customers(threshold: float = 0.5, limit: int = 10):
     Returns:
         List of high-churn-risk customers sorted by risk
     """
+    client = get_crm_client()
+    if get_crm_backend() in {"erpnext", "erpnext_crm"} and client.is_available():
+        customers = client.get_list(
+            "Customer",
+            fields=["name", "customer_name", "customer_group", "disabled", "outstanding_amount"],
+            limit=max(limit * 3, 30),
+            order_by="modified desc",
+        ) or []
+
+        high_risk: List[Dict[str, Any]] = []
+        for customer in customers:
+            disabled = int(customer.get("disabled") or 0)
+            outstanding = float(customer.get("outstanding_amount") or 0)
+            churn_risk = 0.8 if disabled else (0.65 if outstanding > 0 else 0.25)
+            if churn_risk < threshold:
+                continue
+            high_risk.append(
+                {
+                    "id": customer.get("name"),
+                    "name": customer.get("customer_name") or customer.get("name"),
+                    "tier": customer.get("customer_group") or "Unknown",
+                    "churn_risk": churn_risk,
+                    "risk_level": "HIGH" if churn_risk >= 0.7 else "MEDIUM",
+                    "source": "erpnext",
+                }
+            )
+
+        high_risk = sorted(high_risk, key=lambda x: x["churn_risk"], reverse=True)
+        return {"threshold": threshold, "count": len(high_risk), "customers": high_risk[:limit]}
+
     data = get_demo_data()
     customers = data.get("customers", []) if data else []
     
@@ -232,7 +370,7 @@ def get_high_churn_customers(threshold: float = 0.5, limit: int = 10):
 
 
 @tool
-def generate_quote(customer_id: str, products: List[str]):
+def generate_quote(customer_id: str, products: List[str]) -> Dict[str, Any]:
     """
     Generate a sales quote for a customer.
     
@@ -243,6 +381,45 @@ def generate_quote(customer_id: str, products: List[str]):
     Returns:
         Generated quote with pricing
     """
+    client = get_crm_client()
+    if get_crm_backend() in {"erpnext", "erpnext_crm"} and client.is_available():
+        customer = client.get_doc("Customer", customer_id)
+        if customer:
+            quote_items: List[Dict[str, Any]] = []
+            total = 0.0
+            for product_code in products:
+                item = client.get_doc("Item", product_code)
+                if not item:
+                    continue
+                rate = float(item.get("standard_rate") or item.get("valuation_rate") or 0)
+                amount = rate
+                quote_items.append(
+                    {
+                        "code": item.get("item_code") or product_code,
+                        "name": item.get("item_name") or product_code,
+                        "qty": 1,
+                        "rate": rate,
+                        "amount": amount,
+                    }
+                )
+                total += amount
+
+            now = datetime.utcnow()
+            valid_until = now.replace(day=min(now.day, 28)).strftime("%Y-%m-%d")
+            return {
+                "quote_id": f"DRAFT-{customer_id}-{now.strftime('%Y%m%d%H%M%S')}",
+                "customer_id": customer_id,
+                "customer_name": customer.get("customer_name") or customer.get("name"),
+                "items": quote_items,
+                "subtotal": round(total, 2),
+                "tax": round(total * 0.13, 2),
+                "total": round(total * 1.13, 2),
+                "currency": customer.get("default_currency") or "CNY",
+                "valid_until": valid_until,
+                "status": "draft",
+                "source": "erpnext",
+            }
+
     data = get_demo_data()
     customers = data.get("customers", []) if data else []
     items = data.get("items", []) if data else []

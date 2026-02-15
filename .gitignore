@@ -204,5 +204,6 @@ third_party/
 bin/
 *.pcm
 *.wav
+.bestbox/config
 
 *.jpg.worktrees/

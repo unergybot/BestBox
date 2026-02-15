@@ -1,0 +1,41 @@
+customer:
+  id: pilot-001
+  name: BestBox Pilot Customer
+  region: apac
+  pilot_start_date: "2026-02-14"
+
+security:
+  strict_tool_auth: true  # Enabled for production pilot
+  default_roles:
+    - viewer
+
+integrations:
+  erp:
+    backend: erpnext
+    base_url: http://localhost:8002
+    token_env: ERP_API_KEY
+  crm:
+    backend: erpnext_crm
+    base_url: http://localhost:8002
+    token_env: CRM_API_KEY
+  it_ops:
+    backend: prometheus_api
+    base_url: http://localhost:9090
+    token_env: ITOPS_API_KEY
+  oa:
+    backend: not_configured
+    base_url: ""
+    token_env: OA_API_KEY
+
+knowledge_base:
+  collection: bestbox_knowledge
+  source_dirs:
+    - data/customer_docs
+  chunk_size: 512
+  overlap_ratio: 0.2
+  incremental_indexing: true
+
+runtime:
+  llm_host: localhost:8080
+  embeddings_host: localhost:8081
+  reranker_host: localhost:8082

@@ -40,6 +40,7 @@ ROLE_PERMISSIONS: Dict[str, set] = {
     "admin": {
         "upload", "view", "search", "delete", "reindex",
         "manage_users", "view_audit", "manage_collections", "manage_services",
+        "manage_settings",
     },
     "engineer": {
         "upload", "view", "search", "reindex",

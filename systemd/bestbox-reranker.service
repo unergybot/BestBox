@@ -1,0 +1,15 @@
+[Unit]
+Description=BestBox Reranker Service
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/BestBox/services/rag_pipeline
+EnvironmentFile=%h/BestBox/.env
+ExecStart=%h/BestBox/venv/bin/python %h/BestBox/services/rag_pipeline/reranker.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

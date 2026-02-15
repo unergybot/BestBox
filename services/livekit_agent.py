@@ -902,9 +902,12 @@ async def entrypoint(ctx: JobContext):
                 logger.info("Falling back to Nvidia LLM...")
                 from livekit.plugins import openai as lk_openai
 
-                NVIDIA_API_KEY = "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"
+                NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY")
                 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
                 NVIDIA_MODEL = "minimaxai/minimax-m2"
+
+                if not NVIDIA_API_KEY:
+                    raise RuntimeError("NVIDIA_API_KEY is not configured")
 
                 llm_instance = lk_openai.LLM(
                     base_url=NVIDIA_BASE_URL,

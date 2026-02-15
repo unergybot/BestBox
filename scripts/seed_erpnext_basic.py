@@ -8,6 +8,10 @@ import sys
 import json
 import logging
 from typing import Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

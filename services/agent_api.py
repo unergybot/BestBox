@@ -154,6 +154,17 @@ async def startup():
     """Initialize database connection pool and register plugin HTTP routes on startup"""
     global db_pool, session_store
 
+    try:
+        from services.customer_config import get_security_config
+
+        security_config = get_security_config()
+        strict_tool_auth = security_config.get("strict_tool_auth")
+        if strict_tool_auth is not None and "STRICT_TOOL_AUTH" not in os.environ:
+            os.environ["STRICT_TOOL_AUTH"] = "true" if bool(strict_tool_auth) else "false"
+            logger.info(f"Applied STRICT_TOOL_AUTH from customer config: {os.environ['STRICT_TOOL_AUTH']}")
+    except Exception as e:
+        logger.warning(f"Failed to load customer security config: {e}")
+
     # Register plugin HTTP routes (plugins already loaded at module level)
     try:
         from plugins import PluginRegistry
@@ -1146,6 +1157,8 @@ async def list_models():
 @app.post("/v1/responses")
 async def create_response(
     request: ChatRequest,
+    user_id: str = Header(default="anonymous", alias="x-user-id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     bbx_session: Optional[str] = Header(None, alias="X-BBX-Session"),
 ):
     """
@@ -1164,12 +1177,26 @@ async def create_response(
         session_id_override = f"ui-{bbx_session}"
     elif request.thread_id:
         session_id_override = request.thread_id
+    user_context = build_user_context(user_id=user_id, authorization=authorization)
     if request.stream:
-        return await responses_api_stream(request, session_id_override=session_id_override)
+        return await responses_api_stream(
+            request,
+            session_id_override=session_id_override,
+            user_context=user_context,
+        )
     else:
-        return await chat_completion(request)
+        return await chat_completion_endpoint(
+            request=request,
+            user_id=user_id,
+            authorization=authorization,
+            bbx_session=bbx_session,
+        )
 
-async def responses_api_stream(request: ChatRequest, session_id_override: Optional[str] = None):
+async def responses_api_stream(
+    request: ChatRequest,
+    session_id_override: Optional[str] = None,
+    user_context: Optional[Dict[str, Any]] = None,
+):
     """Stream the response using OpenAI Responses API format for CopilotKit"""
     stream_start_time = time.time()
     stream_metrics = {
@@ -1235,7 +1262,8 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
                     "query_type": query_type,
                 },
                 "plan": [],
-                "step": 0
+                "step": 0,
+                "user_context": user_context,
             }
 
             # 1. Send response.created event
@@ -1427,7 +1455,11 @@ async def responses_api_stream(request: ChatRequest, session_id_override: Option
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
-async def chat_completion_stream(request: ChatRequest, session_id_override: Optional[str] = None):
+async def chat_completion_stream(
+    request: ChatRequest,
+    session_id_override: Optional[str] = None,
+    user_context: Optional[Dict[str, Any]] = None,
+):
     """Stream the response using SSE format"""
     async def generate():
         try:
@@ -1480,7 +1512,8 @@ async def chat_completion_stream(request: ChatRequest, session_id_override: Opti
                     "query_type": query_type,
                 },
                 "plan": [],
-                "step": 0
+                "step": 0,
+                "user_context": user_context,
             }
 
             # Scope tool-results storage to this request/session.
@@ -1632,6 +1665,84 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
+def extract_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    """Extract Bearer token from Authorization header."""
+    if not authorization:
+        return None
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    token = parts[1].strip()
+    return token or None
+
+
+def build_user_context(user_id: str, authorization: Optional[str]) -> Dict[str, Any]:
+    """Build normalized user context for agent/tool RBAC checks."""
+    context: Dict[str, Any] = {
+        "user_id": user_id or "anonymous",
+        "roles": ["viewer"],
+        "org_id": "default",
+        "permissions": [],
+    }
+
+    token = extract_bearer_token(authorization)
+    if not token:
+        return context
+
+    claims: Dict[str, Any] = {}
+
+    # Try API JWT first
+    try:
+        claims = verify_jwt_token(token)
+    except HTTPException:
+        claims = {}
+
+    # Fallback to admin_auth token decoder (different secret)
+    if not claims:
+        try:
+            from services.admin_auth import decode_jwt_token
+
+            decoded = decode_jwt_token(token)
+            if isinstance(decoded, dict):
+                claims = decoded
+        except Exception:
+            claims = {}
+
+    if not claims:
+        return context
+
+    resolved_user_id = claims.get("username") or claims.get("sub") or context["user_id"]
+    role = claims.get("role")
+    groups = claims.get("groups")
+
+    roles: List[str] = []
+    if isinstance(role, str) and role:
+        roles.append(role)
+    if isinstance(groups, list):
+        roles.extend([str(group) for group in groups if group])
+    if not roles:
+        roles = ["viewer"]
+
+    permissions: List[str] = []
+    try:
+        from services.admin_auth import ROLE_PERMISSIONS
+
+        for resolved_role in roles:
+            permissions.extend(list(ROLE_PERMISSIONS.get(resolved_role, set())))
+    except Exception:
+        permissions = []
+
+    context.update(
+        {
+            "user_id": str(resolved_user_id),
+            "roles": sorted(set(roles)),
+            "org_id": str(claims.get("org") or claims.get("tenant") or "default"),
+            "permissions": sorted(set(permissions)),
+        }
+    )
+    return context
+
+
 def verify_admin_token(token: str) -> None:
     """Verify admin token from request headers.
 
@@ -1675,6 +1786,7 @@ def build_tool_calls_from_trace(reasoning_trace: List[Dict[str, Any]]) -> List[D
 async def chat_legacy_endpoint(
     request: ChatRequest,
     user_id: str = Header(default="anonymous", alias="x-user-id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     openclaw_session: Optional[str] = Header(None, alias="X-OpenClaw-Session"),
     openclaw_channel: Optional[str] = Header(None, alias="X-OpenClaw-Channel"),
     bbx_session: Optional[str] = Header(None, alias="X-BBX-Session"),
@@ -1687,6 +1799,7 @@ async def chat_legacy_endpoint(
     return await chat_completion_endpoint(
         request=request,
         user_id=user_id,
+        authorization=authorization,
         openclaw_session=openclaw_session,
         openclaw_channel=openclaw_channel,
         bbx_session=bbx_session,
@@ -1697,10 +1810,11 @@ async def chat_legacy_endpoint(
 async def chat_react_endpoint(
     request: ChatRequest,
     user_id: str = Header(default="anonymous", alias="x-user-id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     """ReAct endpoint with visible reasoning trace."""
     if request.stream:
-        return await chat_react_stream(request, user_id)
+        return await chat_react_stream(request, user_id, authorization)
 
     start_time = time.time()
     
@@ -1751,6 +1865,7 @@ async def chat_react_endpoint(
         "step": 0,
         "reasoning_trace": [],
         "session_id": session_id,
+        "user_context": build_user_context(user_id=user_id, authorization=authorization),
     }
 
     result = await react_app.ainvoke(cast(AgentState, inputs))
@@ -1799,12 +1914,12 @@ async def chat_react_endpoint(
     }
 
 
-async def chat_react_stream(request: ChatRequest, user_id: str):
+async def chat_react_stream(request: ChatRequest, user_id: str, authorization: Optional[str] = None):
     """Stream ReAct response with reasoning steps."""
     async def generate():
         try:
             request_copy = request.model_copy(update={"stream": False})
-            response = await chat_react_endpoint(request_copy, user_id)
+            response = await chat_react_endpoint(request_copy, user_id, authorization)
             reasoning_trace = response.get("reasoning_trace", [])
             for step in reasoning_trace:
                 yield f"data: {json.dumps({'type': 'reasoning_step', 'step': step})}\n\n"
@@ -1916,6 +2031,7 @@ async def admin_rate_session(
 async def chat_completion_endpoint(
     request: ChatRequest,
     user_id: str = Header(default="anonymous", alias="x-user-id"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     openclaw_session: Optional[str] = Header(None, alias="X-OpenClaw-Session"),
     openclaw_channel: Optional[str] = Header(None, alias="X-OpenClaw-Channel"),
     bbx_session: Optional[str] = Header(None, alias="X-BBX-Session"),
@@ -1935,6 +2051,7 @@ async def chat_completion_endpoint(
     logger.info("=" * 60)
 
     # If streaming is requested, use the streaming handler
+    user_context = build_user_context(user_id=user_id, authorization=authorization)
     if request.stream:
         session_id_override: Optional[str] = None
         if openclaw_session:
@@ -1943,7 +2060,11 @@ async def chat_completion_endpoint(
             session_id_override = request.thread_id
         elif bbx_session:
             session_id_override = f"ui-{bbx_session}"
-        return await chat_completion_stream(request, session_id_override=session_id_override)
+        return await chat_completion_stream(
+            request,
+            session_id_override=session_id_override,
+            user_context=user_context,
+        )
 
     # ==========================================================
     # Observability Setup
@@ -2048,7 +2169,8 @@ async def chat_completion_endpoint(
             "query_type": query_type,
         },
         "plan": [],
-        "step": 0
+        "step": 0,
+        "user_context": user_context,
     }
 
     logger.info(f"Processing request with {len(lc_messages)} messages")
@@ -2147,6 +2269,40 @@ async def chat_completion_endpoint(
             confidence=confidence,
             trace_id=trace_id
         )
+
+        # Audit tool execution events (best-effort, processed from hook data)
+        if db_pool:
+            try:
+                from services.admin_auth import log_audit
+
+                user_ctx = result.get("user_context") or user_context or {}
+                plugin_context = result.get("plugin_context") or {}
+                audit_records = plugin_context.get("audit_records") or []
+
+                # Process each audit record from hooks
+                for audit_record in audit_records:
+                    try:
+                        await log_audit(
+                            pool=db_pool,
+                            user_id=user_ctx.get("user_id"),
+                            action="tool_execution",
+                            resource_type="tool",
+                            resource_id=audit_record.get("tool_name", "unknown"),
+                            details={
+                                "params_hash": audit_record.get("params_hash"),
+                                "result_status": audit_record.get("result_status"),
+                                "latency_ms": audit_record.get("latency_ms"),
+                                "roles": user_ctx.get("roles", []),
+                                "org_id": user_ctx.get("org_id"),
+                                "session_id": session_id,
+                                "timestamp": audit_record.get("timestamp"),
+                            },
+                        )
+                    except Exception as record_exc:
+                        logger.warning(f"Failed to write audit record for {audit_record.get('tool_name')}: {record_exc}")
+
+            except Exception as audit_exc:
+                logger.warning(f"Failed to process audit records: {audit_exc}")
 
         # Build message dict
         message_dict = {

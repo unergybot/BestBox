@@ -1,4 +1,11 @@
 #!/bin/bash
+# DEPRECATED: Use unified `source activate.sh` instead.
+
+echo "⚠️  DEPRECATED: activate-cuda.sh is deprecated"
+echo "   Use: source activate.sh"
+echo "   Or force CUDA: BESTBOX_GPU_BACKEND=cuda source activate.sh"
+echo ""
+
 # BestBox Environment Activation Script for CUDA
 # Source this file to activate Python virtual environment with CUDA settings
 

@@ -26,14 +26,15 @@ class ERPNextClient:
             "Accept": "application/json",
             "Content-Type": "application/json"
         }
-        
+
         # Add auth if keys provided
         if self.api_key and self.api_secret:
             headers["Authorization"] = f"token {self.api_key}:{self.api_secret}"
-            
-        # Add site header which is often required for multi-tenant setups
+
+        # Add site header which is required for ERPNext routing
         if self.site:
             headers["X-Frappe-Site-Name"] = self.site
+            headers["Host"] = self.site
             
         self.session.headers.update(headers)
         

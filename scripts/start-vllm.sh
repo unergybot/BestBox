@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# DEPRECATED: Use ./start-all-services.sh instead.
+
+echo "⚠️  DEPRECATED: scripts/start-vllm.sh is deprecated"
+echo "   Use: ./start-all-services.sh"
+echo ""
+
 # Start vLLM with ROCm for Qwen3-30B
 # Port: 8001 (avoids conflict with Agent API on 8000)
 

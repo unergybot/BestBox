@@ -1,4 +1,10 @@
 #!/bin/bash
+# DEPRECATED: Use ./start-all-services.sh instead.
+
+echo "⚠️  DEPRECATED: scripts/start-embeddings.sh is deprecated"
+echo "   Use: ./start-all-services.sh"
+echo ""
+
 # Start BGE-M3 Embeddings Service
 # API endpoint: http://127.0.0.1:8081
 

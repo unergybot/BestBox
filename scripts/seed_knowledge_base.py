@@ -64,6 +64,63 @@ def build_sparse_vector(text: str, size: int = 65536) -> SparseVector:
     return SparseVector(indices=indices, values=values)
 
 
+def compute_file_hash(file_path: Path) -> str:
+    """
+    Compute SHA-256 hash of a file for deduplication.
+
+    Args:
+        file_path: Path to file
+
+    Returns:
+        Hex digest of file hash
+    """
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def check_file_indexed(vector_store: VectorStore, collection_name: str, file_path: str, file_hash: str) -> bool:
+    """
+    Check if a file with the same hash is already indexed.
+
+    Args:
+        vector_store: VectorStore instance
+        collection_name: Collection to query
+        file_path: File path to check
+        file_hash: SHA-256 hash of file
+
+    Returns:
+        True if file with same hash exists, False otherwise
+    """
+    try:
+        # Query for points with matching file_path
+        result = vector_store.client.scroll(
+            collection_name=collection_name,
+            scroll_filter={
+                "must": [
+                    {"key": "file_path", "match": {"value": file_path}}
+                ]
+            },
+            limit=1,
+            with_payload=True,
+        )
+
+        points = result[0]
+        if points:
+            # Check if hash matches
+            existing_hash = points[0].payload.get("file_hash")
+            if existing_hash == file_hash:
+                return True
+
+    except Exception:
+        # If query fails, assume not indexed
+        pass
+
+    return False
+
+
 def seed_knowledge_base():
     """Main seeding function."""
     print("🚀 Starting knowledge base seeding...")
@@ -101,6 +158,7 @@ def seed_knowledge_base():
     total_docs = 0
     total_chunks = 0
     total_vectors = 0
+    skipped_docs = 0
 
     for domain in domains:
         domain_dir = demo_docs_dir / domain
@@ -121,9 +179,20 @@ def seed_knowledge_base():
             continue
 
         for doc_path in doc_files:
-            print(f"  📄 Ingesting: {doc_path.name}")
+            print(f"  📄 Checking: {doc_path.name}")
 
             try:
+                # Step 0: Compute file hash for deduplication
+                file_hash = compute_file_hash(doc_path)
+
+                # Check if already indexed with same hash
+                if check_file_indexed(vector_store, collection_name, str(doc_path), file_hash):
+                    print(f"     ⏭️  Skipped (already indexed, hash: {file_hash[:16]}...)")
+                    skipped_docs += 1
+                    continue
+
+                print(f"     🔄 Processing (hash: {file_hash[:16]}...)")
+
                 # Step 1: Ingest document
                 doc = ingester.ingest_document(
                     doc_path=doc_path,
@@ -166,6 +235,8 @@ def seed_knowledge_base():
                             "domain": domain,
                             "source": doc["metadata"]["source"],
                             "file_path": str(doc_path),
+                            "file_hash": file_hash,  # Store hash for deduplication
+                            "indexed_at": str(uuid.uuid4()),  # Unique ID for this indexing run
                             "title": doc["metadata"].get("title", doc_path.stem),
                             "section": chunk.get("section", ""),
                             "token_count": chunk["token_count"],
@@ -195,9 +266,12 @@ def seed_knowledge_base():
     print()
     print(f"📊 Summary:")
     print(f"  Documents processed: {total_docs}")
+    print(f"  Documents skipped (already indexed): {skipped_docs}")
     print(f"  Chunks created: {total_chunks}")
     print(f"  Vectors stored: {total_vectors}")
     print(f"  Collection: {collection_name}")
+    print()
+    print(f"💡 Deduplication: File hashes tracked to skip unchanged documents")
     print("=" * 60)
 
 

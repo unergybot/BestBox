@@ -1,0 +1,14 @@
+{
+  "name": "audit-logger",
+  "version": "1.0.0",
+  "description": "Audit trail logger for tool execution with user context tracking",
+  "author": "BestBox Team",
+  "entry_point": "register",
+  "hooks": [
+    {
+      "event": "AFTER_TOOL_CALL",
+      "handler": "plugins_contrib.audit_logger.hooks.audit_tool_execution",
+      "priority": 100
+    }
+  ]
+}

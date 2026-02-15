@@ -1,0 +1,241 @@
+# BestBox ROCm GPU Services Overlay
+# Use with: docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d
+
+services:
+  vllm:
+    image: rocm/vllm-dev:rocm7.2_navi_ubuntu24.04_py3.12_pytorch_2.9_vllm_0.14.0rc0
+    container_name: vllm-server
+    restart: unless-stopped
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+    ipc: host
+    shm_size: 16G
+    ports:
+      - "8001:8001"
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models:ro
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface:ro
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
+      - HIP_VISIBLE_DEVICES=0
+      - HSA_ENABLE_SDMA=1
+      - MODELSCOPE_CACHE=/models
+      - HF_HOME=/root/.cache/huggingface
+      - TRANSFORMERS_CACHE=/root/.cache/huggingface/hub
+    command:
+      - bash
+      - -c
+      - |
+        vllm serve /models/Qwen/Qwen3-30B-A3B-Instruct-2507 \
+          --host 0.0.0.0 \
+          --port 8001 \
+          --served-model-name qwen3-30b \
+          --dtype float16 \
+          --gpu-memory-utilization 0.90 \
+          --max-model-len 32768 \
+          --max-num-seqs 8 \
+          --max-num-batched-tokens 32768 \
+          --enforce-eager \
+          --trust-remote-code \
+          --disable-log-requests \
+          --enable-auto-tool-choice \
+          --tool-call-parser hermes
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  embeddings:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-embeddings
+    restart: unless-stopped
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    ports:
+      - "8081:8081"
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/embeddings:/app:ro
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HF_HOME=/models
+      - TRANSFORMERS_CACHE=/models
+      - SENTENCE_TRANSFORMERS_HOME=/models
+      - EMBEDDINGS_MODEL_NAME=BAAI/bge-m3
+      - EMBEDDINGS_DEVICE=cuda
+    working_dir: /app
+    command:
+      - bash
+      - -c
+      - |
+        pip install -q --no-cache-dir fastapi uvicorn 'sentence-transformers<3' && \
+        uvicorn main:app --host 0.0.0.0 --port 8081
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  reranker:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-reranker
+    restart: unless-stopped
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    ports:
+      - "8082:8082"
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/rag_pipeline:/app:ro
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - HF_HOME=/models
+      - TRANSFORMERS_CACHE=/models
+      - SENTENCE_TRANSFORMERS_HOME=/models
+      - RERANKER_MODEL_NAME=BAAI/bge-reranker-v2-m3
+      - RERANKER_DEVICE=cuda
+    working_dir: /app
+    command:
+      - bash
+      - -c
+      - |
+        pip install -q --no-cache-dir fastapi uvicorn 'sentence-transformers<3' && \
+        python reranker.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  qwen3-asr:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-qwen3-asr
+    restart: unless-stopped
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    ports:
+      - "8003:8003"
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/asr:/app:ro
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - MODELSCOPE_CACHE=/models
+      - ASR_MODEL=/models/Qwen/Qwen3-ASR-0___6B
+      - ASR_DEVICE=cuda
+      - ASR_PORT=8003
+    working_dir: /app
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        pip install -q --no-cache-dir qwen-asr fastapi uvicorn httpx || exit 1
+        python3 main.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  qwen3-tts:
+    image: rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+    container_name: bestbox-qwen3-tts
+    restart: unless-stopped
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    ports:
+      - "8004:8004"
+    volumes:
+      - ${HOME}/.cache/modelscope/hub/models:/models
+      - ./services/tts:/app:ro
+    environment:
+      - PYTORCH_ROCM_ARCH=gfx1151
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+      - MODELSCOPE_CACHE=/models
+      - TTS_MODEL=/models/Qwen/Qwen3-TTS-12Hz-0___6B-Base
+      - TTS_DEVICE=cuda
+      - TTS_PORT=8004
+    working_dir: /app
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        pip install -q --no-cache-dir qwen-tts fastapi uvicorn soundfile || exit 1
+        python3 main.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+  s2s-gateway:
+    image: python:3.12-slim
+    container_name: bestbox-s2s-gateway
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./services/s2s-gateway:/app:ro
+    environment:
+      - ASR_URL=http://bestbox-qwen3-asr:8003
+      - TTS_URL=http://bestbox-qwen3-tts:8004
+      - AGENT_API_URL=http://host.docker.internal:8000
+      - S2S_PORT=8765
+    working_dir: /app
+    depends_on:
+      qwen3-asr:
+        condition: service_healthy
+      qwen3-tts:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        pip install -q --no-cache-dir fastapi uvicorn websockets httpx || exit 1
+        python3 main.py
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8765/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

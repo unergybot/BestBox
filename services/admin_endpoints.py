@@ -92,6 +92,19 @@ class UploadUrlRequest(BaseModel):
     force: bool = False
 
 
+class LLMConfigRequest(BaseModel):
+    provider: str
+    base_url: str
+    api_key: Optional[str] = None
+    model: str
+    parameters: Dict[str, Any] = {
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "streaming": True,
+        "max_retries": 2,
+    }
+
+
 # ------------------------------------------------------------------
 # Auth dependency
 # ------------------------------------------------------------------
@@ -2379,6 +2392,133 @@ async def _process_url_job(
         logger.error(f"URL job {job_id} failed: {exc}", exc_info=True)
         job["status"] = "failed"
         job["error"] = str(exc)
+
+
+# ------------------------------------------------------------------
+# LLM Settings endpoints
+# ------------------------------------------------------------------
+
+
+def get_llm_config_service():
+    from services.llm_config_service import LLMConfigService
+
+    return LLMConfigService(encryption_key=os.getenv("ENCRYPTION_KEY"))
+
+
+def _mask_api_key(key: str) -> str:
+    if not key or len(key) < 12:
+        return "***"
+    return f"{key[:8]}...{key[-4:]}"
+
+
+def _check_env_override(provider: str) -> bool:
+    if provider == "nvidia":
+        return bool(os.getenv("NVIDIA_API_KEY"))
+    if provider == "openrouter":
+        return bool(os.getenv("OPENROUTER_API_KEY"))
+    if provider == "local_vllm":
+        return bool(os.getenv("LLM_BASE_URL") or os.getenv("LLM_MODEL"))
+    return False
+
+
+@router.get("/settings/llm")
+async def get_llm_config(user: Dict = Depends(require_permission("view"))):
+    """Get active LLM configuration with masked API key."""
+    try:
+        service = get_llm_config_service()
+        config = service.get_active_config()
+
+        if config.get("api_key"):
+            config["api_key_masked"] = _mask_api_key(config["api_key"])
+            config.pop("api_key", None)
+
+        config["env_override_active"] = _check_env_override(config.get("provider", ""))
+        return config
+    except Exception as exc:
+        logger.error("Failed to get LLM config: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/settings/llm")
+async def save_llm_config(
+    request: LLMConfigRequest,
+    user: Dict = Depends(require_permission("manage_settings")),
+):
+    """Save LLM configuration and invalidate manager cache for hot reload."""
+    try:
+        from services.llm_manager import LLMManager
+
+        service = get_llm_config_service()
+        config_id = service.save_config(
+            provider=request.provider,
+            model=request.model,
+            api_key=request.api_key,
+            base_url=request.base_url,
+            parameters=request.parameters,
+            user=user.get("username", "admin"),
+        )
+
+        LLMManager.get_instance().force_refresh()
+
+        return {
+            "success": True,
+            "config_id": config_id,
+            "message": "LLM configuration updated. New chat sessions will use this configuration.",
+        }
+    except Exception as exc:
+        logger.error("Failed to save LLM config: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/settings/llm/models/{provider}")
+async def get_provider_models(
+    provider: str,
+    user: Dict = Depends(require_permission("view")),
+):
+    """Get available model options for a provider."""
+    try:
+        service = get_llm_config_service()
+        models = service.get_provider_models(provider)
+        return {"models": models}
+    except Exception as exc:
+        logger.error("Failed to get provider models: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/settings/llm/test")
+async def test_llm_connection(
+    request: LLMConfigRequest,
+    user: Dict = Depends(require_permission("view")),
+):
+    """Test provider connection before saving config."""
+    try:
+        from langchain_openai import ChatOpenAI
+
+        test_client = ChatOpenAI(
+            base_url=request.base_url,
+            api_key=request.api_key or "sk-no-key-required",
+            model=request.model,
+            timeout=10,
+        )
+        response = test_client.invoke("Say 'connection successful' and nothing else.")
+        content = getattr(response, "content", str(response))
+
+        return {
+            "success": True,
+            "message": "Connection successful",
+            "response": str(content)[:100],
+        }
+    except Exception as exc:
+        error_msg = str(exc)
+        lowered = error_msg.lower()
+        if "authentication" in lowered or "unauthorized" in lowered:
+            return {"success": False, "message": "Invalid API key"}
+        if "timeout" in lowered:
+            return {
+                "success": False,
+                "message": "Connection timeout - check base URL and network",
+            }
+        return {"success": False, "message": f"Connection failed: {error_msg}"}
 
 
 # ------------------------------------------------------------------

@@ -10,22 +10,33 @@ BestBox is an enterprise agentic applications demo kit supporting AMD (Ryzen AI 
 
 ### Environment Activation
 ```bash
-# AMD ROCm systems
-source ~/BestBox/activate.sh  # Activates venv and sets ROCm environment variables
+# Automatic detection (recommended)
+source ~/BestBox/activate.sh  # Auto-detects: rocm | cuda | cpu
 
-# NVIDIA CUDA systems
-source ~/BestBox/activate-cuda.sh  # Activates venv and sets CUDA environment variables
+# Manual override
+BESTBOX_GPU_BACKEND=rocm source ~/BestBox/activate.sh
+BESTBOX_GPU_BACKEND=cuda source ~/BestBox/activate.sh
+BESTBOX_GPU_BACKEND=cpu source ~/BestBox/activate.sh
+
+# Persistent local config
+mkdir -p .bestbox && echo "gpu_backend=cuda" > .bestbox/config
 ```
 
 ### Start Services
 ```bash
-# Infrastructure (run first)
-docker compose up -d                    # Qdrant, PostgreSQL, Redis
+# Unified startup (recommended)
+./start-all-services.sh
 
-# Backend services (each in separate terminal)
-./scripts/start-vllm.sh                 # LLM server on :8001 (vLLM ROCm)
-./scripts/start-embeddings.sh           # Embeddings and Reranker on :8004
-./scripts/start-agent-api.sh            # Agent API on :8000
+# Manual compose startup
+docker compose $BESTBOX_COMPOSE_FILES up -d
+
+# Optional stop
+./stop-all-services.sh
+
+# Legacy scripts (deprecated, still functional)
+./scripts/start-vllm.sh
+./scripts/start-embeddings.sh
+./scripts/start-agent-api.sh
 
 # Frontend
 cd frontend/copilot-demo && npm run dev # Next.js on :3000
@@ -40,8 +51,8 @@ cd frontend/copilot-demo && npm run lint # Frontend linting
 ### Health Checks
 ```bash
 curl http://localhost:8001/health       # LLM server
-curl http://localhost:8004/health       # Embeddings
-curl http://localhost:8004/health       # Reranker
+curl http://localhost:8081/health       # Embeddings
+curl http://localhost:8082/health       # Reranker
 curl http://localhost:8000/health       # Agent API
 ```
 
@@ -86,8 +97,8 @@ python scripts/seed_knowledge_base.py
 | Service | Port |
 |---------|------|
 | LLM (vLLM) | 8001 |
-| Embeddings (BGE-M3) | 8004 |
-| Reranker (BGE-reranker-v2-m3) | 8004 |
+| Embeddings (BGE-M3) | 8081 |
+| Reranker (BGE-reranker-v2-m3) | 8082 |
 | Agent API | 8000 |
 | S2S Gateway | 8765 |
 | Frontend | 3000 |
@@ -201,6 +212,11 @@ tail -f ~/BestBox/logs/agent_api.log | grep "STREAMING CHECK"
 
 ## GPU Notes
 
+Backend detection priority:
+1. `BESTBOX_GPU_BACKEND` environment variable
+2. `.bestbox/config` (`gpu_backend=...`)
+3. Auto-detect (`nvidia-smi` → `rocm-smi|rocminfo` → `cpu`)
+
 ### AMD ROCm
 The system uses AMD ROCm 7.2.0 for vLLM. Key environment variables are set in `activate.sh`:
 ```bash
@@ -213,19 +229,10 @@ vLLM runs in Docker with ROCm GPU access (/dev/kfd, /dev/dri). The Qwen3-30B mod
 **Important:** The `--enforce-eager` flag is required for stability on gfx1151 (Strix Halo). HIP Graphs cause driver timeouts without this flag.
 
 ### NVIDIA CUDA
-For NVIDIA GPUs, you can use the archived llama.cpp setup or configure vLLM with CUDA:
-
-**Option 1: llama.cpp (archived)**
+Use the unified activation + compose overlays:
 ```bash
-# Restore from archive
-cp docs/archive/llama-cpp/scripts/start-llm-cuda.sh scripts/
-./scripts/start-llm-cuda.sh      # Start LLM with CUDA backend
-```
-
-**Option 2: vLLM with CUDA**
-```bash
-# Use CUDA-compatible vLLM image
-# Update docker-compose.yml vllm service to use vllm/vllm-openai:latest
+BESTBOX_GPU_BACKEND=cuda source activate.sh
+docker compose $BESTBOX_COMPOSE_FILES up -d
 ```
 
 Key environment variables:

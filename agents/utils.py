@@ -1,4 +1,3 @@
-from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 import os
 import httpx
@@ -7,7 +6,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Configuration for local services - use environment variables with defaults
-LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:8001/v1")
 EMBEDDINGS_BASE_URL = os.environ.get("EMBEDDINGS_BASE_URL", "http://127.0.0.1:8004/v1")
 
 SPEECH_FORMAT_INSTRUCTION = """
@@ -21,28 +19,22 @@ Example:
 Based on the financial reports, the Q4 revenue hit $15M... (rest of detailed answer)
 """
 
-def get_llm(temperature: float = 0.7, max_tokens: int = 4096):
-    """
-    Get the configured ChatOpenAI instance connected to local llama-server.
+def get_llm(temperature: float = None, max_tokens: int = None):
+    """Get LLM client from LLMManager using active runtime configuration."""
+    from services.llm_manager import LLMManager
 
-    Note: The startup script unsets proxy environment variables to ensure local
-    services can communicate directly without going through proxies.
+    client = LLMManager.get_instance().get_client()
 
-    Environment variables:
-    - LLM_BASE_URL: URL of the LLM server (default: http://127.0.0.1:8001/v1)
-    - LLM_MAX_TOKENS: Maximum tokens for response (default: 4096)
-    """
-    response_max_tokens = int(os.environ.get("LLM_MAX_TOKENS", str(max_tokens)))
-    logger.info(f"Creating LLM client with base_url={LLM_BASE_URL}, max_tokens={response_max_tokens}")
-    return ChatOpenAI(
-        base_url=LLM_BASE_URL,
-        api_key="sk-no-key-required",  # Local server doesn't need real API key
-        model=os.environ.get("LLM_MODEL", "qwen3-30b"),
-        temperature=temperature,
-        streaming=True,
-        max_retries=2,  # Retry on transient failures
-        max_tokens=response_max_tokens,  # Ensure response isn't truncated
-    )
+    if temperature is not None or max_tokens is not None:
+        overrides = {}
+        if temperature is not None:
+            overrides["temperature"] = temperature
+        if max_tokens is not None:
+            overrides["max_tokens"] = max_tokens
+        if overrides:
+            client = client.bind(**overrides)
+
+    return client
 
 class LocalBGEEmbeddings(OpenAIEmbeddings):
     """

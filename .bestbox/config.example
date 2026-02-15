@@ -1,0 +1,9 @@
+# BestBox Configuration File
+# Copy to .bestbox/config
+
+# GPU backend override: cuda | rocm | cpu
+gpu_backend=rocm
+
+# Optional service toggles
+enable_speech=false
+enable_frontend=true
