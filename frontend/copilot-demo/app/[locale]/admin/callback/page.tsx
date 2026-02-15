@@ -23,7 +23,7 @@ export default function OIDCCallbackPage({
   useEffect(() => {
     const code = searchParams.get("code");
     if (!code) {
-      router.push(`/${locale}/admin/login`);
+      router.push(`/${locale}/login?returnUrl=${encodeURIComponent(`/${locale}/admin`)}`);
       return;
     }
 
@@ -45,7 +45,7 @@ export default function OIDCCallbackPage({
       })
       .catch((err) => {
         console.error("OIDC callback error:", err);
-        router.push(`/${locale}/admin/login`);
+        router.push(`/${locale}/login?returnUrl=${encodeURIComponent(`/${locale}/admin`)}`);
       });
   }, [searchParams, router, locale]);
 

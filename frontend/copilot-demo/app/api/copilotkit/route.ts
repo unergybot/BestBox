@@ -47,6 +47,7 @@ const runtime = new CopilotRuntime({
 export const POST = async (req: NextRequest) => {
   const uiSessionId = getOrCreateUiSessionId(req);
   const baseURL = getAgentApiBaseUrl();
+  const authToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
 
   console.log("[CopilotKit] OpenAI adapter initialized");
   console.log("[CopilotKit] Base URL:", baseURL);
@@ -59,6 +60,7 @@ export const POST = async (req: NextRequest) => {
     baseURL,
     defaultHeaders: {
       "X-BBX-Session": uiSessionId,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
   });
 

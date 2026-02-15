@@ -2491,6 +2491,14 @@ async def test_llm_connection(
     user: Dict = Depends(require_permission("view")),
 ):
     """Test provider connection before saving config."""
+    # Check for environment variable override based on provider
+    api_key = request.api_key
+    if not api_key:
+        if "nvidia.com" in request.base_url:
+            api_key = os.getenv("NVIDIA_API_KEY")
+        elif "openrouter.ai" in request.base_url:
+            api_key = os.getenv("OPENROUTER_API_KEY")
+
     # For NVIDIA API, use direct requests to match their API format exactly
     if "nvidia.com" in request.base_url:
         try:
@@ -2498,19 +2506,21 @@ async def test_llm_connection(
 
             url = request.base_url.rstrip("/") + "/chat/completions"
             headers = {
-                "Authorization": f"Bearer {request.api_key or 'test-key'}",
+                "Authorization": f"Bearer {api_key or 'test-key'}",
+                "Accept": "application/json",
                 "Content-Type": "application/json",
             }
             payload = {
                 "model": request.model,
                 "messages": [{"role": "user", "content": "Say 'test' only"}],
                 "max_tokens": 100,
-                "temperature": 0.7,
+                "temperature": 1.0,
                 "top_p": 1.0,
                 "stream": False,
+                "chat_template_kwargs": {"thinking": True},
             }
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(url, headers=headers, json=payload)
 
                 if response.status_code == 200:
@@ -2544,7 +2554,7 @@ async def test_llm_connection(
 
         test_client = ChatOpenAI(
             base_url=request.base_url,
-            api_key=request.api_key or "sk-no-key-required",
+            api_key=api_key or "sk-no-key-required",
             model=request.model,
             timeout=10,
         )

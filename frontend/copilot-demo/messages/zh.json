@@ -3,6 +3,13 @@
         "title": "BestBox AI 助手",
         "initial": "你好！我是您的 BestBox AI 助手。我可以帮您处理：\n\n• ERP 查询（发票、库存、供应商）\n• 系统信息\n• 场景\n\n试着问我：'系统状态如何？' 或 '显示未付发票'"
     },
+    "Auth": {
+        "signInPrompt": "登录以访问所有功能（供应商数据、财务报告、采购信息）",
+        "permissionPrompt": "请使用有权限的角色登录以访问受保护数据。",
+        "signInButton": "登录",
+        "signOutButton": "退出登录",
+        "sessionExpired": "会话已过期。请重新登录。"
+    },
     "Voice": {
         "title": "语音助手",
         "subtitle": "使用语音与 BestBox 智能助手对话",

@@ -10,9 +10,77 @@ import { ChatMessagesProvider, useChatMessages as useTroubleshootingMessages } f
 import "@copilotkit/react-ui/styles.css";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { useTranslations, useLocale } from "next-intl";
+import { useRouter } from "next/navigation";
 import LanguageSwitcher from "../../components/LanguageSwitcher";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 import { TroubleshootingIssue } from "@/types/troubleshooting";
+
+function AuthBanner({ locale }: { locale: string }) {
+  const t = useTranslations("Auth");
+  const { isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  if (isAuthenticated) return null;
+
+  return (
+    <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 flex items-center justify-between gap-2">
+      <span className="text-sm text-blue-700">{t("signInPrompt")}</span>
+      <button
+        onClick={() => router.push(`/${locale}/login?returnUrl=${encodeURIComponent(`/${locale}`)}`)}
+        className="text-sm bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
+      >
+        {t("signInButton")}
+      </button>
+    </div>
+  );
+}
+
+function UserInfoHeader() {
+  const t = useTranslations("Auth");
+  const { user, isAuthenticated, logout } = useAuth();
+
+  if (!isAuthenticated || !user) return null;
+
+  return (
+    <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+          <span className="text-sm font-medium text-blue-700">{user.username[0]?.toUpperCase() || "U"}</span>
+        </div>
+        <div>
+          <div className="text-sm font-medium text-gray-900">{user.username}</div>
+          <div className="text-xs text-gray-500 capitalize">{user.role}</div>
+        </div>
+      </div>
+      <button
+        onClick={logout}
+        className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
+      >
+        {t("signOutButton")}
+      </button>
+    </div>
+  );
+}
+
+function PermissionPrompt({ locale }: { locale: string }) {
+  const t = useTranslations("Auth");
+  const router = useRouter();
+
+  return (
+    <div className="my-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+      <div className="flex items-center justify-between gap-2">
+        <span>{t("permissionPrompt")}</span>
+        <button
+          onClick={() => router.push(`/${locale}/login?returnUrl=${encodeURIComponent(`/${locale}`)}`)}
+          className="shrink-0 rounded bg-amber-600 px-2 py-1 text-xs font-medium text-white hover:bg-amber-700"
+        >
+          {t("signInButton")}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Context for storing extracted tool results
 // Each message gets its own results keyed by message ID
@@ -203,6 +271,8 @@ function ToolResultsRenderer({ messageId }: { messageId: string }) {
 }
 
 function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKitAssistantMessage>) {
+  const locale = useLocale();
+  const { isAuthenticated } = useAuth();
   const { visibleMessages } = useCopilotChat();
   const message = (props as any)?.message;
   const raw = message?.content;
@@ -326,6 +396,10 @@ function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKit
     ? ({ ...message, content: sanitizedContent } as any)
     : message;
 
+  const showsPermissionPrompt =
+    !isAuthenticated &&
+    /(permission|not authorized|access denied|insufficient role|没有权限|权限不足|未授权)/i.test(content);
+
   const hasResults = toolResultsMap.has(messageId);
   if (process.env.NEXT_PUBLIC_TOOL_RESULTS_DEBUG === "true") {
     console.log(`[SanitizedAssistantMessage] Render: copilotId=${copilotId}, stableMessageId=${stableMessageId}, messageId=${messageId}, hasResults=${hasResults}, mapSize=${toolResultsMap.size}`);
@@ -334,6 +408,7 @@ function SanitizedAssistantMessage(props: React.ComponentProps<typeof CopilotKit
   return (
     <>
       {hasResults && <ToolResultsRenderer messageId={messageId} />}
+      {showsPermissionPrompt && <PermissionPrompt locale={locale} />}
       <CopilotKitAssistantMessage {...(props as any)} message={sanitizedMessage} />
     </>
   );
@@ -482,7 +557,17 @@ import { CopilotChatRecorder } from "@/components/CopilotChatRecorder";
 import { CopilotTTS } from "@/components/CopilotTTS";
 
 export default function Home() {
+  return (
+    <AuthProvider>
+      <HomeContent />
+    </AuthProvider>
+  );
+}
+
+function HomeContent() {
   const tCopilot = useTranslations("Copilot");
+  const locale = useLocale();
+  const { token } = useAuth();
 
   const labels = useMemo(() => ({
     title: tCopilot("title"),
@@ -496,7 +581,10 @@ export default function Home() {
   return (
     <ChatMessagesProvider>
       <ToolResultsProvider>
-        <CopilotKit runtimeUrl="/api/copilotkit">
+        <CopilotKit
+          runtimeUrl="/api/copilotkit"
+          headers={token ? { Authorization: `Bearer ${token}` } : {}}
+        >
           {/* TTS component watches CopilotKit messages and speaks [SPEECH] content */}
           <CopilotTTS />
           <div className="flex flex-col lg:flex-row h-screen">
@@ -508,6 +596,8 @@ export default function Home() {
 
             {/* Chat Column - 60% on desktop, full width on mobile */}
             <div className="w-full lg:w-[60%] flex flex-col border-l border-gray-200">
+              <AuthBanner locale={locale} />
+              <UserInfoHeader />
               <CopilotChatRecorder>
                 <CopilotChat
                   labels={labels}

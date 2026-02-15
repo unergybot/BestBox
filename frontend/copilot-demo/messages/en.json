@@ -3,6 +3,13 @@
         "title": "BestBox AI Assistant",
         "initial": "Hello! I'm your BestBox AI assistant. I can help you with:\n\n• ERP queries (invoices, inventory, vendors)\n• System information\n• Scenarios\n\nTry asking: 'What's the system status?' or 'Show me unpaid invoices'"
     },
+    "Auth": {
+        "signInPrompt": "Sign in to access all features (vendor data, financial reports, procurement information)",
+        "permissionPrompt": "Sign in with an authorized role to access this protected data.",
+        "signInButton": "Sign In",
+        "signOutButton": "Sign Out",
+        "sessionExpired": "Session expired. Please sign in again."
+    },
     "Voice": {
         "title": "Voice Assistant",
         "subtitle": "Use voice to interact with BestBox AI assistant",

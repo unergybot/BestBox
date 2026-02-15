@@ -115,7 +115,11 @@ export default function SettingsPage() {
       const list = (data.models || []) as Array<ModelOption>;
       setModels(list);
 
-      setSelectedModel((prev) => (prev || list.length === 0 ? prev : list[0].model_id));
+      // Auto-select first recommended model, or first model if none recommended
+      if (list.length > 0) {
+        const recommended = list.find((m) => m.is_recommended);
+        setSelectedModel(recommended ? recommended.model_id : list[0].model_id);
+      }
     } catch {
       setModels([]);
     }
@@ -138,6 +142,8 @@ export default function SettingsPage() {
     setShowApiKey(false);
     setTestResult(null);
     setShowCustomModel(false);
+    setSelectedModel("");
+    setCustomModel("");
   };
 
   const selectedFinalModel = showCustomModel ? customModel.trim() : selectedModel;
