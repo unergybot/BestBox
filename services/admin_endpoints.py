@@ -2491,6 +2491,54 @@ async def test_llm_connection(
     user: Dict = Depends(require_permission("view")),
 ):
     """Test provider connection before saving config."""
+    # For NVIDIA API, use direct requests to match their API format exactly
+    if "nvidia.com" in request.base_url:
+        try:
+            import httpx
+
+            url = request.base_url.rstrip("/") + "/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {request.api_key or 'test-key'}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": request.model,
+                "messages": [{"role": "user", "content": "Say 'test' only"}],
+                "max_tokens": 100,
+                "temperature": 0.7,
+                "top_p": 1.0,
+                "stream": False,
+            }
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, headers=headers, json=payload)
+
+                if response.status_code == 200:
+                    return {
+                        "success": True,
+                        "message": "Connection successful",
+                        "response": "NVIDIA API responded successfully",
+                    }
+                elif response.status_code == 401:
+                    return {
+                        "success": False,
+                        "message": "Invalid API key - Please set NVIDIA_API_KEY in .env or enter a valid key",
+                    }
+                elif response.status_code == 404:
+                    return {
+                        "success": False,
+                        "message": f"Model '{request.model}' not found on NVIDIA API",
+                    }
+                else:
+                    error_text = response.text[:200]
+                    return {
+                        "success": False,
+                        "message": f"NVIDIA API error ({response.status_code}): {error_text}",
+                    }
+        except Exception as exc:
+            return {"success": False, "message": f"Connection failed: {str(exc)}"}
+
+    # For other providers (OpenRouter, local vLLM), use LangChain
     try:
         from langchain_openai import ChatOpenAI
 
